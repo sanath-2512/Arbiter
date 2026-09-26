@@ -18,21 +18,40 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 CHECK_COMMAND_RE = re.compile(
-    r"(^|[\s;&|(])("
+    r"^("
     r"pytest|py\.test|tox|nox|"
     r"python[\d.]*\s+(-[a-zA-Z]+\s+)*-m\s+(pytest|unittest|nose2?|doctest)|"
-    r"python[\d.]*\s+\S*(runtests|run_tests|manage)\.py(\s+test)?|"
+    r"python[\d.]*\s+(-[a-zA-Z]+\s+)*\S*(runtests|run_tests|manage)\.py(\s+test)?|"
     r"go\s+test|cargo\s+(test|nextest)|"
     r"(npm|pnpm|yarn|bun)\s+(run\s+)?(test|jest|vitest|mocha)|npx\s+(jest|vitest|mocha)|jest|vitest|mocha|"
-    r"mvn\b[^;&|]*\b(test|verify)\b|(\./)?gradlew?\b[^;&|]*\btest\b|"
-    r"make\s+(test|check)|ctest|rspec|bundle\s+exec\s+(rake|rspec)|phpunit|dotnet\s+test|swift\s+test|mix\s+test|"
-    r"bazel\s+test"
-    r")\b"
+    r"mvn\b.*\b(test|verify)\b|(\./)?gradlew?\b.*\btest\b|"
+    r"make\s+(test|check)|ctest|rspec|bundle\s+exec\s+(rake|rspec)|phpunit|(\./)?vendor/bin/phpunit|"
+    r"dotnet\s+test|swift\s+test|mix\s+test|bazel\s+test"
+    r")(\s|$)"
 )
+_WRAPPERS = {"time", "env", "nice", "xvfb-run", "sudo", "command", "exec"}
+_RUNNERS = {"uv", "poetry", "pipenv", "hatch", "pdm", "rye"}
 
 
 def is_check_command(command: str) -> bool:
-    return bool(CHECK_COMMAND_RE.search(command))
+    """True if any simple command in the line starts with a known test runner."""
+    for seg in re.split(r"&&|\|\||[;|\n]", command):
+        words = seg.strip().lstrip("(").split()
+        while words:
+            w = words[0]
+            if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w) or w in _WRAPPERS:
+                words = words[1:]
+            elif w == "timeout":
+                words = words[1:]
+                while words and (words[0].startswith("-") or re.match(r"^\d+[smh]?$", words[0])):
+                    words = words[1:]
+            elif w in _RUNNERS and len(words) > 1 and words[1] in ("run", "exec"):
+                words = words[2:]
+            else:
+                break
+        if words and CHECK_COMMAND_RE.match(" ".join(words)):
+            return True
+    return False
 
 
 def normalize_command(command: str) -> str:

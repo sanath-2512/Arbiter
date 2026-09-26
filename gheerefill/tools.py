@@ -229,12 +229,8 @@ class ToolBox:
                 raise ToolArgumentError(
                     f"refusing to write outside the repository ({self.repo}) or scratch directory ({self.scratch}): {p}"
                 )
-            try:
-                rel = real.relative_to(self.repo)
-                if rel.parts and rel.parts[0] == ".git":
-                    raise ToolArgumentError("refusing to modify files inside .git")
-            except ValueError:
-                pass
+            if real == self.repo / ".git" or (self.repo / ".git") in real.parents:
+                raise ToolArgumentError("refusing to modify files inside .git")
         return real
 
     def _display(self, path: Path) -> str:

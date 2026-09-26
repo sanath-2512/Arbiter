@@ -50,6 +50,11 @@ class TaskAdapterTest(TempDirCase):
         self.assertEqual(self.read(""), [])
         self.assertEqual(self.read("\n\n"), [])
 
+    def test_malformed_first_line_then_jsonl(self):
+        good = json.dumps({"task_id": "a", "repo_path": str(self.repo), "issue": "x"})
+        items = self.read("{broken\n" + good + "\n")
+        self.assertEqual([type(i).__name__ for i in items], ["TaskInputError", "Task"])
+
     def test_truncated_document(self):
         (item,) = self.read('[{"task_id": "a",\n')
         self.assertIsInstance(item, TaskInputError)

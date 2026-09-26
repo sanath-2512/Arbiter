@@ -145,7 +145,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def cmd_finalize(args: argparse.Namespace) -> int:
     from gheerefill.agent import Agent
-    from gheerefill.task import parse_task
+    from gheerefill.task import Task
 
     run_dir = Path(args.run_dir).resolve()
     try:
@@ -158,7 +158,14 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     if state.get("phase") == "finalized" and not args.force:
         _err("run was already finalised; use --force to finalise again")
         return 2
-    task = parse_task(task_d, run_dir)
+    try:
+        task = Task.from_dict(task_d)
+    except (KeyError, TypeError) as e:
+        _err(f"invalid task.json in checkpoint: {e}")
+        return 2
+    if not task.repo_path.is_dir():
+        _err(f"repository {task.repo_path} no longer exists; cannot restore into it")
+        return 2
     task_sha = hashlib.sha256(json.dumps(task.to_dict(), sort_keys=True).encode()).hexdigest()
     mismatches = []
     if task_sha != state.get("task_sha256"):

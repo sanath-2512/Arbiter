@@ -44,6 +44,12 @@ class Task:
     limits: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "Task":
+        """Exact inverse of to_dict (used for checkpoint recovery; no alias handling)."""
+        return cls(task_id=str(d["task_id"]), repo_path=Path(d["repo_path"]), issue=d["issue"],
+                   limits=dict(d.get("limits") or {}), metadata=dict(d.get("metadata") or {}))
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "task_id": self.task_id,
@@ -127,24 +133,32 @@ def iter_tasks(stream: IO[str], *, base_dir: Path, source: str = "stdin") -> Ite
             is_single_line_json = True
         except json.JSONDecodeError:
             pass
+    rest_lines = None
     if stripped.startswith("[") or (stripped.startswith("{") and not is_single_line_json):
         text = first_line + stream.read()
         try:
             doc = json.loads(text)
         except json.JSONDecodeError as e:
-            yield TaskInputError(f"{source}", f"malformed JSON document: {e}")
+            if stripped.startswith("[") or "\n{" not in text:
+                yield TaskInputError(f"{source}", f"malformed JSON document: {e}")
+                return
+            # Not a multi-line document: a malformed first line followed by JSON Lines.
+            rest_lines = text.splitlines(keepends=True)
+        else:
+            items = doc if isinstance(doc, list) else [doc]
+            for i, obj in enumerate(items):
+                loc = f"{source}[{i}]"
+                try:
+                    yield parse_task(obj, base_dir)
+                except ValueError as e:
+                    yield TaskInputError(loc, str(e), _task_id_hint(obj))
             return
-        items = doc if isinstance(doc, list) else [doc]
-        for i, obj in enumerate(items):
-            loc = f"{source}[{i}]"
-            try:
-                yield parse_task(obj, base_dir)
-            except ValueError as e:
-                yield TaskInputError(loc, str(e), _task_id_hint(obj))
-        return
     lineno = len(buffered)
 
     def lines():
+        if rest_lines is not None:
+            yield from rest_lines
+            return
         yield first_line
         yield from stream
 

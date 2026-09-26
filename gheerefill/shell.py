@@ -2,7 +2,7 @@
 
 Adapted in spirit from mini-swe-agent's LocalEnvironment (`_run` kills the whole process
 group on timeout; MIT License, (c) 2025 Kilian A. Lieret and Carlos E. Jimenez).
-Differences: output streams to a file (no unbounded memory), an output-size cap, an
+Differences: output is pumped from a pipe into a file (no unbounded memory) with an exact size cap, an
 external cancel check, SIGTERM->SIGKILL escalation, and cleanup of leftover background
 processes in the group after the main process exits. Processes that call setsid()
 escape the group; this is not a sandbox.
@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -96,47 +97,70 @@ def run_shell(
     max_output_bytes: int,
     should_cancel: Callable[[], bool] | None = None,
 ) -> ShellResult:
+    """Run a command in its own process group; stream merged stdout/stderr through a pipe into
+    `output_path`, stopping (and killing the group) once `max_output_bytes` is reached."""
     argv = ["bash", "-c", command] if isinstance(command, str) else list(command)
     t0 = time.monotonic()
-    timed_out = cancelled = limit_hit = False
-    with open(output_path, "wb") as out:
-        proc = subprocess.Popen(
-            argv,
-            cwd=str(cwd),
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=out,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-        pgid = proc.pid
-        deadline = t0 + max(0.1, timeout_s)
-        while True:
+    timed_out = cancelled = False
+    state = {"bytes": 0, "limit_hit": False}
+    proc = subprocess.Popen(
+        argv,
+        cwd=str(cwd),
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    pgid = proc.pid
+
+    def pump() -> None:
+        assert proc.stdout is not None
+        with open(output_path, "wb") as out:
+            while True:
+                chunk = proc.stdout.read1(65536)
+                if not chunk:
+                    return
+                room = max_output_bytes - state["bytes"]
+                if room <= 0:
+                    state["limit_hit"] = True
+                    return
+                out.write(chunk[:room])
+                state["bytes"] += min(len(chunk), room)
+                if len(chunk) > room:
+                    state["limit_hit"] = True
+                    return
+
+    reader = threading.Thread(target=pump, daemon=True)
+    reader.start()
+    deadline = t0 + max(0.1, timeout_s)
+    while True:
+        try:
+            proc.wait(timeout=min(0.1, max(0.01, deadline - time.monotonic())))
+            break
+        except subprocess.TimeoutExpired:
+            pass
+        if time.monotonic() >= deadline:
+            timed_out = True
+        elif should_cancel is not None and should_cancel():
+            cancelled = True
+        if timed_out or cancelled or state["limit_hit"]:
+            _kill_group(pgid)
             try:
-                proc.wait(timeout=min(0.2, max(0.01, deadline - time.monotonic())))
-                break
+                proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 pass
-            if time.monotonic() >= deadline:
-                timed_out = True
-            elif should_cancel is not None and should_cancel():
-                cancelled = True
-            else:
-                try:
-                    if os.path.getsize(output_path) > max_output_bytes:
-                        limit_hit = True
-                except OSError:
-                    pass
-            if timed_out or cancelled or limit_hit:
-                _kill_group(pgid)
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    pass
-                break
-        leftovers = _group_alive(pgid)
-        if leftovers:
-            _kill_group(pgid, grace_s=0.3)
+            break
+    leftovers = _group_alive(pgid)
+    if leftovers:
+        _kill_group(pgid, grace_s=0.3)
+    reader.join(timeout=3)
+    try:
+        if proc.stdout is not None and not reader.is_alive():
+            proc.stdout.close()
+    except OSError:
+        pass
+    limit_hit = state["limit_hit"]
     size = os.path.getsize(output_path) if output_path.exists() else 0
     return ShellResult(
         exit_code=proc.returncode if not (timed_out or cancelled or limit_hit) else None,
