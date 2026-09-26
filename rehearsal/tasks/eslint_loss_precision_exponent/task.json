@@ -1,0 +1,18 @@
+{
+  "task_id": "eslint_loss_precision_exponent",
+  "repo": "eslint",
+  "base_commit": "3782dd458fdfbe492e600d9a54b295a9721ed815",
+  "type": "bug",
+  "size_class": "large",
+  "issue": "`no-loss-of-precision` reports exact numbers written like `0.e5`\n\nThe rule reports number literals whose mantissa ends with a dot right before the exponent, although they do\nnot lose any precision:\n\n```js\nvar a = 0.e5;     // \"This number literal will lose precision at runtime.\"\nvar b = 1.e5;     // reported\nvar c = 42.e0;    // reported\nvar d = 0.e-5;    // reported\n```\n\n`var x = 42.` and `var x = 0e5` are correctly not reported. The same false positive happens with an\nupper-case `E` and with numeric separators (e.g. `12_3.e3_4` with ecmaVersion 2021). Literals that really\nlose precision must still be reported.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "686630eb34ec",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

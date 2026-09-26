@@ -24,7 +24,8 @@ class BoundaryTest(TempDirCase):
             label = R.decode_label(raw)
             public = (d / "task.json").read_text()
             added = [l[1:].strip() for l in label["reference_patch"].splitlines()
-                     if l.startswith("+") and not l.startswith("+++") and len(l.strip()) > 12]
+                     if l.startswith("+") and not l.startswith("+++")]
+            added = [l for l in added if len(l) > 12]  # meaningful lines, not "}" or "return x"
             leaked = [l for l in added if l in public]
             self.assertEqual(leaked, [], f"{d.name}: reference fix lines appear in the public task")
             self.assertTrue(label["verify"]["fail_to_pass"], d.name)
@@ -99,3 +100,80 @@ class OfflineJudgedRunTest(TempDirCase):
         text = R.report([good, empty])
         self.assertIn("| F | 1/1 |", text)
         self.assertIn("not evidence about a real model's capability", text)
+
+
+class ManifestTest(TempDirCase):
+    """The gauntlet and mechanism manifests describe what the lab claims to run."""
+
+    def test_gauntlet_has_the_declared_mix_of_existing_tasks(self):
+        g = json.loads((ROOT / "rehearsal" / "manifests" / "gauntlet.json").read_text())
+        names = [t["task"] for t in g["tasks"]]
+        self.assertEqual(len(names), 20)
+        self.assertEqual(len(set(names)), 20)
+        for t in g["tasks"]:
+            task = json.loads((R.TASKS / t["task"] / "task.json").read_text())
+            self.assertEqual((task["size_class"], task["type"]), (t["complexity"], t["type"]), t["task"])
+        count = lambda key, value: sum(1 for t in g["tasks"] if t[key] == value)  # noqa: E731
+        for size, n in g["mix"]["complexity"].items():
+            self.assertEqual(count("complexity", size), n, size)
+        for kind, n in g["mix"]["type"].items():
+            got = sum(count("type", k) for k in (("build_config", "test_maintenance") if kind == "build_config_test"
+                                                 else (kind,)))
+            self.assertEqual(got, n, kind)
+        kinds = {i["kind"] for i in g["injections"]}
+        self.assertEqual(kinds, {"timeout", "stale_edit", "bad_candidate", "tool_failure", "interrupted_run"})
+        for inj in g["injections"]:
+            self.assertIn(inj["task"], names)
+            if inj.get("policy"):
+                self.assertTrue((ROOT / "rehearsal" / "policies" / f"{inj['policy']}.py").exists(), inj["policy"])
+
+    def test_gauntlet_plan_without_a_key_runs_only_scripted_injections(self):
+        g = json.loads((ROOT / "rehearsal" / "manifests" / "gauntlet.json").read_text())
+        runs, notes = R.gauntlet_plan(g, ["A", "F"], 1, live=False, upstream=None)
+        self.assertTrue(runs)
+        self.assertTrue(all(r["injection"]["mode"] == "scripted" for r in runs))
+        self.assertTrue(any("need the prescribed model" in n for n in notes))
+        live, _ = R.gauntlet_plan(g, ["A", "F"], 2, live=True, upstream="http://127.0.0.1:1")
+        self.assertEqual(sum(1 for r in live if "injection" not in r), 20 * 2 * 2)
+
+    def test_mechanism_scenarios_reference_existing_tasks_and_policies(self):
+        m = json.loads((ROOT / "rehearsal" / "manifests" / "mechanisms.json").read_text())
+        configs = json.loads(R.CONFIGS.read_text())
+        for sc in m["scenarios"]:
+            self.assertTrue((R.TASKS / sc["task"] / "task.json").exists(), sc["id"])
+            self.assertTrue((ROOT / "rehearsal" / "policies" / f"{sc['policy']}.py").exists(), sc["id"])
+            self.assertTrue(set(sc["configs"]) <= set(configs), sc["id"])
+
+    def test_expectations(self):
+        sc = {"expect": {"*": {"solved": True}, "F": {"interventions_min": 1, "after_intervention_max": 0}}}
+        self.assertEqual(R.expectation(sc, "F", {"solved": True, "interventions": 1, "after_intervention": 0}),
+                         (True, []))
+        ok, misses = R.expectation(sc, "F", {"solved": True, "interventions": 0, "after_intervention": 2})
+        self.assertFalse(ok)
+        self.assertEqual(len(misses), 2)
+        self.assertEqual(R.expectation({"expect": {"F": {"solved": True}}}, "A", {"solved": False}), (None, []))
+
+
+class OverlayTest(TempDirCase):
+    def test_layered_overlay_is_deterministic_and_unremarkable(self):
+        src = make_repo(self.tmp / "upstream", CALC)
+        base = git(src, "rev-parse", "HEAD").strip()
+        mirror = self.tmp / "calc.git"
+        subprocess.run(["git", "clone", "-q", "--bare", str(src), str(mirror)], check=True)
+        overlay = {"layers": [
+            {"kind": "vendored_copy", "dest": "legacy/vendor", "src": ["calc/ops.py"]},
+            {"kind": "generated_bulk", "dir": "gen", "files": 250, "mention": "divide", "mention_every": 50},
+            {"kind": "long_line", "path": "assets/index.min.js", "mention": "divide", "bytes": 200_000}]}
+        task = {"task_id": "t", "repo": "calc", "base_commit": base, "history_depth": 5, "overlay": overlay}
+        repo = {"mirror": str(mirror)}
+        a = R.build_base(task, repo, self.tmp / "a")
+        b = R.build_base(task, repo, self.tmp / "b")
+        head = lambda d: git(d, "rev-parse", "HEAD").strip()  # noqa: E731
+        self.assertEqual(head(a), head(b))  # same base for every run and for the judge
+        self.assertNotIn("rehearsal", git(a, "log", "--format=%s", "-1").lower())
+        self.assertEqual((a / "legacy/vendor/calc/ops.py").read_text(), (a / "calc/ops.py").read_text())
+        self.assertEqual(len(list((a / "gen").rglob("*.py"))), 250)
+        self.assertEqual(sum("divide" in p.read_text() for p in (a / "gen").rglob("*.py")), 5)
+        text = (a / "assets/index.min.js").read_text()
+        self.assertNotIn("\n", text)
+        self.assertGreater(len(text), 150_000)

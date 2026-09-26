@@ -1,0 +1,18 @@
+{
+  "task_id": "express_etag_transfer_encoding",
+  "repo": "express",
+  "base_commit": "3ce6d0eb86e9d93529ff3191c6bb5db8ce6e72c8",
+  "type": "regression",
+  "size_class": "medium",
+  "issue": "ETag is no longer generated when a Transfer-Encoding header is set\n\nSince the recent change that stops res.send() from adding Content-Length when a Transfer-Encoding header is\npresent, responses that set Transfer-Encoding no longer get an ETag either:\n\n```js\napp.get('/', function (req, res) {\n  res.set('Transfer-Encoding', 'chunked')\n  res.send('hello, world')\n})\n// response: no ETag header (it had one before), so conditional GETs never get a 304\n```\n\nContent-Length must still be left out when Transfer-Encoding is present, but ETag generation should work as\nit does for any other response.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "9a34acf03cb8",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

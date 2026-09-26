@@ -1,6 +1,223 @@
 {
-  "click": {"url": "https://github.com/pallets/click", "mirror": "pallets__click.git", "language": "python", "size_class": "medium",
-            "env": {"python": "python3.11", "pip": ["pytest"], "install": ["pip install -q -e . --no-deps"]}},
-  "django": {"url": "https://github.com/django/django", "mirror": "django__django.git", "language": "python", "size_class": "very_large",
-             "env": {"python": "python3.12", "pip": ["asgiref>=3.8", "sqlparse>=0.5"], "install": ["pip install -q -e . --no-deps"]}}
+ "click": {
+  "url": "https://github.com/pallets/click",
+  "mirror": "pallets__click.git",
+  "language": "python",
+  "size_class": "medium",
+  "env": {
+   "python": "python3.11",
+   "pip": [
+    "pytest"
+   ],
+   "install": [
+    "pip install -q -e . --no-deps"
+   ]
+  }
+ },
+ "django": {
+  "url": "https://github.com/django/django",
+  "mirror": "django__django.git",
+  "language": "python",
+  "size_class": "very_large",
+  "env": {
+   "python": "python3.12",
+   "pip": [
+    "asgiref>=3.8",
+    "sqlparse>=0.5"
+   ],
+   "install": [
+    "pip install -q -e . --no-deps"
+   ]
+  }
+ },
+ "flask": {
+  "url": "https://github.com/pallets/flask",
+  "mirror": "pallets__flask.git",
+  "language": "python",
+  "size_class": "medium",
+  "env": {
+   "python": "python3.11",
+   "pip": [
+    "pytest",
+    "werkzeug",
+    "jinja2",
+    "itsdangerous",
+    "click",
+    "blinker"
+   ],
+   "install": [
+    "pip install -q -e . --no-deps"
+   ]
+  }
+ },
+ "werkzeug": {
+  "url": "https://github.com/pallets/werkzeug",
+  "mirror": "pallets__werkzeug.git",
+  "language": "python",
+  "size_class": "medium",
+  "env": {
+   "python": "python3.11",
+   "pip": [
+    "pytest",
+    "markupsafe",
+    "watchdog",
+    "ephemeral-port-reserve",
+    "pytest-timeout"
+   ],
+   "install": [
+    "pip install -q -e . --no-deps"
+   ]
+  }
+ },
+ "pytest": {
+  "url": "https://github.com/pytest-dev/pytest",
+  "mirror": "pytest-dev__pytest.git",
+  "language": "python",
+  "size_class": "large",
+  "env": {
+   "python": "python3.12",
+   "pip": [
+    "pluggy>=1.5",
+    "iniconfig",
+    "packaging",
+    "pygments",
+    "hypothesis",
+    "attrs",
+    "xmlschema",
+    "setuptools",
+    "setuptools-scm"
+   ],
+   "install": [
+    "SETUPTOOLS_SCM_PRETEND_VERSION=9.0.0 pip install -q -e . --no-deps"
+   ]
+  },
+  "test_cmd": "python -m pytest -p no:cacheprovider -rA -q --no-header --continue-on-collection-errors {tests}"
+ },
+ "sphinx": {
+  "url": "https://github.com/sphinx-doc/sphinx",
+  "mirror": "sphinx-doc__sphinx.git",
+  "language": "python",
+  "size_class": "large",
+  "env": {
+   "python": "python3.12",
+   "pip": [
+    "pytest",
+    "defusedxml",
+    "docutils>=0.20",
+    "Jinja2>=3.1",
+    "Pygments>=2.17",
+    "snowballstemmer",
+    "babel",
+    "alabaster",
+    "imagesize",
+    "requests",
+    "roman-numerals-py",
+    "packaging",
+    "sphinxcontrib-applehelp",
+    "sphinxcontrib-devhelp",
+    "sphinxcontrib-htmlhelp",
+    "sphinxcontrib-jsmath",
+    "sphinxcontrib-qthelp",
+    "sphinxcontrib-serializinghtml",
+    "typing_extensions",
+    "cython",
+    "setuptools",
+    "psutil",
+    "flit_core"
+   ],
+   "install": [
+    "pip install -q -e . --no-deps --no-build-isolation"
+   ]
+  }
+ },
+ "sympy": {
+  "url": "https://github.com/sympy/sympy",
+  "mirror": "sympy__sympy.git",
+  "language": "python",
+  "size_class": "large",
+  "env": {
+   "python": "python3.12",
+   "pip": [
+    "pytest",
+    "mpmath>=1.1",
+    "hypothesis"
+   ],
+   "install": [
+    "pip install -q -e . --no-deps"
+   ]
+  }
+ },
+ "ansible": {
+  "url": "https://github.com/ansible/ansible",
+  "mirror": "ansible__ansible.git",
+  "language": "python",
+  "size_class": "very_large",
+  "env": {
+   "python": "python3.13",
+   "pip": [
+    "pytest",
+    "pytest-mock",
+    "jinja2>=3.1",
+    "PyYAML>=5.1",
+    "cryptography",
+    "packaging",
+    "resolvelib",
+    "passlib"
+   ],
+   "install": [
+    "pip install -q -e . --no-deps"
+   ]
+  }
+ },
+ "cobra": {
+  "url": "https://github.com/spf13/cobra",
+  "mirror": "spf13__cobra.git",
+  "language": "go",
+  "size_class": "small",
+  "env": {}
+ },
+ "hugo": {
+  "url": "https://github.com/gohugoio/hugo",
+  "mirror": "gohugoio__hugo.git",
+  "language": "go",
+  "size_class": "large",
+  "env": {}
+ },
+ "express": {
+  "url": "https://github.com/expressjs/express",
+  "mirror": "expressjs__express.git",
+  "language": "javascript",
+  "size_class": "medium",
+  "env": {
+   "node_modules_cache": true
+  },
+  "test_cmd": "npx mocha --require test/support/env --reporter json --check-leaks {tests}"
+ },
+ "eslint": {
+  "url": "https://github.com/eslint/eslint",
+  "mirror": "eslint__eslint.git",
+  "language": "javascript",
+  "size_class": "large",
+  "env": {
+   "node_modules_cache": true
+  },
+  "test_cmd": "npx mocha --reporter json {tests}"
+ },
+ "dotenv": {
+  "url": "https://github.com/theskumar/python-dotenv",
+  "mirror": "theskumar__python-dotenv.git",
+  "language": "python",
+  "size_class": "small",
+  "env": {
+   "python": "python3.11",
+   "pip": [
+    "pytest",
+    "click",
+    "sh"
+   ],
+   "install": [
+    "pip install -q -e . --no-deps"
+   ]
+  }
+ }
 }

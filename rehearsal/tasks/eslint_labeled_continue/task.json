@@ -1,0 +1,18 @@
+{
+  "task_id": "eslint_labeled_continue",
+  "repo": "eslint",
+  "base_commit": "b684bb1cd7e6be03ad1b7a951baead936d9c2166",
+  "type": "feature",
+  "size_class": "large",
+  "issue": "no-unsafe-finally should also report a labeled `continue` that leaves the finally block\n\n`no-unsafe-finally` reports control-flow statements that jump out of a `finally` block (`return`,\n`throw`, `break`, and `break label` when the label is outside the block). A labeled `continue` that\ntargets a loop outside the `finally` block is not reported, although it discards a pending `return` or\nexception in exactly the same way:\n\n```js\nvar foo = function() { a: while (true) try {} finally { while (true) continue a; } }\n```\n\nExpected: one `unsafeUsage` error, \"Unsafe usage of ContinueStatement.\", located on `continue a;`.\n\nThese must stay valid: an unlabeled `continue` inside a loop nested in the `finally` block, and a\nlabeled `continue` whose target loop is itself inside the `finally` block, e.g.\n`var foo = function() { try { return 1; } finally { a: while (true) { while (true) continue a; } } }`.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "397b3b8134b8",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
+import fcntl
 import gzip
 import json
 import math
@@ -93,8 +95,9 @@ def all_tasks(names: list[str] | None = None) -> list[dict]:
 
 
 # ----------------------------------------------------------------------------- git / repositories
-def git(cwd: Path, *args: str, check: bool = True, input: bytes | None = None) -> subprocess.CompletedProcess:
-    p = subprocess.run(["git", *args], cwd=cwd, env=GIT_ENV, capture_output=True, input=input)
+def git(cwd: Path, *args: str, check: bool = True, input: bytes | None = None,
+        env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    p = subprocess.run(["git", *args], cwd=cwd, env={**GIT_ENV, **(env or {})}, capture_output=True, input=input)
     if check and p.returncode != 0:
         raise RuntimeError(f"git {' '.join(args[:3])} failed in {cwd}: {p.stderr.decode(errors='replace')[:400]}")
     return p
@@ -121,35 +124,79 @@ def build_base(task: dict, repo: dict, dest: Path) -> Path:
     if task.get("overlay"):
         apply_overlay(dest, task["overlay"])
         git(dest, "add", "-A")
-        git(dest, "commit", "-q", "-m", f"rehearsal overlay: {task['overlay']['kind']}")
+        # deterministic and unremarkable: dated like the base commit, neutral message, so the base
+        # (and therefore the exported patch's context) is identical for every run and the judge
+        when = git(dest, "show", "-s", "--format=%cI", "HEAD").stdout.decode().strip()
+        git(dest, "commit", "-q", "-m", task["overlay"].get("message", "Import generated and vendored assets"),
+            env={"GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when})
     return dest
 
 
+def overlay_layers(overlay: dict) -> list[dict]:
+    return overlay["layers"] if "layers" in overlay else [overlay]
+
+
 def apply_overlay(repo_dir: Path, overlay: dict) -> None:
-    """Pathological conditions layered on a real repository (committed into the base)."""
-    kind = overlay["kind"]
-    if kind == "generated_bulk":  # a large generated/vendored tree the agent must not drown in
-        gen = repo_dir / overlay.get("dir", "generated")
-        for i in range(int(overlay.get("files", 3000))):
-            p = gen / f"pkg{i // 100:02d}" / f"gen_{i:05d}.py"
+    """Pathological conditions layered on a real repository (committed into the base).
+
+    Layers (`{"layers": [...]}` or a single layer):
+      generated_bulk  many generated files; every `mention_every`-th one mentions `mention` (grep noise)
+      long_line       one file that is a single line of `bytes` bytes mentioning `mention` (minified asset)
+      vendored_copy   copies of real source files under another directory (a decoy definition to edit)
+      huge_output     a test module that prints megabytes (content given)
+      files           literal files
+    """
+    for layer in overlay_layers(overlay):
+        kind = layer["kind"]
+        if kind == "generated_bulk":
+            gen = repo_dir / layer.get("dir", "generated")
+            mention, every = layer.get("mention"), int(layer.get("mention_every", 0) or 0)
+            ext = layer.get("ext", ".py")
+            for i in range(int(layer.get("files", 3000))):
+                p = gen / f"pkg{i // 100:03d}" / f"gen_{i:05d}{ext}"
+                p.parent.mkdir(parents=True, exist_ok=True)
+                note = f"# snapshot of {mention} usage, record {i}\n" if mention and every and i % every == 0 else ""
+                p.write_text(f"# generated file {i}: do not edit\n{note}VALUE_{i} = {i}\n" + "X = 1\n" * 40)
+        elif kind == "long_line":
+            p = repo_dir / layer["path"]
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(f"# generated file {i}: do not edit\nVALUE_{i} = {i}\n" + "X = 1\n" * 40)
-    elif kind == "huge_output":  # a test module that prints megabytes before the real failures
-        p = repo_dir / overlay["path"]
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(overlay["content"])
-    elif kind == "files":
-        for rel, content in overlay["files"].items():
-            p = repo_dir / rel
+            unit = f'{{"k":"{layer.get("mention", "x")}","v":"' + "a" * 200 + '"},'
+            n = max(1, int(layer.get("bytes", 2_000_000)) // len(unit))
+            p.write_text("[" + unit * n + "{}]")  # no newline anywhere: one enormous line
+        elif kind == "vendored_copy":
+            for rel in layer["src"]:
+                target = repo_dir / layer["dest"] / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(repo_dir / rel, target)
+        elif kind in ("huge_output",):
+            p = repo_dir / layer["path"]
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(content)
-    else:
-        raise ValueError(f"unknown overlay {kind}")
+            p.write_text(layer["content"])
+        elif kind == "files":
+            for rel, content in layer["files"].items():
+                p = repo_dir / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(content)
+        else:
+            raise ValueError(f"unknown overlay {kind}")
 
 
 # ----------------------------------------------------------------------------- environments
 def env_dir(key: str, repo: dict) -> Path:
     return ENVS / key
+
+
+@contextlib.contextmanager
+def env_lock(key: str):
+    """Runs of one repository share its toolchain, and an editable install points at one checkout at a
+    time. Hold this for a whole run (setup, harness, judge) so parallel runs never test another checkout."""
+    ENVS.mkdir(parents=True, exist_ok=True)
+    with open(ENVS / f".{key}.lock", "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
 
 
 def ensure_env(key: str, repo: dict) -> dict[str, str]:
@@ -159,12 +206,19 @@ def ensure_env(key: str, repo: dict) -> dict[str, str]:
     if repo["language"] == "python" and not spec.get("system_python"):
         d = env_dir(key, repo)
         py = d / "bin" / "python"
+        stamp = d / ".rehearsal-env.json"
+        want = json.dumps({"python": spec.get("python", "python3"), "pip": spec.get("pip", [])}, sort_keys=True)
+        if py.exists() and (not stamp.exists() or stamp.read_text() != want):
+            shutil.rmtree(d)  # the manifest's toolchain changed: rebuild rather than run against a stale one
         if not py.exists():
-            base = shutil.which(spec.get("python", "python3")) or sys.executable
+            base = shutil.which(spec.get("python", "python3"))
+            if base is None:
+                raise RuntimeError(f"{key}: interpreter {spec.get('python')} not found")
             subprocess.run([base, "-m", "venv", str(d)], check=True)
             if spec.get("pip"):
                 subprocess.run([str(py), "-m", "pip", "install", "-q", "--disable-pip-version-check",
                                 *spec["pip"]], check=True)
+            stamp.write_text(want)
         env["PATH_PREPEND"] = str(d / "bin")
         env["VIRTUAL_ENV"] = str(d)
     return env
@@ -180,8 +234,9 @@ def prepare_repo(repo_dir: Path, repo: dict, tool_env: dict[str, str], log) -> f
             raise RuntimeError(f"install step failed: {cmd}: {p.stderr[-600:]}")
     if repo.get("env", {}).get("node_modules_cache"):
         cache = ENVS / f"{repo['mirror']}-node_modules-{git(repo_dir, 'rev-parse', 'HEAD').stdout.decode()[:12]}"
-        if not cache.exists():
-            subprocess.run(["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"], cwd=repo_dir, env=tool_env,
+        if not cache.exists():  # without a lockfile, versions resolve at first install and are then cached
+            npm = ["npm", "ci"] if (repo_dir / "package-lock.json").exists() else ["npm", "install", "--no-package-lock"]
+            subprocess.run([*npm, "--ignore-scripts", "--no-audit", "--no-fund"], cwd=repo_dir, env=tool_env,
                            check=True, capture_output=True, timeout=1800)
             shutil.copytree(repo_dir / "node_modules", cache, symlinks=True)
         elif not (repo_dir / "node_modules").exists():
@@ -335,8 +390,11 @@ def harness_python() -> str:
 
 
 def harness_commit() -> str:
+    """The runtime's version: commit, plus "+dirty" when the runtime itself has uncommitted changes."""
     p = subprocess.run(["git", "rev-parse", "--short=12", "HEAD"], cwd=ROOT, capture_output=True, text=True)
-    return p.stdout.strip() or "unknown"
+    d = subprocess.run(["git", "status", "--porcelain", "--", "gheerefill", "profiles", "Makefile", "scripts/py.sh"],
+                       cwd=ROOT, capture_output=True, text=True)
+    return (p.stdout.strip() or "unknown") + ("+dirty" if d.stdout.strip() else "")
 
 
 def audit(run_dir: Path) -> list[str]:
@@ -354,6 +412,14 @@ def final_state_patch(run_dir: Path, base_tree: str, tree: str) -> bytes:
     p = subprocess.run(["git", "--git-dir", str(run_dir / "shadow.git"), "diff", "--binary", "--full-index",
                         "--no-renames", "--no-ext-diff", base_tree, tree], capture_output=True, env=GIT_ENV)
     return p.stdout
+
+
+def redact_tail(path: Path, secret: str | None, n: int = 1500) -> str:
+    try:
+        text = path.read_text(errors="replace")[-n:]
+    except OSError:
+        return ""
+    return text.replace(secret, "[REDACTED]") if secret else text
 
 
 def classify_failure(rec: dict) -> str:
@@ -383,9 +449,15 @@ def classify_failure(rec: dict) -> str:
     return "hidden_tests_fail"
 
 
-def run_one(task: dict, config: str, *, repeat: int = 0, policy: str | None = None, faults: list | None = None,
-            sig: tuple[str, float] | None = None, key_env: str | None = None, profile: Path | None = None,
-            log=print) -> dict[str, Any]:
+def run_one(task: dict, config: str, **kw: Any) -> dict[str, Any]:
+    with env_lock(task["repo"]):
+        return _run_one(task, config, **kw)
+
+
+def _run_one(task: dict, config: str, *, repeat: int = 0, policy: str | None = None, faults: list | None = None,
+             sig: tuple[str, float] | None = None, key_env: str | None = None, profile: Path | None = None,
+             limits_override: dict | None = None, upstream: str | None = None, injection: str | None = None,
+             key_mode: str | None = None, log=print) -> dict[str, Any]:
     manifest = load_json(MANIFEST)
     repo = manifest[task["repo"]]
     configs = load_json(CONFIGS)
@@ -400,7 +472,7 @@ def run_one(task: dict, config: str, *, repeat: int = 0, policy: str | None = No
     tenv = tool_environment(env_extra)
     prep_s = prepare_repo(repo_dir, repo, tenv, log)
     setup_s = time.monotonic() - t_setup
-    limits = task.get("limits", {})
+    limits = {**task.get("limits", {}), **(limits_override or {})}
     model = None
     servers = []
     hen = dict(tenv)
@@ -414,13 +486,14 @@ def run_one(task: dict, config: str, *, repeat: int = 0, policy: str | None = No
         model = {"provider": "openai_chat", "name": "scripted-policy", "base_url": srv.base_url,
                  "max_tokens_field": "max_tokens"}
         hen["AI_API_KEY"] = "sk-scripted-policy-not-a-key"
+        if key_mode == "missing":
+            hen.pop("AI_API_KEY")
     else:
         key_name = key_env or "AI_API_KEY"
         if not os.environ.get(key_name):
             raise SystemExit(f"{key_name} is not set: live rehearsal runs need the prescribed model's key "
                              "(or use --policy for a scripted mechanism rehearsal)")
         hen["AI_API_KEY"] = os.environ[key_name]
-        upstream = None
     if faults:
         from scripts.fault_proxy import FaultProxy  # noqa: PLC0415
 
@@ -475,7 +548,9 @@ def run_one(task: dict, config: str, *, repeat: int = 0, policy: str | None = No
         "repo_url": repo["url"], "base_commit": task["base_commit"], "type": task["type"],
         "size_class": task["size_class"], "config": config, "repeat": repeat,
         "model_kind": "scripted-policy" if policy else "live", "policy": policy, "faults": faults or [],
-        "signal": f"{sig[0]}@{sig[1]}" if sig else None, "harness_version": harness_commit(),
+        "signal": f"{sig[0]}@{sig[1]}" if sig else None, "injection": injection, "key_mode": key_mode,
+        "exit_code": proc.returncode, "stderr_tail": redact_tail(work / "harness.stderr", hen.get("AI_API_KEY")),
+        "harness_version": harness_commit(),
         "limits": limits, "setup_s": round(setup_s, 2), "prepare_s": round(prep_s, 2), "wall_s": round(wall, 2),
         "harness_timeout": harness_timeout, "recovered_offline": recovered, "result": None,
     }
@@ -495,6 +570,9 @@ def run_one(task: dict, config: str, *, repeat: int = 0, policy: str | None = No
             "candidate_restored": not (result.get("selected_candidate") or {}).get("is_final_state", True),
             "patch_bytes": d.get("patch_bytes"), "harness_reconstruction": d.get("reconstruction_verified"),
             "audit": audit(run_dir) if run_dir.exists() else [],
+            "advisory_count": max([len(a.get("advisory") or []) for a in (result.get("proof") or {}).get("attempts")
+                                   or []] or [0]),
+            "run_dir": str(run_dir),
         })
         patch = Path(d["patch_path"]).read_bytes() if d.get("patch_path") and Path(d["patch_path"]).exists() else b""
         log(f"[{rid}] harness: {result.get('status')} / {result.get('termination')} / proof "
@@ -515,10 +593,159 @@ def run_one(task: dict, config: str, *, repeat: int = 0, policy: str | None = No
     return rec
 
 
+# ----------------------------------------------------------------------------- gauntlet
+GAUNTLET = ROOT / "rehearsal" / "manifests" / "gauntlet.json"
+
+
+def parse_signal(text: str | None) -> tuple[str, float] | None:
+    if not text:
+        return None
+    kind, _, t = text.partition("@")
+    return kind.upper(), float(t)
+
+
+def gauntlet_plan(manifest: dict, configs: list[str], repeats: int, *, live: bool, upstream: str | None,
+                  only: str | None = None) -> tuple[list[dict], list[str]]:
+    """Expand the gauntlet manifest into runs: every task clean under every config (live model only),
+    then each injection under every config. Returns (runs, notes about what cannot run here)."""
+    runs: list[dict] = []
+    notes: list[str] = []
+    if only in (None, "clean"):
+        if live:
+            for rep in range(repeats):
+                runs += [{"task": t["task"], "config": c, "repeat": rep} for t in manifest["tasks"] for c in configs]
+        else:
+            notes.append("clean runs skipped: they need the prescribed model (AI_API_KEY)")
+    if only in (None, "injections"):
+        for inj in manifest["injections"]:
+            if inj["mode"] == "live" and not live:
+                notes.append(f"injection {inj['id']} skipped: needs the prescribed model")
+                continue
+            if inj.get("faults") and upstream is None:
+                notes.append(f"injection {inj['id']} skipped: fault injection needs --upstream (provider root URL)")
+                continue
+            runs += [{"task": inj["task"], "config": c, "repeat": 0, "injection": inj} for c in configs]
+    return runs, notes
+
+
+# ----------------------------------------------------------------------------- mechanism rehearsals
+MECHANISMS = ROOT / "rehearsal" / "manifests" / "mechanisms.json"
+
+
+def transcript(run_dir: Path) -> list[dict]:
+    p = run_dir / "transcript.jsonl"
+    if not p.exists():
+        return []
+    out = []
+    for line in p.read_text(errors="replace").splitlines():
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            pass
+    return out
+
+
+def scenario_checks(sc: dict, rec: dict) -> dict[str, Any]:
+    """Observable facts about one scripted run, compared against the scenario's expectations."""
+    prog = (rec.get("result") or {}).get("progress") or {}
+    c: dict[str, Any] = {
+        "solved": bool(rec.get("solved")), "artifact_valid": bool(rec.get("artifact_valid")),
+        "restored": bool(rec.get("candidate_restored")), "recovered_offline": bool(rec.get("recovered_offline")),
+        "interventions": prog.get("interventions", 0), "before_intervention": prog.get("before_intervention", 0),
+        "after_intervention": prog.get("after_intervention", 0), "advisory": rec.get("advisory_count") or 0,
+        "fails_fast": (not rec.get("solved") and float(rec.get("wall_s") or 1e9) < 90
+                       and (rec.get("requests") or 0) <= 1 and (rec.get("exit_code") or 0) != 0
+                       and "Traceback" not in (rec.get("stderr_tail") or "")),
+    }
+    if sc["id"] == "stale_edit" and rec.get("run_dir"):
+        tools = [e for e in transcript(Path(rec["run_dir"])) if e.get("role") == "tool"]
+        idx = next((i for i, e in enumerate(tools) if "old_str not found" in str(e.get("content"))), None)
+        c["stale_edit_refused"] = idx is not None and "it reads exactly" in str(tools[idx].get("content"))
+        c["recovered_from_hint"] = (idx is not None and idx + 1 < len(tools)
+                                    and not str(tools[idx + 1].get("content")).startswith("Error"))
+    return c
+
+
+def expectation(sc: dict, config: str, checks: dict) -> tuple[bool | None, list[str]]:
+    exp = {**sc.get("expect", {}).get("*", {}), **sc.get("expect", {}).get(config, {})}
+    if not exp:
+        return None, []
+    misses = []
+    for k, v in exp.items():
+        if k.endswith("_min"):
+            ok = (checks.get(k[:-4]) or 0) >= v
+        elif k.endswith("_max"):
+            ok = (checks.get(k[:-4]) or 0) <= v
+        else:
+            ok = checks.get(k) == v
+        if not ok:
+            misses.append(f"{k}={v} (observed {checks.get(k[:-4] if k.endswith(('_min', '_max')) else k)})")
+    return not misses, misses
+
+
+def mechanisms(manifest: dict, only: list[str] | None, configs: list[str] | None, out: Path, log=print) -> list[dict]:
+    recs = []
+    for sc in manifest["scenarios"]:
+        if only and sc["id"] not in only:
+            continue
+        for cfg in configs or sc["configs"]:
+            rec = run_one(load_task(TASKS / sc["task"]), cfg, policy=sc["policy"], faults=sc.get("faults"),
+                          sig=parse_signal(sc.get("signal")), limits_override=sc.get("limits"),
+                          key_mode=sc.get("key_mode"), injection=sc["id"], log=log)
+            rec["scenario"] = sc["id"]
+            rec["checks"] = scenario_checks(sc, rec)
+            rec["expectation_met"], rec["expectation_misses"] = expectation(sc, cfg, rec["checks"])
+            recs.append(rec)
+            with open(out / "results.jsonl", "a") as fh:
+                fh.write(json.dumps(rec, default=str) + "\n")
+            log(f"[{sc['id']}/{cfg}] expectation: {rec['expectation_met']} {rec['expectation_misses']}")
+    return recs
+
+
+def mechanisms_report(manifest: dict, recs: list[dict]) -> str:
+    lines = ["# Mechanism rehearsals (scripted policies on real repositories)", "",
+             "> " + manifest["about"], "",
+             f"Harness {', '.join(sorted({r['harness_version'] for r in recs}))} · {len(recs)} judged runs · "
+             f"expectations met: {sum(r['expectation_met'] is True for r in recs)}/"
+             f"{sum(r['expectation_met'] is not None for r in recs)}", ""]
+    for sc in manifest["scenarios"]:
+        rs = [r for r in recs if r.get("scenario") == sc["id"]]
+        if not rs:
+            continue
+        lines += [f"## {sc['id']} — {sc['task']}", "", sc["question"], "",
+                  "| config | judged solved | valid artifact | failure class | restored | recovery | interventions "
+                  "| fails before / after | advisory | attempts | requests | wall s | expectation |",
+                  "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+        for r in rs:
+            c = r["checks"]
+            exp = {True: "met", False: "MISSED: " + "; ".join(r["expectation_misses"]), None: "-"}[r["expectation_met"]]
+            lines.append(f"| {r['config']} | {'yes' if c['solved'] else 'no'} | {'yes' if c['artifact_valid'] else 'no'} "
+                         f"| {r['failure_class']} | {'yes' if c['restored'] else 'no'} | {r.get('recovery', '-')} | "
+                         f"{c['interventions']} | {c['before_intervention']} / {c['after_intervention']} | "
+                         f"{c['advisory']} | {r.get('attempts')} | {r.get('requests')} | {r.get('wall_s')} | {exp} |")
+        extra = sorted({k for r in rs for k in r["checks"]} - {"solved", "artifact_valid", "restored",
+                                                                "recovered_offline", "interventions",
+                                                                "before_intervention", "after_intervention",
+                                                                "advisory", "fails_fast"})
+        if extra or any(r["checks"].get("fails_fast") or r["checks"].get("recovered_offline") for r in rs):
+            for r in rs:
+                facts = {k: r["checks"][k] for k in extra + ["fails_fast", "recovered_offline"] if k in r["checks"]}
+                lines.append(f"\n`{r['config']}`: " + ", ".join(f"{k}={v}" for k, v in facts.items())
+                             + (f"; exit code {r.get('exit_code')}" if r.get("result") is None else ""))
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
 # ----------------------------------------------------------------------------- validation
-def validate(tasks: list[dict], log=print) -> list[dict]:
+def validate(tasks: list[dict], log=print, jobs: int = 1) -> list[dict]:
     """A task is sound when the hidden tests fail on the base, pass with the reference fix, and the
-    reference patch applies to a clean base."""
+    reference patch applies to a clean base. Tasks of different repositories may run in parallel."""
+    if jobs > 1:
+        from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
+
+        with ThreadPoolExecutor(jobs) as ex:
+            rows = list(ex.map(lambda t: validate([t], log)[0], tasks))
+        return rows
     manifest = load_json(MANIFEST)
     out = []
     for task in tasks:
@@ -527,6 +754,8 @@ def validate(tasks: list[dict], log=print) -> list[dict]:
         work = WORK / f"validate-{task['task_id']}-{uuid.uuid4().hex[:6]}"
         row: dict[str, Any] = {"task_id": task["task_id"], "ok": False}
         try:
+            lock = env_lock(task["repo"])
+            lock.__enter__()
             tenv = tool_environment(ensure_env(task["repo"], repo))
             base = build_base(task, repo, work / "base")
             prepare_repo(base, repo, tenv, log)
@@ -547,6 +776,7 @@ def validate(tasks: list[dict], log=print) -> list[dict]:
         except Exception as e:  # noqa: BLE001
             row["error"] = f"{type(e).__name__}: {e}"
         finally:
+            lock.__exit__(None, None, None)
             shutil.rmtree(work, ignore_errors=True)
         log(f"{task['task_id']:<28} {'OK ' if row['ok'] else 'BAD'} "
             + json.dumps({k: row.get(k) for k in ("f2p_fail_on_base", "p2p_pass_on_base", "reference_solves", "f2p",
@@ -664,6 +894,7 @@ def main() -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     v = sub.add_parser("validate")
     v.add_argument("--tasks")
+    v.add_argument("--jobs", type=int, default=1)
     r = sub.add_parser("run")
     r.add_argument("--task", required=True)
     r.add_argument("--config", default="F")
@@ -673,13 +904,27 @@ def main() -> int:
     r.add_argument("--repeat", type=int, default=0)
     r.add_argument("--profile", help="base profile (default: profiles/default.toml)")
     r.add_argument("--out", default=None)
-    g = sub.add_parser("gauntlet")
+    r.add_argument("--upstream", help="provider root URL the fault proxy forwards to (live runs with --faults)")
+    g = sub.add_parser("gauntlet", help="the Judge Gauntlet (rehearsal/manifests/gauntlet.json)")
     g.add_argument("--configs", default="A,F")
-    g.add_argument("--tasks")
     g.add_argument("--repeats", type=int, default=1)
-    g.add_argument("--policy")
+    g.add_argument("--only", choices=("clean", "injections"))
+    g.add_argument("--upstream", help="provider root URL for the tool-failure injection's fault proxy")
+    g.add_argument("--manifest", default=str(GAUNTLET))
     g.add_argument("--profile")
     g.add_argument("--out", default=None)
+    g.add_argument("--dry-run", action="store_true", help="print the run plan and exit")
+    mch = sub.add_parser("mechanisms", help="scripted mechanism rehearsals (rehearsal/manifests/mechanisms.json)")
+    mch.add_argument("--scenarios")
+    mch.add_argument("--configs")
+    mch.add_argument("--out", default=None)
+    mch.add_argument("--report", help="only render the report of an existing results.jsonl")
+    b = sub.add_parser("base", help="build a task's clean base checkout (no labels) at --dest")
+    b.add_argument("--task", required=True)
+    b.add_argument("--dest", required=True)
+    jp = sub.add_parser("judge-patch", help="judge any patch file on a fresh clean base with the hidden tests")
+    jp.add_argument("--task", required=True)
+    jp.add_argument("--patch", required=True)
     sub.add_parser("localize").add_argument("--tasks")
     rep = sub.add_parser("report")
     rep.add_argument("results")
@@ -687,7 +932,7 @@ def main() -> int:
     names = args.tasks.split(",") if getattr(args, "tasks", None) else None
     RESULTS.mkdir(parents=True, exist_ok=True)
     if args.cmd == "validate":
-        rows = validate(all_tasks(names))
+        rows = validate(all_tasks(names), jobs=args.jobs)
         (RESULTS / "validation.json").write_text(json.dumps(rows, indent=2) + "\n")
         print(f"{sum(r['ok'] for r in rows)}/{len(rows)} tasks valid")
         return 0 if all(r["ok"] for r in rows) else 1
@@ -703,30 +948,62 @@ def main() -> int:
         recs = [json.loads(l) for l in Path(args.results).read_text().splitlines() if l.strip()]
         print(report(recs))
         return 0
+    if args.cmd == "base":
+        task = load_task(TASKS / args.task)
+        dest = build_base(task, load_json(MANIFEST)[task["repo"]], Path(args.dest))
+        print(dest)
+        return 0
+    if args.cmd == "judge-patch":
+        task = load_task(TASKS / args.task)
+        repo = load_json(MANIFEST)[task["repo"]]
+        work = WORK / f"judge-{task['task_id']}-{uuid.uuid4().hex[:6]}"
+        with env_lock(task["repo"]):
+            j = judge(task, repo, read_label(task["dir"]), Path(args.patch).read_bytes(), work,
+                      lambda m: print(m, file=sys.stderr))
+        shutil.rmtree(work, ignore_errors=True)
+        print(json.dumps({k: j.get(k) for k in ("artifact_valid", "solved", "p2p_failed", "empty_patch", "reason")}))
+        return 0 if j.get("solved") else 1
+    if args.cmd == "mechanisms":
+        manifest = load_json(MECHANISMS)
+        if args.report:
+            recs = [json.loads(l) for l in Path(args.report).read_text().splitlines() if l.strip()]
+        else:
+            out = Path(args.out or RESULTS / "runs" / ("mechanisms-" + time.strftime("%Y%m%dT%H%M%S", time.gmtime())))
+            out.mkdir(parents=True, exist_ok=True)
+            recs = mechanisms(manifest, args.scenarios.split(",") if args.scenarios else None,
+                              args.configs.split(",") if args.configs else None, out)
+            (out / "report.md").write_text(mechanisms_report(manifest, recs))
+        print(mechanisms_report(manifest, recs))
+        return 0 if all(r["expectation_met"] is not False for r in recs) else 1
+    profile = Path(args.profile) if getattr(args, "profile", None) else None
+    if args.cmd == "gauntlet":
+        manifest = load_json(Path(args.manifest))
+        runs, notes = gauntlet_plan(manifest, [c.strip() for c in args.configs.split(",")], args.repeats,
+                                    live=bool(os.environ.get("AI_API_KEY")), upstream=args.upstream, only=args.only)
+        for n in notes:
+            print("note:", n)
+        if args.dry_run or not runs:
+            for r_ in runs:
+                print(r_["task"], r_["config"], (r_.get("injection") or {}).get("id", "clean"))
+            return 0
     out = Path(args.out or RESULTS / "runs" / time.strftime("%Y%m%dT%H%M%S", time.gmtime()))
     out.mkdir(parents=True, exist_ok=True)
-    sig = None
-    if getattr(args, "signal", None):
-        kind, _, t = args.signal.partition("@")
-        sig = (kind.upper(), float(t))
-    faults = json.loads(args.faults) if getattr(args, "faults", None) else None
+    recs = []
     if args.cmd == "run":
-        task = load_task(Path(args.task))
-        recs = [run_one(task, args.config, repeat=args.repeat, policy=args.policy, faults=faults, sig=sig,
-                        profile=Path(args.profile) if args.profile else None)]
-    else:
-        recs = []
-        tasks = all_tasks(names)
-        for rep_i in range(args.repeats):
-            for task in tasks:
-                for c in args.configs.split(","):
-                    recs.append(run_one(task, c.strip(), repeat=rep_i, policy=args.policy,
-                                        profile=Path(args.profile) if args.profile else None))
-                    with open(out / "results.jsonl", "a") as fh:
-                        fh.write(json.dumps(recs[-1], default=str) + "\n")
-    if args.cmd == "run":
+        faults = json.loads(args.faults) if args.faults else None
+        recs.append(run_one(load_task(Path(args.task)), args.config, repeat=args.repeat, policy=args.policy,
+                            faults=faults, sig=parse_signal(args.signal), profile=profile, upstream=args.upstream))
         with open(out / "results.jsonl", "a") as fh:
             fh.write(json.dumps(recs[-1], default=str) + "\n")
+    else:
+        for r_ in runs:
+            inj = r_.get("injection") or {}
+            recs.append(run_one(load_task(TASKS / r_["task"]), r_["config"], repeat=r_["repeat"],
+                                policy=inj.get("policy"), faults=inj.get("faults"), sig=parse_signal(inj.get("signal")),
+                                limits_override=inj.get("limits"), upstream=args.upstream,
+                                injection=inj.get("id"), profile=profile))
+            with open(out / "results.jsonl", "a") as fh:
+                fh.write(json.dumps(recs[-1], default=str) + "\n")
     text = report(recs)
     (out / "report.md").write_text(text)
     print(text)

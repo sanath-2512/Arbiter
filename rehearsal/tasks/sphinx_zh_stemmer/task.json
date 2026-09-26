@@ -1,0 +1,18 @@
+{
+  "task_id": "sphinx_zh_stemmer",
+  "repo": "sphinx",
+  "base_commit": "c1b618c559e6de70e5198ed6876f5b9fab88face",
+  "type": "build_config",
+  "size_class": "large",
+  "issue": "HTML build for Chinese (language = 'zh') ships a broken search stemmer\n\nBuilding HTML docs with `language = 'zh'` produces `_static/language_data.js` that ends with\n\n    window.Stemmer = ChineseStemmer;\n\nbut the stemmer code bundled into that file is `english-stemmer.js`, which defines `EnglishStemmer`;\nthere is no `ChineseStemmer` anywhere. In the browser this raises a `ReferenceError` when\n`language_data.js` loads, and search on the built site does not work.\n\nThe line is produced by `IndexBuilder.get_js_stemmer_code()`, which builds the class name from the\nlanguage's display name. Languages that reuse another language's stemmer file get the wrong name. The\ngenerated code should assign the class that the bundled stemmer file actually defines (for example\n`english-stemmer.js` defines `EnglishStemmer`, `dutch_porter-stemmer.js` defines `DutchPorterStemmer`).\nOutput for languages whose stemmer matches their name must not change.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "9af5b469df42",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

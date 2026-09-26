@@ -1,0 +1,18 @@
+{
+  "task_id": "ansible_freebsd_jail_facts",
+  "repo": "ansible",
+  "base_commit": "1a4c6636245e72e64422f3e83e264f32c304fb65",
+  "type": "regression",
+  "size_class": "very_large",
+  "issue": "FreeBSD jails on a bhyve host are reported as the bhyve hypervisor\n\nSince bhyve host detection was added to the FreeBSD virtualization facts, gathering facts inside a FreeBSD\njail whose host runs bhyve (vmm.ko loaded on the host) reports\n\n    ansible_virtualization_type: bhyve\n    ansible_virtualization_role: host\n\nThe same jail used to be reported as `jails` / `guest`, and our roles rely on that to recognise jails. Note\nthat a jail shares the host's kernel, so it sees the host's loaded kernel modules. A bare-metal bhyve host\nmust still be reported as `bhyve` / `host`.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "f61e7c515d9c",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

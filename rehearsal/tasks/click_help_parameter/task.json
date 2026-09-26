@@ -1,0 +1,21 @@
+{
+  "task_id": "click_help_parameter",
+  "repo": "click",
+  "base_commit": "86949d19b930ef68a45566544cb4b9508d895d0d",
+  "type": "refactor",
+  "size_class": "medium",
+  "issue": "Move `help` handling from Option and Argument into Parameter\n\n`Option` and `Argument` each implement their own copy of the `help` handling: dedenting the text with\n`inspect.cleandoc`, appending the deprecation label (`(DEPRECATED)` or `(DEPRECATED: <message>)`) and\nreporting it from `to_info_dict()`. The two copies are easy to let drift apart, and custom `Parameter`\nsubclasses cannot use them at all: `Parameter.__init__` does not accept `help`.\n\nPlease move this into `Parameter`: it should accept a `help` keyword, dedent it, add the deprecation label\nwhen the parameter is deprecated, store it as `self.help`, and `Parameter.to_info_dict()` should report\nit. `Option` and `Argument` should inherit that instead of duplicating it, and their observable behaviour\n(help text, `--help` output, `to_info_dict()`) must stay the same.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "405a5481e4db",
+    "note": "issue text written by hand from the fix's observable symptoms",
+    "lab_authored_tests": [
+      "tests/test_parameter_help.py"
+    ]
+  }
+}

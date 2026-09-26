@@ -1,0 +1,18 @@
+{
+  "task_id": "django_admin_year_500",
+  "repo": "django",
+  "base_commit": "862ade3409ceaa8ec5305e6f5aa26ee0e553cf02",
+  "type": "bug",
+  "size_class": "very_large",
+  "issue": "Admin changelist returns a server error for very large years in the date drill-down\n\nOn a ModelAdmin with `date_hierarchy` set, crawlers hit URLs like these and get HTTP 500 instead of the\nusual \"invalid lookup\" handling:\n\n    /admin/events/event/?date__year=9999                     -> 500 (ValueError: year 10000 is out of range)\n    /admin/events/event/?date__year=99999999999999999999     -> 500 (OverflowError)\n\nOther bad values in the same parameters (for example `?date__month=13`) are already handled gracefully by\nthe changelist, which treats them as incorrect lookup parameters. Out-of-range years should be handled the\nsame way instead of crashing.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "935edaa91b75",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

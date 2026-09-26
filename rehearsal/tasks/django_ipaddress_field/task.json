@@ -1,0 +1,18 @@
+{
+  "task_id": "django_ipaddress_field",
+  "repo": "django",
+  "base_commit": "6ade6258480fba84a7e895b4b1e1716dfc954778",
+  "type": "feature",
+  "size_class": "very_large",
+  "issue": "GenericIPAddressField should accept ipaddress.IPv4Address / IPv6Address objects\n\n`GenericIPAddressField.to_python()` already accepts `ipaddress` objects, but saving or querying with one\ncrashes:\n\n```python\nfrom ipaddress import IPv4Address\nHost.objects.create(ip=IPv4Address(\"192.0.2.1\"))\n# TypeError: argument of type 'IPv4Address' is not iterable\nHost.objects.filter(ip=IPv4Address(\"192.0.2.1\"))   # same error\n```\n\nIt would be nice if creating, updating and filtering accepted `IPv4Address` and `IPv6Address` values\ndirectly and stored/compared them exactly like their string form (the loaded value is a string, as today).",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "581deb9402ed",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

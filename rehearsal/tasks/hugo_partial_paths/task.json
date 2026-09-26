@@ -1,0 +1,18 @@
+{
+  "task_id": "hugo_partial_paths",
+  "repo": "hugo",
+  "base_commit": "90861931ad376b188878f9079e7c9900dcfcdaca",
+  "type": "feature",
+  "size_class": "large",
+  "issue": "Support relative partial paths from within partials\n\nInside a partial it would help to reference sibling partials relative to the calling partial's own\ndirectory instead of spelling out the full path from `layouts/_partials`:\n\n```\n-- layouts/_partials/a/b/main.html --\nsame:{{ partial \"./helper.html\" . }}        {{/* layouts/_partials/a/b/helper.html */}}\nsub:{{ partial \"./sub/helper.html\" . }}     {{/* layouts/_partials/a/b/sub/helper.html */}}\nparent:{{ partial \"../helper.html\" . }}     {{/* layouts/_partials/a/helper.html */}}\nroot:{{ partial \"../../root.html\" . }}      {{/* layouts/_partials/root.html */}}\n```\n\nA partial name starting with `./` or `../` should be resolved relative to the directory of the partial\nthat makes the call. This should work the same for `partial`, `partialCached` and `partials.Include`,\nfor names built at run time (`partial (printf \"./%s.html\" \"helper\") .`), for partials defined inline with\n`{{ define \"_partials/a/inline.html\" }}` (relative to `_partials/a/`), inside the inner block of a partial\ndecorator (`{{ with partial \"b/wrapper.html\" . }}{{ partial \"./helper.html\" . }}{{ end }}` written in\n`_partials/a/main.html` resolves against `_partials/a/`, the partial that contains the block), and\ninside `templates.Defer` blocks. `partialCached` must not mix up two different `./cached.html` partials\ncalled from different directories.\n\nErrors (the build should fail with these messages):\n\n- relative path used from a template that is not a partial (e.g. `layouts/home.html`):\n  `relative partial path \"./helper.html\" can only be used from within a partial`\n- relative path that resolves outside the partials directory, e.g. `../../helper.html` called from\n  `_partials/a/main.html`: `relative partial path \"../../helper.html\" in \"_partials/a/main.html\" resolves outside the partials directory`\n\nPartial names without a `./` or `../` prefix keep their current meaning.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "bd1588bdc421",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

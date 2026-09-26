@@ -1,0 +1,43 @@
+{
+  "task_id": "pytest_config_value_rename",
+  "repo": "pytest",
+  "base_commit": "1b89e4f32cce8e6b6c8c5a816930417f1d2e906b",
+  "type": "refactor",
+  "size_class": "pathological",
+  "issue": "Rename IniValue to ConfigValue\n\n`_pytest.config.findpaths.IniValue` holds a configuration value together with its origin (`\"file\"` or\n`\"override\"`). With native TOML configuration support, values no longer come only from ini files, so the\nname is misleading. Please rename the class to `ConfigValue`: same fields, same frozen-dataclass\nbehaviour (equality, hashing), `ConfigDict` maps names to `ConfigValue`, and every place that creates or\nrefers to these values (config file loading, `-o/--override-ini` parsing, `Config` value lookup) uses the\nnew name. Update comments and docstrings that describe it. Nothing observable other than the name should\nchange.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "543d9aac933c",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  },
+  "overlay": {
+    "layers": [
+      {
+        "kind": "vendored_copy",
+        "dest": "extra/vendored_pytest_8",
+        "src": [
+          "src/_pytest/config/findpaths.py",
+          "src/_pytest/config/__init__.py"
+        ]
+      },
+      {
+        "kind": "generated_bulk",
+        "dir": "bench/generated",
+        "files": 15000,
+        "mention": "IniValue",
+        "mention_every": 30
+      },
+      {
+        "kind": "long_line",
+        "path": "doc/en/_static/searchindex.min.js",
+        "mention": "IniValue ConfigDict",
+        "bytes": 3000000
+      }
+    ]
+  }
+}

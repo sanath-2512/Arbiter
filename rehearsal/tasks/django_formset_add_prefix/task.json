@@ -1,0 +1,18 @@
+{
+  "task_id": "django_formset_add_prefix",
+  "repo": "django",
+  "base_commit": "dc2c0b5a44d4fb531bb00d299c2c428f6ac87474",
+  "type": "bug",
+  "size_class": "very_large",
+  "issue": "Model formsets ignore a form's custom add_prefix() for existing objects\n\nWe override `add_prefix()` on a ModelForm to get dotted field names (`form-0.name` instead of\n`form-0-name`) for our front-end. The form fields render and validate fine with that naming, but a bound\nmodel formset built with `modelformset_factory(Author, form=AuthorForm)` does not recognise the existing\nobjects in the submitted data:\n\n```python\ndata = {\n    \"form-TOTAL_FORMS\": \"1\", \"form-INITIAL_FORMS\": \"1\", \"form-MAX_NUM_FORMS\": \"0\",\n    \"form-0.id\": str(author.pk), \"form-0.name\": \"Charles P. Baudelaire\",\n}\nformset = AuthorFormSet(data, queryset=Author.objects.all())\nformset.is_valid()          # the existing author is not matched to form 0\n```\n\nThe formset looks for the primary key under the default naming, so updates are not applied to the right\nobject. It should use the form's own naming for the primary key. Forms that keep the default\n`add_prefix()` should behave exactly as today (in particular, they should not be instantiated more often\nthan before).",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "be6a149de8f8",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

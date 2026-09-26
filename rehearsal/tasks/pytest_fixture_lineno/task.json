@@ -1,0 +1,18 @@
+{
+  "task_id": "pytest_fixture_lineno",
+  "repo": "pytest",
+  "base_commit": "99ab2acccff15f757260a1e1fbb0d2a47fc01041",
+  "type": "test_maintenance",
+  "size_class": "large",
+  "issue": "--fixtures-per-test reports test locations one line off; fix it and update the tests\n\n```python\nimport pytest\n\n\n@pytest.fixture\ndef arg1():\n    \"\"\"arg1 docstring\"\"\"\n\n\ndef test_arg1(arg1):\n    pass\n```\n\n`pytest --fixtures-per-test test_x.py` prints the section header `(test_x.py:10)` for `test_arg1`, but\n`def test_arg1` is on line 9. The helper that formats these `file:line` locations adds 1 to the function's\n`co_firstlineno`, which is already 1-based. The same helper is used for the fixture locations in\n`--fixtures` / `--fixtures-per-test` (`arg1 -- test_x.py:5`) and in a couple of fixture error messages.\n\nLocations should be exactly the line Python reports for the function (`__code__.co_firstlineno`); for a\ndecorated fixture that is its first decorator line, and that is acceptable. A number of existing tests\nhard-code the shifted line numbers, so update the tests together with the fix.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "09d0020ff205",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

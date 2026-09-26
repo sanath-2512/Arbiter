@@ -1,0 +1,53 @@
+{
+  "name": "Judge Gauntlet v1",
+  "about": "20 real historical fixes on pinned repositories, fixed mix of complexity and task type. Clean runs of every task under each config, plus fault-injection runs. Live-model injections (timeout, tool failure, interrupted run) run against the prescribed model; stale edit and bad candidate cannot be forced on a live model, so they run as scripted mechanism rehearsals on the same real repositories and are reported separately (a scripted policy measures harness plumbing, not solve rate).",
+  "mix": {
+    "complexity": {"medium": 4, "large": 8, "very_large": 6, "pathological": 2},
+    "type": {"regression": 5, "bug": 5, "feature": 4, "refactor": 3, "build_config_test": 3}
+  },
+  "tasks": [
+    {"task": "click_sentinel_copy", "complexity": "medium", "type": "regression"},
+    {"task": "flask_ipv6_server_name", "complexity": "medium", "type": "bug"},
+    {"task": "express_etag_transfer_encoding", "complexity": "medium", "type": "regression"},
+    {"task": "click_help_parameter", "complexity": "medium", "type": "refactor"},
+
+    {"task": "pytest_doctest_flags_leak", "complexity": "large", "type": "bug"},
+    {"task": "pytest_max_warnings_toml", "complexity": "large", "type": "build_config"},
+    {"task": "pytest_fixture_lineno", "complexity": "large", "type": "test_maintenance"},
+    {"task": "eslint_loss_precision_exponent", "complexity": "large", "type": "bug"},
+    {"task": "eslint_labeled_continue", "complexity": "large", "type": "feature"},
+    {"task": "hugo_partial_paths", "complexity": "large", "type": "feature"},
+    {"task": "sphinx_zh_stemmer", "complexity": "large", "type": "build_config"},
+    {"task": "hugo_section_page_collision", "complexity": "large", "type": "regression"},
+
+    {"task": "django_admin_year_500", "complexity": "very_large", "type": "bug"},
+    {"task": "django_formset_add_prefix", "complexity": "very_large", "type": "bug"},
+    {"task": "django_ipaddress_field", "complexity": "very_large", "type": "feature"},
+    {"task": "django_rename_warning", "complexity": "very_large", "type": "refactor"},
+    {"task": "ansible_freebsd_jail_facts", "complexity": "very_large", "type": "regression"},
+    {"task": "ansible_is_mac_strict", "complexity": "very_large", "type": "feature"},
+
+    {"task": "django_in_iterator_annotation", "complexity": "pathological", "type": "regression"},
+    {"task": "pytest_config_value_rename", "complexity": "pathological", "type": "refactor"}
+  ],
+  "injections": [
+    {"id": "timeout", "kind": "timeout", "task": "django_rename_warning", "mode": "live",
+     "limits": {"time_limit_s": 240},
+     "expect": "a valid artifact is exported before the deadline; the best verified candidate, not the last edit"},
+    {"id": "tool_failure", "kind": "tool_failure", "task": "flask_ipv6_server_name", "mode": "live",
+     "faults": [{"at": 2, "kind": "429", "retry_after": 2}, {"at": 4, "kind": "500"}, {"at": 6, "kind": "disconnect"},
+                {"at": 8, "kind": "garbage"}, {"at": 10, "kind": "output_cap"}],
+     "expect": "every fault is retried or adapted; the run completes with a valid artifact"},
+    {"id": "interrupt_term", "kind": "interrupted_run", "task": "express_etag_transfer_encoding", "mode": "live",
+     "signal": "TERM@90", "expect": "graceful stop within the grace period with a valid, applicable artifact"},
+    {"id": "interrupt_kill", "kind": "interrupted_run", "task": "eslint_labeled_continue", "mode": "live",
+     "signal": "KILL@120", "expect": "no artifact at kill time; `gheerefill finalize` recovers a valid one offline"},
+    {"id": "stale_edit", "kind": "stale_edit", "task": "click_help_parameter", "mode": "scripted",
+     "policy": "click_help_stale_edit",
+     "expect": "the stale edit is refused with the closest matching region, nothing is half-applied, the corrected edit lands"},
+    {"id": "bad_candidate", "kind": "bad_candidate", "task": "click_sentinel_copy", "mode": "scripted",
+     "policy": "click_sentinel_late_regression",
+     "expect": "the regressing final state is not exported; the earlier verified candidate is restored and exported"}
+  ],
+  "extras_in_corpus": ["sympy_solve_domain", "hugo_union_numeric"]
+}

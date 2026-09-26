@@ -1,0 +1,18 @@
+{
+  "task_id": "django_rename_warning",
+  "repo": "django",
+  "base_commit": "0d0e7f15038360c158b6d22c679b47b21557fa1f",
+  "type": "refactor",
+  "size_class": "very_large",
+  "issue": "Rename RemovedInDjango71Warning after the calendar version that removes the features\n\nPer DEP 20, Django's version numbers are calendar-based from 2028, so the release that removes the\nfeatures currently marked with `RemovedInDjango71Warning` is Django 2029, not \"7.1\". Deprecation warning\nclasses should be named after that calendar version.\n\nPlease rename `django.utils.deprecation.RemovedInDjango71Warning` to `RemovedInDjango2029Warning`\n(still a `PendingDeprecationWarning`), make `RemovedAfterNextVersionWarning` refer to it, and update every\nplace that emits or mentions the old class (including the `# RemovedInDjango71Warning` removal markers) to\nuse the new name. User-facing deprecation messages that say \"Django 7.1\" should say \"Django 2029\". Nothing\nelse about the deprecated behaviours should change: the same code paths warn, with the same messages\napart from the version.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "52abe52bec23",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

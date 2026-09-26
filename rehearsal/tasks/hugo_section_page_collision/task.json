@@ -1,0 +1,18 @@
+{
+  "task_id": "hugo_section_page_collision",
+  "repo": "hugo",
+  "base_commit": "96e06e1ab8484327dcbb521b8445a52d0c022cf3",
+  "type": "regression",
+  "size_class": "large",
+  "issue": "Regular page next to a section of the same name is replaced by a section (regression since v0.152.2)\n\n```\n-- hugo.toml --\ndisableKinds = ['home','rss','sitemap','taxonomy','term']\n-- content/s1.md --\n---\ntitle: content/s1.md\n---\n-- content/s1/p1.md --\n---\ntitle: content/s1/p1.md\n---\n-- layouts/all.html --\n{{ .Title }}\n```\n\nWith v0.152.2 `public/s1/index.html` rendered the page `content/s1.md`. With the current version the\npage is overwritten by an automatically created section for `s1`, so its content is lost. The same\nhappens with `uglyURLs = true`, where `public/s1.html` should contain `content/s1.md`. The section's own\npage (`public/s1/p1/index.html`, or `public/s1/p1.html` with ugly URLs) must keep rendering\n`content/s1/p1.md`.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "f01334666790",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

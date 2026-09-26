@@ -1,0 +1,18 @@
+{
+  "task_id": "sympy_solve_domain",
+  "repo": "sympy",
+  "base_commit": "253f564dd4cf9487f998bae4037a81ce94757ca5",
+  "type": "bug",
+  "size_class": "large",
+  "issue": "solve() returns a point where the expression is undefined\n\n```python\n>>> from sympy import solve, log, symbols\n>>> x = symbols('x')\n>>> solve(x/log(x), x)\n[0]\n>>> solve(x**2/log(x)**2, x)\n[0]\n```\n\n`x = 0` is not a solution: `log(0)` is not finite, so the expression is undefined there (and `solveset`\ncorrectly returns the empty set). `solve` already drops candidates that make a denominator zero, but not\nones that make it infinite. Results for ordinary cases such as `solve(x/(x - 2), x) == [0]` and\n`solve(sin(x)/cos(x), x) == [0, pi]` must not change.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "5c5ec9b873a2",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

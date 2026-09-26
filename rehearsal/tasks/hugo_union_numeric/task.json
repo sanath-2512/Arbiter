@@ -1,0 +1,18 @@
+{
+  "task_id": "hugo_union_numeric",
+  "repo": "hugo",
+  "base_commit": "4d628bbdc3441f3c44b1f6f4e6ad04f4df4728bf",
+  "type": "bug",
+  "size_class": "large",
+  "issue": "`union` returns an empty list for slices of different numeric types\n\nIn templates, `union` of an int slice and a float slice returns an empty slice instead of merging the\nnumbers:\n\n    {{ union (slice 1) (slice 1.0) }}          -> []    (expected [1])\n    {{ union (slice 1 2) (slice 2.0 3.0) }}    -> []    (expected [1 2 3])\n    {{ union (slice 1.0) (slice 1 2) }}        -> []    (expected [1 2] as floats)\n\n`intersect` already matches numbers across int and float element types, so `union` should unify them the\nsame way: the result keeps the first list's element type, and values that cannot be converted to it without\nloss are skipped. When the first list is empty, the result stays an empty slice of the first list's type.\nMismatched non-numeric element types (for example strings and ints) keep returning an empty result as today.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "ffbcdba9e976",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

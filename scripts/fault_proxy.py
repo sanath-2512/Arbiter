@@ -9,6 +9,8 @@ get a fault instead:
   500          server overloaded
   output_cap   400 "max_tokens is too large ... supports at most 4096" (output-cap adaptation)
   overflow     400 "maximum context length ..." (context reduction)
+  unsupported_param  400 "Unsupported parameter: 'max_tokens' ..." (parameter adaptation)
+  auth         401 invalid API key (must stop at once, not retry)
   hang         no answer for N seconds (client timeout)
   disconnect   connection closed without a response
   garbage      200 with a body that is not JSON
@@ -37,6 +39,12 @@ FAULTS = {
                                               "completion tokens, whereas you provided 32768."}}),
     "overflow": (400, {"error": {"message": "This model's maximum context length is 16385 tokens. However, your "
                                             "messages resulted in 40213 tokens. Please reduce the length."}}),
+    "unsupported_param": (400, {"error": {"message": "Unsupported parameter: 'max_tokens' is not supported with this "
+                                                     "model. Use 'max_completion_tokens' instead.",
+                                          "type": "invalid_request_error", "param": "max_tokens",
+                                          "code": "unsupported_parameter"}}),
+    "auth": (401, {"error": {"message": "Incorrect API key provided.", "type": "invalid_request_error",
+                             "code": "invalid_api_key"}}),
 }
 
 

@@ -1,0 +1,347 @@
+{
+  "summary": {
+    "hit@1": 0.409,
+    "hit@3": 0.5,
+    "hit@6": 0.545,
+    "anchor_hit": 0.227,
+    "any_hint_hit": 0.545
+  },
+  "rows": [
+    {
+      "task_id": "ansible_freebsd_jail_facts",
+      "size_class": "very_large",
+      "gold": [
+        "lib/ansible/module_utils/facts/virtual/freebsd.py"
+      ],
+      "hit@1": false,
+      "hit@3": false,
+      "hit@6": false,
+      "anchor_hit": false,
+      "any_hint_hit": false,
+      "elapsed_s": 2.587,
+      "files_indexed": 684,
+      "complete": false
+    },
+    {
+      "task_id": "ansible_is_mac_strict",
+      "size_class": "very_large",
+      "gold": [
+        "lib/ansible/module_utils/common/network.py"
+      ],
+      "hit@1": true,
+      "hit@3": true,
+      "hit@6": true,
+      "anchor_hit": false,
+      "any_hint_hit": true,
+      "elapsed_s": 2.543,
+      "files_indexed": 793,
+      "complete": false
+    },
+    {
+      "task_id": "click_help_parameter",
+      "size_class": "medium",
+      "gold": [
+        "src/click/core.py"
+      ],
+      "hit@1": true,
+      "hit@3": true,
+      "hit@6": true,
+      "anchor_hit": true,
+      "any_hint_hit": true,
+      "elapsed_s": 0.897,
+      "files_indexed": 92,
+      "complete": true
+    },
+    {
+      "task_id": "click_sentinel_copy",
+      "size_class": "medium",
+      "gold": [
+        "src/click/_utils.py"
+      ],
+      "hit@1": false,
+      "hit@3": false,
+      "hit@6": false,
+      "anchor_hit": false,
+      "any_hint_hit": false,
+      "elapsed_s": 0.728,
+      "files_indexed": 80,
+      "complete": true
+    },
+    {
+      "task_id": "django_admin_year_500",
+      "size_class": "very_large",
+      "gold": [
+        "django/contrib/admin/views/main.py"
+      ],
+      "hit@1": false,
+      "hit@3": false,
+      "hit@6": false,
+      "anchor_hit": false,
+      "any_hint_hit": false,
+      "elapsed_s": 2.612,
+      "files_indexed": 688,
+      "complete": false
+    },
+    {
+      "task_id": "django_formset_add_prefix",
+      "size_class": "very_large",
+      "gold": [
+        "django/forms/models.py"
+      ],
+      "hit@1": false,
+      "hit@3": true,
+      "hit@6": true,
+      "anchor_hit": true,
+      "any_hint_hit": true,
+      "elapsed_s": 2.57,
+      "files_indexed": 638,
+      "complete": false
+    },
+    {
+      "task_id": "django_in_iterator_annotation",
+      "size_class": "pathological",
+      "gold": [
+        "django/db/models/lookups.py"
+      ],
+      "hit@1": false,
+      "hit@3": false,
+      "hit@6": false,
+      "anchor_hit": false,
+      "any_hint_hit": false,
+      "elapsed_s": 2.582,
+      "files_indexed": 660,
+      "complete": false
+    },
+    {
+      "task_id": "django_ipaddress_field",
+      "size_class": "very_large",
+      "gold": [
+        "django/db/models/fields/__init__.py"
+      ],
+      "hit@1": false,
+      "hit@3": false,
+      "hit@6": false,
+      "anchor_hit": false,
+      "any_hint_hit": false,
+      "elapsed_s": 2.564,
+      "files_indexed": 615,
+      "complete": false
+    },
+    {
+      "task_id": "django_rename_warning",
+      "size_class": "very_large",
+      "gold": [
+        "django/db/models/query.py",
+        "django/http/response.py",
+        "django/utils/deprecation.py"
+      ],
+      "hit@1": true,
+      "hit@3": true,
+      "hit@6": true,
+      "anchor_hit": true,
+      "any_hint_hit": true,
+      "elapsed_s": 2.551,
+      "files_indexed": 658,
+      "complete": false
+    },
+    {
+      "task_id": "eslint_labeled_continue",
+      "size_class": "large",
+      "gold": [
+        "lib/rules/no-unsafe-finally.js"
+      ],
+      "hit@1": true,
+      "hit@3": true,
+      "hit@6": true,
+      "anchor_hit": false,
+      "any_hint_hit": true,
+      "elapsed_s": 2.531,
+      "files_indexed": 957,
+      "complete": false
+    },
+    {
+      "task_id": "eslint_loss_precision_exponent",
+      "size_class": "large",
+      "gold": [
+        "lib/rules/no-loss-of-precision.js"
+      ],
+      "hit@1": true,
+      "hit@3": true,
+      "hit@6": true,
+      "anchor_hit": false,
+      "any_hint_hit": true,
+      "elapsed_s": 2.54,
+      "files_indexed": 944,
+      "complete": false
+    },
+    {
+      "task_id": "express_etag_transfer_encoding",
+      "size_class": "medium",
+      "gold": [
+        "lib/response.js"
+      ],
+      "hit@1": false,
+      "hit@3": true,
+      "hit@6": true,
+      "anchor_hit": true,
+      "any_hint_hit": true,
+      "elapsed_s": 0.253,
+      "files_indexed": 141,
+      "complete": true
+    },
+    {
+      "task_id": "flask_ipv6_server_name",
+      "size_class": "medium",
+      "gold": [
+        "src/flask/app.py"
+      ],
+      "hit@1": true,
+      "hit@3": true,
+      "hit@6": true,
+      "anchor_hit": false,
+      "any_hint_hit": true,
+      "elapsed_s": 0.443,
+      "files_indexed": 84,
+      "complete": true
+    },
+    {
+      "task_id": "hugo_partial_paths",
+      "size_class": "large",
+      "gold": [
+        "tpl/partials/partials.go",
+        "tpl/tplimpl/templatestore.go",
+        "tpl/tplimpl/templatetransform.go"
+      ],
+      "hit@1": false,
+      "hit@3": false,
+      "hit@6": false,
+      "anchor_hit": false,
+      "any_hint_hit": false,
+      "elapsed_s": 2.505,
+      "files_indexed": 865,
+      "complete": false
+    },
+    {
+      "task_id": "hugo_section_page_collision",
+      "size_class": "large",
+      "gold": [
+        "hugolib/content_map_page_assembler.go"
+      ],
+      "hit@1": false,
+      "hit@3": false,
+      "hit@6": false,
+      "anchor_hit": false,
+      "any_hint_hit": false,
+      "elapsed_s": 2.538,
+      "files_indexed": 814,
+      "complete": false
+    },
+    {
+      "task_id": "hugo_union_numeric",
+      "size_class": "large",
+      "gold": [
+        "tpl/collections/collections.go"
+      ],
+      "hit@1": true,
+      "hit@3": true,
+      "hit@6": true,
+      "anchor_hit": false,
+      "any_hint_hit": true,
+      "elapsed_s": 2.478,
+      "files_indexed": 810,
+      "complete": false
+    },
+    {
+      "task_id": "pytest_config_value_rename",
+      "size_class": "pathological",
+      "gold": [
+        "src/_pytest/config/__init__.py",
+        "src/_pytest/config/findpaths.py"
+      ],
+      "hit@1": false,
+      "hit@3": false,
+      "hit@6": false,
+      "anchor_hit": false,
+      "any_hint_hit": false,
+      "elapsed_s": 2.703,
+      "files_indexed": 14696,
+      "complete": false
+    },
+    {
+      "task_id": "pytest_doctest_flags_leak",
+      "size_class": "large",
+      "gold": [
+        "src/_pytest/doctest.py"
+      ],
+      "hit@1": true,
+      "hit@3": true,
+      "hit@6": true,
+      "anchor_hit": false,
+      "any_hint_hit": true,
+      "elapsed_s": 2.519,
+      "files_indexed": 282,
+      "complete": false
+    },
+    {
+      "task_id": "pytest_fixture_lineno",
+      "size_class": "large",
+      "gold": [
+        "src/_pytest/compat.py"
+      ],
+      "hit@1": false,
+      "hit@3": false,
+      "hit@6": false,
+      "anchor_hit": false,
+      "any_hint_hit": false,
+      "elapsed_s": 2.499,
+      "files_indexed": 282,
+      "complete": false
+    },
+    {
+      "task_id": "pytest_max_warnings_toml",
+      "size_class": "large",
+      "gold": [
+        "src/_pytest/main.py",
+        "src/_pytest/terminal.py"
+      ],
+      "hit@1": false,
+      "hit@3": false,
+      "hit@6": true,
+      "anchor_hit": false,
+      "any_hint_hit": true,
+      "elapsed_s": 2.303,
+      "files_indexed": 280,
+      "complete": true
+    },
+    {
+      "task_id": "sphinx_zh_stemmer",
+      "size_class": "large",
+      "gold": [
+        "sphinx/search/__init__.py"
+      ],
+      "hit@1": true,
+      "hit@3": true,
+      "hit@6": true,
+      "anchor_hit": true,
+      "any_hint_hit": true,
+      "elapsed_s": 2.542,
+      "files_indexed": 932,
+      "complete": false
+    },
+    {
+      "task_id": "sympy_solve_domain",
+      "size_class": "large",
+      "gold": [
+        "sympy/solvers/solvers.py"
+      ],
+      "hit@1": false,
+      "hit@3": false,
+      "hit@6": false,
+      "anchor_hit": false,
+      "any_hint_hit": false,
+      "elapsed_s": 2.571,
+      "files_indexed": 357,
+      "complete": false
+    }
+  ]
+}

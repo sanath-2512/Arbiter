@@ -1,0 +1,18 @@
+{
+  "task_id": "pytest_doctest_flags_leak",
+  "repo": "pytest",
+  "base_commit": "6a9ba0f02f827a54cff6ab4da0dddecd65444ff6",
+  "type": "bug",
+  "size_class": "large",
+  "issue": "Inline doctest directives leak into the next docstring after a failure, skip or xfail\n\nWith `--doctest-modules`, a `# doctest: +FLAG` / `-FLAG` directive should only apply to its own example.\nWhen that example fails, errors, or calls `pytest.skip()` / `pytest.xfail()`, the flag stays active for the\ndocstrings that follow in the same module:\n\n```python\ndef first():\n    '''\n    >>> 1 / 0  # doctest: +ELLIPSIS\n    2.\n    '''\n\ndef second():\n    '''\n    >>> print(\"foobar\")\n    foo...\n    '''\n```\n\nWith no `doctest_optionflags` configured, `second` should fail (ELLIPSIS is not enabled for it) but it\npasses. The opposite happens with `doctest_optionflags = ELLIPSIS` and a `-ELLIPSIS` directive in `first`:\n`second` then fails although it should pass. Happens with and without `--doctest-continue-on-failure`.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "f9554ee56d26",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

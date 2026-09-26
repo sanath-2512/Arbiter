@@ -1,0 +1,18 @@
+{
+  "task_id": "flask_ipv6_server_name",
+  "repo": "flask",
+  "base_commit": "de8429ffda8cfb54db175529e2bae72a24e1fa7e",
+  "type": "bug",
+  "size_class": "medium",
+  "issue": "`app.run()` crashes when SERVER_NAME is an IPv6 address with a port\n\nWith `app.config[\"SERVER_NAME\"] = \"[::1]:8000\"`, starting the development server with `app.run()`\nfails before anything is served (the host/port taken from SERVER_NAME are wrong, and converting the port\nraises a ValueError). IPv6 server names, with or without a port, should give the development server the\nright host and port, just like `localhost:8000` does. Explicit `host`/`port` arguments must still win.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "7203feabf723",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

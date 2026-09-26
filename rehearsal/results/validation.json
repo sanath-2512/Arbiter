@@ -1,5 +1,35 @@
 [
   {
+    "task_id": "ansible_freebsd_jail_facts",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 2,
+    "p2p": 381
+  },
+  {
+    "task_id": "ansible_is_mac_strict",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 1,
+    "p2p": 10
+  },
+  {
+    "task_id": "click_help_parameter",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 5,
+    "p2p": 22
+  },
+  {
     "task_id": "click_sentinel_copy",
     "ok": true,
     "f2p_fail_on_base": true,
@@ -7,6 +37,186 @@
     "reference_solves": true,
     "reference_applies": true,
     "f2p": 3,
-    "p2p": 7
+    "p2p": 705
+  },
+  {
+    "task_id": "django_admin_year_500",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 1,
+    "p2p": 90
+  },
+  {
+    "task_id": "django_formset_add_prefix",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 1,
+    "p2p": 76
+  },
+  {
+    "task_id": "django_in_iterator_annotation",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 2,
+    "p2p": 348
+  },
+  {
+    "task_id": "django_ipaddress_field",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 4,
+    "p2p": 507
+  },
+  {
+    "task_id": "django_rename_warning",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 117,
+    "p2p": 240
+  },
+  {
+    "task_id": "eslint_labeled_continue",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 1,
+    "p2p": 29
+  },
+  {
+    "task_id": "eslint_loss_precision_exponent",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 5,
+    "p2p": 136
+  },
+  {
+    "task_id": "express_etag_transfer_encoding",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 1,
+    "p2p": 75
+  },
+  {
+    "task_id": "flask_ipv6_server_name",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 1,
+    "p2p": 132
+  },
+  {
+    "task_id": "hugo_partial_paths",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 5,
+    "p2p": 13
+  },
+  {
+    "task_id": "hugo_section_page_collision",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 1,
+    "p2p": 23
+  },
+  {
+    "task_id": "hugo_union_numeric",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 1,
+    "p2p": 242
+  },
+  {
+    "task_id": "pytest_config_value_rename",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 234,
+    "p2p": 40
+  },
+  {
+    "task_id": "pytest_doctest_flags_leak",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 7,
+    "p2p": 147
+  },
+  {
+    "task_id": "pytest_fixture_lineno",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 19,
+    "p2p": 224
+  },
+  {
+    "task_id": "pytest_max_warnings_toml",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 1,
+    "p2p": 59
+  },
+  {
+    "task_id": "sphinx_zh_stemmer",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 2,
+    "p2p": 18
+  },
+  {
+    "task_id": "sympy_solve_domain",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 1,
+    "p2p": 148
   }
 ]

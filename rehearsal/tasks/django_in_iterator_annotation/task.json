@@ -1,0 +1,47 @@
+{
+  "task_id": "django_in_iterator_annotation",
+  "repo": "django",
+  "base_commit": "6126f5d2fe0f22c0d2d4888de8c94b91a9795bb6",
+  "type": "regression",
+  "size_class": "pathological",
+  "issue": "`__in` / `__range` lookups on annotations break when given an iterator (regression in 6.1)\n\n```python\nArticle.objects.alias(article_id=F(\"id\")).filter(article_id__in=iter([a1.id, a2.id]))\n# Django 6.0: both articles; Django 6.1: empty queryset\n\nArticle.objects.alias(article_id=F(\"id\")).filter(article_id__range=iter([a1.id, a2.id]))\n# Django 6.1: ValueError: not enough values to unpack (expected 2, got 0)\n```\n\nPassing a list instead of an iterator works, and the same lookups on a model field\n(`filter(id__in=iter([...]))`, `filter(id__range=iter([...]))`) work. An iterator that mixes plain values\nand expressions (`iter([a1.id, Value(a2.id)])`) is affected the same way. Iterators passed to these\nlookups on annotations/aliases should behave exactly like the equivalent list.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "0751d5fed159",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  },
+  "overlay": {
+    "layers": [
+      {
+        "kind": "vendored_copy",
+        "dest": "legacy/vendor",
+        "src": [
+          "django/db/models/lookups.py",
+          "django/db/models/query.py",
+          "django/db/models/sql/query.py",
+          "django/db/models/sql/where.py",
+          "django/db/models/expressions.py",
+          "django/db/models/fields/__init__.py"
+        ]
+      },
+      {
+        "kind": "generated_bulk",
+        "dir": "benchmarks/generated_querysets",
+        "files": 20000,
+        "mention": "get_prep_lookup __in iterator",
+        "mention_every": 40
+      },
+      {
+        "kind": "long_line",
+        "path": "docs/_static/searchindex.min.js",
+        "mention": "__in __range lookup iterator",
+        "bytes": 3000000
+      }
+    ]
+  }
+}

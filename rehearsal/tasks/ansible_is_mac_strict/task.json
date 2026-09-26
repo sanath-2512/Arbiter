@@ -1,0 +1,18 @@
+{
+  "task_id": "ansible_is_mac_strict",
+  "repo": "ansible",
+  "base_commit": "8e6e4a75cc8510d0c0dfdf996970c92aee3e5e20",
+  "type": "feature",
+  "size_class": "very_large",
+  "issue": "Add a strict mode to is_mac() that rejects a trailing newline\n\n`ansible.module_utils.common.network.is_mac('52:54:00:e1:44:e0\\n')` returns True, so values read from files\nor command output pass validation with a trailing newline still attached. Please add an opt-in,\nkeyword-only `strict` argument: `is_mac(value, strict=True)` should reject anything after the address,\nincluding a trailing newline, while the default behaviour stays exactly as it is so existing callers keep\nworking. Both `:` and `-` separated forms (and upper case) remain valid; mixed separators are not.",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "395139708f94",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}
