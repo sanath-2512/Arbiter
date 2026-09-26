@@ -55,8 +55,24 @@ class OutputArchive:
         return p if p.exists() else None
 
     def read_text(self, oid: str) -> str | None:
+        """Terminal-clean text of an archived output (the file itself stays byte-exact)."""
         p = self.path(oid)
-        return p.read_text(encoding="utf-8", errors="replace") if p else None
+        return clean_terminal_text(p.read_text(encoding="utf-8", errors="replace")) if p else None
+
+
+_ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]")
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def clean_terminal_text(text: str) -> str:
+    """What a terminal would show: no colour/cursor escapes, a carriage-return progress line reduced to
+    its final state, no NUL or other control bytes. Saves tokens (tools that ignore NO_COLOR), keeps
+    runner summaries parseable, and keeps bytes some providers reject out of requests."""
+    if "\x1b" in text:
+        text = _ANSI.sub("", text)
+    if "\r" in text:
+        text = "\n".join(line.rstrip("\r").rsplit("\r", 1)[-1] for line in text.split("\n"))
+    return _CONTROL.sub("", text)
 
 
 def _cap_line(line: str, lineno: int, oid: str | None) -> str:

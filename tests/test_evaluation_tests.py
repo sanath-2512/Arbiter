@@ -81,3 +81,22 @@ class EvaluationTestsTest(TempDirCase):
         reads = [m["content"] for m in agent.transcript if m["role"] == "tool" and "test_half" in m["content"]]
         self.assertTrue(reads)
         self.assertNotIn("test_half", Path(result["deliverable"]["patch_path"]).read_text())
+
+
+class RunHintTest(TempDirCase):
+    def test_runner_derived_from_test_name_format(self):
+        from gheerefill import prompts
+        repo = self.tmp / "django"
+        (repo / "tests").mkdir(parents=True)
+        (repo / "tests" / "runtests.py").write_text("")
+        (repo / "tests" / "test_sqlite.py").write_text("")
+        self.assertEqual(prompts.run_hint(["test_ipv6 (servers.tests.LiveServerAddress)"], repo),
+                         "python tests/runtests.py --settings=test_sqlite --parallel 1 "
+                         "servers.tests.LiveServerAddress.test_ipv6")
+        (self.tmp / "go").mkdir()
+        (self.tmp / "go" / "go.mod").write_text("module x\n")
+        self.assertEqual(prompts.run_hint(["TestParse/empty", "TestParse/nil", "TestLex"], self.tmp / "go"),
+                         "go test ./... -run '^(TestLex|TestParse)$'")
+        self.assertIsNone(prompts.run_hint(["test_foo"], self.tmp))
+        text = prompts.evaluation_tests({"test_patch": "+    def test_added(self):\n"}, ["t.py"], self.tmp)
+        self.assertIn("add or modify: test_added", text)

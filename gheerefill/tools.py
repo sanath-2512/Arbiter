@@ -25,7 +25,7 @@ from typing import Any, Callable
 
 from gheerefill.config import ToolsConfig
 from gheerefill.models.base import ToolCall, ToolSpec
-from gheerefill.outputs import OutputArchive, bounded_view, numbered_range
+from gheerefill.outputs import OutputArchive, bounded_view, clean_terminal_text, numbered_range
 from gheerefill.shell import read_output_file, run_shell
 
 LARGE_OUTPUT_BYTES = 8 * 1024 * 1024
@@ -251,6 +251,75 @@ def closest_region(text: str, needle: str, max_lines: int = 20000) -> tuple[int,
     return best if best and best[2] >= 0.6 else None
 
 
+_NUMBERED = re.compile(r"^ *\d+\t")  # read_file's line-number gutter, copied into old_str by some models
+
+
+def _indent(line: str) -> str:
+    return line[:len(line) - len(line.lstrip(" \t"))]
+
+
+def lenient_match(text: str, old: str, new: str) -> tuple[str, str, str] | None:
+    """When old_str is not in the file verbatim: (old as in the file, new adapted, note) for the two
+    common model slips, only when exactly one region of the file fits: (1) read_file's line-number
+    gutter copied into old_str/new_str; (2) indentation written differently (tabs vs spaces, or a
+    uniform offset), in which case new_str gets the same re-indentation."""
+    lines = [l for l in old.split("\n") if l.strip()]
+    if lines and all(_NUMBERED.match(l) for l in lines):
+        o = "\n".join(_NUMBERED.sub("", l, count=1) for l in old.split("\n"))
+        n_lines = new.split("\n")
+        n = "\n".join(_NUMBERED.sub("", l, count=1) for l in n_lines) if all(
+            _NUMBERED.match(l) for l in n_lines if l.strip()) else new
+        if text.count(o) == 1:
+            return o, n, " (line numbers copied from read_file output were removed from old_str)"
+        old, new = o, n
+    hay = text.split("\n")
+    pat = old.strip("\n").split("\n")
+    if not any(l.strip() for l in pat):
+        return None
+    k = len(pat)
+    flat, want = [l.strip() for l in hay], [l.strip() for l in pat]
+    hits = [i for i in range(len(hay) - k + 1) if flat[i] == want[0] and flat[i:i + k] == want]
+    if len(hits) != 1:
+        return None
+    region = hay[hits[0]:hits[0] + k]
+    pairs = [(_indent(p), _indent(f)) for p, f in zip(pat, region) if p.strip()]
+
+    def convert(ws: str) -> str | None:
+        if all(o == f for o, f in pairs):
+            return ws
+        tabs_in_file = any("\t" in f for _, f in pairs)
+        for width in (4, 2, 8):  # model spaces -> file tabs
+            if tabs_in_file and all(f == o.replace(" " * width, "\t") for o, f in pairs):
+                return ws.replace(" " * width, "\t")
+        for width in (4, 2, 8):  # model tabs -> file spaces
+            if not tabs_in_file and all(f == o.replace("\t", " " * width) for o, f in pairs):
+                return ws.replace("\t", " " * width)
+        o0, f0 = pairs[0]
+        if all(f.startswith(f0[:len(f0) - len(o0)]) and f[len(f0) - len(o0):] == o for o, f in pairs) \
+                and f0.endswith(o0):  # the file has a uniform extra prefix
+            return f0[:len(f0) - len(o0)] + ws
+        if all(o.startswith(o0[:len(o0) - len(f0)]) and o[len(o0) - len(f0):] == f for o, f in pairs) \
+                and o0.endswith(f0):  # old_str has a uniform extra prefix
+            extra = o0[:len(o0) - len(f0)]
+            return ws[len(extra):] if ws.startswith(extra) else None
+        return None
+
+    new_lines = []
+    for line in new.strip("\n").split("\n") if new.strip("\n") else []:
+        if not line.strip():
+            new_lines.append(line)
+            continue
+        ws = convert(_indent(line))
+        if ws is None:
+            return None
+        new_lines.append(ws + line.lstrip(" \t"))
+    if all(o == f for o, f in pairs):  # indentation already agrees: the difference is elsewhere (trailing spaces)
+        note = " (matched ignoring trailing whitespace)"
+    else:
+        note = " (matched ignoring indentation differences; new_str re-indented to the file's style)"
+    return "\n".join(region), "\n".join(new_lines), note
+
+
 class ToolBox:
     def __init__(
         self,
@@ -299,6 +368,14 @@ class ToolBox:
                 res = getattr(self, f"_tool_{call.name}")(args)
             except ToolArgumentError as e:
                 res = ToolResult(f"Error: {call.name}: {e}. Nothing was executed.", "error", {"error": "argument_validation"})
+            except UnicodeError as e:  # e.g. lone surrogates in model-written text
+                res = ToolResult(f"Error: {call.name}: the text is not valid Unicode ({e}). Nothing was changed.",
+                                 "error", {"error": "encoding"})
+            except OSError as e:  # permissions, name too long, disk full, a path component that is a file, ...
+                res = ToolResult(f"Error: {call.name}: {e.strerror or e} ({e.filename or ''}). The file system refused "
+                                 "the operation.", "error", {"error": "os_error"})
+        # file content in other encodings is carried as surrogate escapes; never pass those on
+        res.content = res.content.encode("utf-8", "replace").decode("utf-8")
         res.meta.setdefault("tool", call.name)
         res.meta.setdefault("duration_s", round(time.monotonic() - t0, 3))
         res.meta.setdefault("cwd", str(self.repo))
@@ -408,7 +485,7 @@ class ToolBox:
             wrap=self.wrap,
         )
         self.archive.redact_file(out_path)
-        text = self.archive.redactor.text(read_output_file(out_path, LARGE_OUTPUT_BYTES))
+        text = clean_terminal_text(self.archive.redactor.text(read_output_file(out_path, LARGE_OUTPUT_BYTES)))
         huge = r.output_bytes > LARGE_OUTPUT_BYTES
         view, truncated = bounded_view(text, self.cfg.max_observation_chars, None if huge else oid)
         if huge:
@@ -570,10 +647,10 @@ class ToolBox:
         if old == new:
             raise ToolArgumentError("old_str and new_str are identical; nothing to change")
         data = path.read_bytes()
-        try:
-            text = data.decode("utf-8")
-        except UnicodeDecodeError:
-            return ToolResult(f"Error: {shown} is not valid UTF-8; edit it with bash instead.", "error", {})
+        if b"\x00" in data[:8192]:
+            return ToolResult(f"Error: {shown} looks binary (NUL bytes) and is not valid UTF-8 text; edit it with bash "
+                              "instead.", "error", {})
+        text = data.decode("utf-8", errors="surrogateescape")  # other encodings round-trip byte for byte
         note = ""
         count = text.count(old)
         if count == 0 and "\r\n" in text and "\r\n" not in old and "\n" in old:
@@ -581,6 +658,14 @@ class ToolBox:
             if text.count(old_crlf):
                 old, new, count = old_crlf, new_crlf, text.count(old_crlf)
                 note = " (matched after adapting line endings to the file's CRLF)"
+        if count == 0:
+            crlf = "\r\n" in text and "\r\n" not in old
+            lenient = lenient_match(text.replace("\r\n", "\n") if crlf else text, old, new)
+            if lenient is not None:
+                old, new, note = lenient
+                if crlf:
+                    old, new = old.replace("\n", "\r\n"), new.replace("\n", "\r\n")
+                count = text.count(old)
         if count == 0:
             first = next((l.strip() for l in old.split("\n") if l.strip()), "")
             hits = [i + 1 for i, l in enumerate(text.split("\n")) if first and l.strip() == first]
@@ -612,7 +697,7 @@ class ToolBox:
         if refused is not None:
             return refused
         with open(path, "wb") as fh:
-            fh.write(new_text.encode("utf-8"))
+            fh.write(new_text.encode("utf-8", errors="surrogateescape"))
         start_line = new_text.count("\n", 0, first_pos) + 1
         span = new.count("\n") + 1
         snippet, a, b, total = numbered_range(new_text, max(1, start_line - 3), start_line + span + 2, 60, 4000)

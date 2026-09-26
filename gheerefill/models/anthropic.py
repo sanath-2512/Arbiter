@@ -144,15 +144,16 @@ class AnthropicClient:
             return "provider rejected 'temperature'; now using the provider default"
         return None
 
-    def complete(self, messages: list[dict[str, Any]], tools: list[ToolSpec], *, timeout_s: float) -> ModelTurn:
+    def complete(self, messages: list[dict[str, Any]], tools: list[ToolSpec], *, timeout_s: float,
+                 total_s: float | None = None) -> ModelTurn:
         base = self.cfg.base_url.rstrip("/")
         url = base + ("/messages" if base.endswith("/v1") else "/v1/messages")
         headers = {"x-api-key": self._api_key, "anthropic-version": self.cfg.anthropic_version, **self.cfg.extra_headers}
         body = self.build_body(messages, tools)
         if not self.cfg.stream:
-            return self.parse_response(post_json(url, headers, body, timeout_s))
+            return self.parse_response(post_json(url, headers, body, timeout_s, total_s))
         body["stream"] = True
-        return self.parse_response(accumulate_anthropic_stream(post_sse(url, headers, body, timeout_s)))
+        return self.parse_response(accumulate_anthropic_stream(post_sse(url, headers, body, timeout_s, total_s)))
 
 
 def accumulate_anthropic_stream(events) -> dict[str, Any]:

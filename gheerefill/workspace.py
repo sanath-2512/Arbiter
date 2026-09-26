@@ -118,6 +118,27 @@ class TargetGitState:
         return {"head_commit": self.head_commit, "head_ref": self.head_ref, "index_matches_head": self.index_matches_head}
 
 
+class _GitCopier:
+    """copytree copy_function for a .git directory: hard-link objects, copy everything else."""
+
+    def __init__(self, root: Path, copy_limit: int | None):
+        self.root, self.limit, self.copied = str(root), copy_limit, 0
+
+    def __call__(self, src: str, dst: str) -> None:
+        if os.path.islink(src):
+            os.symlink(os.readlink(src), dst)
+            return
+        if f"{os.sep}objects{os.sep}" in src[len(self.root):]:
+            try:
+                os.link(src, dst)
+                return
+            except OSError:
+                self.copied += os.path.getsize(src)
+                if self.limit is not None and self.copied > self.limit:
+                    raise WorkspaceError("objects too large to copy across devices") from None
+        shutil.copy2(src, dst)
+
+
 class Workspace:
     def __init__(self, repo: Path, state_dir: Path):
         self.repo = Path(os.path.realpath(repo))
@@ -347,6 +368,77 @@ class Workspace:
         if head_commit:
             clean = self._target_git("diff-index", "--cached", "--quiet", "HEAD").returncode == 0
         return TargetGitState(head_commit, ref.stdout.decode().strip() or None if ref.returncode == 0 else None, clean)
+
+    # A model command can remove or replace the target's .git (`rm -rf .git`, `git init`). The
+    # deliverable survives (it lives in the shadow store), but an evaluator reading `git diff` in the
+    # repository would not. Keep a start-of-run copy: objects are hard-linked (content-addressed and
+    # never rewritten in place), everything else is copied, so a later in-place edit cannot reach it.
+    BACKUP_COPY_LIMIT = 1 << 30  # bytes of objects copied when hard links are impossible (other device)
+
+    @property
+    def git_backup(self) -> Path:
+        return self.state_dir / "target-git"
+
+    def backup_target_git(self) -> str:
+        gd = self.repo / ".git"
+        dest = self.git_backup
+        if dest.exists() or dest.is_symlink():
+            return "kept"
+        if gd.is_file():  # worktree / submodule pointer
+            shutil.copy2(gd, dest)
+            return "pointer file copied"
+        if not gd.is_dir():
+            return "no .git"
+        copier = _GitCopier(gd, self.BACKUP_COPY_LIMIT)
+        try:
+            shutil.copytree(gd, dest, symlinks=True, copy_function=copier,
+                            ignore=shutil.ignore_patterns("*.lock", "fsmonitor--daemon*"))
+        except (OSError, shutil.Error, WorkspaceError) as e:
+            shutil.rmtree(dest, ignore_errors=True)
+            return f"not kept ({str(e)[:120]})"
+        return "kept" + (f" ({copier.copied >> 20} MB of objects copied: other device)" if copier.copied else "")
+
+    def target_git_damaged(self, initial: TargetGitState | None, thorough: bool = False) -> bool:
+        gd = self.repo / ".git"
+        if not (self.git_backup.exists() or self.git_backup.is_symlink()):
+            return False
+        if self.git_backup.is_file():
+            return not gd.is_file() or gd.read_bytes() != self.git_backup.read_bytes()
+        if not (gd.is_dir() and (gd / "HEAD").is_file() and (gd / "objects").is_dir()):
+            return True
+        if thorough and initial is not None and initial.head_commit:
+            return self._target_git("cat-file", "-e", f"{initial.head_commit}^{{commit}}").returncode != 0
+        return False
+
+    def repair_target_git(self, initial: TargetGitState | None, thorough: bool = True) -> list[str]:
+        """Put the start-of-run .git back if it was removed or replaced. The working tree is untouched."""
+        if not self.target_git_damaged(initial, thorough):
+            return []
+        gd = self.repo / ".git"
+        if gd.exists() or gd.is_symlink():
+            n = 1
+            while (self.state_dir / f"target-git-replaced-{n}").exists():
+                n += 1
+            shutil.move(str(gd), str(self.state_dir / f"target-git-replaced-{n}"))
+        if self.git_backup.is_file():
+            shutil.copy2(self.git_backup, gd)
+        else:
+            shutil.copytree(self.git_backup, gd, symlinks=True, copy_function=_GitCopier(self.git_backup, None))
+        return ["restored the repository's .git from the start-of-run copy (a command had removed or replaced it); "
+                "working tree untouched"]
+
+    def target_stash(self) -> str | None:
+        if not self.target_is_git():
+            return None
+        p = self._target_git("rev-parse", "-q", "--verify", "refs/stash")
+        return p.stdout.decode().strip() or None if p.returncode == 0 else None
+
+    def drop_new_stash(self, initial_stash: str | None) -> list[str]:
+        """`git stash` during the run leaves a stash entry behind (its content is in the shadow store)."""
+        if initial_stash is not None or self.target_stash() is None:
+            return []
+        self._target_git("update-ref", "-d", "refs/stash")
+        return ["removed the stash entry created during the run (its content is archived in the run directory)"]
 
     def restore_target_git(self, initial: TargetGitState | None) -> list[str]:
         """Undo HEAD/branch/index changes made by the agent (commits, checkouts, staging) without

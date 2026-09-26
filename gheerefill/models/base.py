@@ -143,7 +143,8 @@ class ModelClient(Protocol):
     provider: str
     model_name: str
 
-    def complete(self, messages: list[dict[str, Any]], tools: list[ToolSpec], *, timeout_s: float) -> ModelTurn:
+    def complete(self, messages: list[dict[str, Any]], tools: list[ToolSpec], *, timeout_s: float,
+                 total_s: float | None = None) -> ModelTurn:
         """Single attempt. Raises ModelError."""
         ...
 
@@ -265,6 +266,9 @@ class AttemptRecord:
     slept_s: float = 0.0
 
 
+TOTAL_FACTOR = 4  # longest single response = 4 x request_timeout_s (20 min at the default 300 s)
+
+
 def call_with_retry(
     client: ModelClient,
     messages: list[dict[str, Any]],
@@ -292,11 +296,14 @@ def call_with_retry(
         remaining = time_left()
         if remaining < min_call_s:
             raise ModelError(ErrorClass.DEADLINE, f"insufficient time for a model call ({remaining:.1f}s left)")
+        # request_timeout_s bounds each wait for data; a thinking model's whole answer may take longer
+        # (it streams, or keeps the connection alive), up to TOTAL_FACTOR x that, within the deadline
         timeout = min(request_timeout_s, remaining)
+        total = min(remaining, max(timeout, TOTAL_FACTOR * request_timeout_s))
         t0 = time.monotonic()
         started = time.time()
         try:
-            turn = client.complete(messages, tools, timeout_s=timeout)
+            turn = client.complete(messages, tools, timeout_s=timeout, total_s=total)
         except ModelError as e:
             latency = time.monotonic() - t0
             on_attempt(

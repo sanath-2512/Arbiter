@@ -39,7 +39,8 @@ class FakeClient:
         self.model_name = model_name
         self.calls: list[list[dict[str, Any]]] = []
 
-    def complete(self, messages: list[dict[str, Any]], tools: list[ToolSpec], *, timeout_s: float) -> ModelTurn:
+    def complete(self, messages: list[dict[str, Any]], tools: list[ToolSpec], *, timeout_s: float,
+                 total_s: float | None = None) -> ModelTurn:
         self.calls.append(messages)
         if not self.turns:
             raise ModelError(ErrorClass.MALFORMED_REQUEST, "fake script exhausted")

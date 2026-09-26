@@ -231,6 +231,31 @@ def _base_ignored(base: str | None, log) -> list[str]:
     return [msg]
 
 
+_CLAIMS: dict[str, Any] = {}
+
+
+def claim_workspace(dest: Path) -> bool:
+    """Exclusive, process-lifetime lock on a workspace clone (released by release_workspace or exit)."""
+    try:
+        import fcntl
+    except ImportError:  # no flock on this platform: single-run behaviour
+        return True
+    fh = open(str(dest) + ".lock", "a+")
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        return False
+    _CLAIMS[str(dest)] = fh
+    return True
+
+
+def release_workspace(dest: Path | str) -> None:
+    fh = _CLAIMS.pop(str(dest), None)
+    if fh is not None:
+        fh.close()
+
+
 def prepare_repo(spec: str | None, *, owner: str | None, repo: str | None, number: int | None, workspace: Path,
                  base: str | None, issue_created_at: str | None, log) -> tuple[Path, list[str]]:
     """Return a local repository path for the task and notes describing what was done."""
@@ -252,39 +277,73 @@ def prepare_repo(spec: str | None, *, owner: str | None, repo: str | None, numbe
     workspace.mkdir(parents=True, exist_ok=True)
     dest = workspace / name
     n = 1
-    while dest.exists():
-        status = _git(["status", "--porcelain"], cwd=dest)
-        if status.returncode == 0 and not status.stdout.strip():
-            notes.append(f"repository: reused clean clone {dest}")
-            break
+    # Parallel runs (an evaluator running several tasks of one repository at once) must never share a
+    # clone: each holds an exclusive lock on its directory until its task ends.
+    while True:
+        if claim_workspace(dest):
+            if not dest.exists():
+                break
+            status = _git(["status", "--porcelain"], cwd=dest)
+            if status.returncode == 0 and not status.stdout.strip():
+                notes.append(f"repository: reused clean clone {dest}")
+                break
+            release_workspace(dest)
         n += 1
         dest = workspace / f"{name}-{n}"
-    if not dest.exists():
-        partial = supports_partial_clone(url)
-        log(f"cloning {url} -> {dest}" + (" (blob-less partial clone)" if partial else ""))
-        p = _git(["clone", "--quiet", *(["--filter=blob:none"] if partial else []), url, str(dest)])
-        if p.returncode != 0 and partial:
-            shutil.rmtree(dest, ignore_errors=True)
-            p = _git(["clone", "--quiet", url, str(dest)])
-        if p.returncode != 0:
-            raise IntakeError(f"git clone {url} failed: {p.stderr.strip()[:400]}")
-        notes.append(f"repository: cloned {url} into {dest} (default branch)")
-    if base:
-        target = base
-        if base == "before-issue":
-            if not issue_created_at:
-                raise IntakeError("BASE=before-issue needs the issue's creation time (GitHub issues only)")
-            r = _git(["rev-list", "-1", f"--before={issue_created_at}", "HEAD"], cwd=dest)
-            target = r.stdout.strip()
-            if not target:
-                raise IntakeError("no commit precedes the issue's creation time")
-        p = _git(["checkout", "--quiet", "-B", "gheerefill-base", target], cwd=dest)
-        if p.returncode != 0:
-            raise IntakeError(f"cannot check out BASE {base}: {p.stderr.strip()[:300]}")
-        notes.append(f"base: {base} -> {target[:12]}")
+    try:
+        if not dest.exists():
+            partial = supports_partial_clone(url)
+            log(f"cloning {url} -> {dest}" + (" (blob-less partial clone)" if partial else ""))
+            p = _git(["clone", "--quiet", *(["--filter=blob:none"] if partial else []), url, str(dest)])
+            if p.returncode != 0 and partial:
+                shutil.rmtree(dest, ignore_errors=True)
+                p = _git(["clone", "--quiet", url, str(dest)])
+            if p.returncode != 0:
+                raise IntakeError(f"git clone {url} failed: {p.stderr.strip()[:400]}")
+            notes.append(f"repository: cloned {url} into {dest} (default branch)")
+        if base:
+            target = base
+            if base == "before-issue":
+                if not issue_created_at:
+                    raise IntakeError("BASE=before-issue needs the issue's creation time (GitHub issues only)")
+                r = _git(["rev-list", "-1", f"--before={issue_created_at}", "HEAD"], cwd=dest)
+                target = r.stdout.strip()
+                if not target:
+                    raise IntakeError("no commit precedes the issue's creation time")
+            p = _git(["checkout", "--quiet", "-B", "gheerefill-base", target], cwd=dest)
+            if p.returncode != 0 and re.fullmatch(r"[0-9a-f]{7,40}", target):
+                # not reachable from the cloned branches (e.g. only from a pull-request ref): fetch it by id
+                if _git(["fetch", "--quiet", "origin", target], cwd=dest).returncode == 0:
+                    p = _git(["checkout", "--quiet", "-B", "gheerefill-base", target], cwd=dest)
+            if p.returncode != 0:
+                raise IntakeError(f"cannot check out BASE {base}: {p.stderr.strip()[:300]}")
+            notes.append(f"base: {base} -> {target[:12]}")
+    except BaseException:
+        release_workspace(dest)
+        raise
     head = _git(["rev-parse", "HEAD"], cwd=dest).stdout.strip()
     notes.append(f"base commit: {head}")
     return dest, notes
+
+
+def align_local_base(repo: Path, base: str) -> list[str]:
+    """A task names its base commit and a local checkout: work on that commit. A clean checkout at
+    another commit is moved there (detached HEAD); a dirty one is left alone, with a note."""
+    if not (repo / ".git").exists():
+        return []
+    head = _git(["rev-parse", "-q", "--verify", "HEAD^{commit}"], cwd=repo).stdout.strip()
+    target = _git(["rev-parse", "-q", "--verify", f"{base}^{{commit}}"], cwd=repo).stdout.strip()
+    if not target:
+        return [f"base_commit {base[:12]} is not in the local checkout; working on its current state {head[:12]}"]
+    if head == target:
+        return []
+    if _git(["status", "--porcelain", "--untracked-files=no"], cwd=repo).stdout.strip():
+        return [f"the checkout is at {head[:12]}, not base_commit {base[:12]}, and has uncommitted changes: "
+                "left as it is"]
+    p = _git(["checkout", "--quiet", "--detach", target], cwd=repo)
+    if p.returncode != 0:
+        return [f"could not check out base_commit {base[:12]}: {p.stderr.strip()[:200]}"]
+    return [f"checked out base_commit {target[:12]} (the checkout was at {head[:12]})"]
 
 
 def build_task(req: Request, *, repo_spec: str | None, base: str | None, workspace: Path, github_token: str | None,
@@ -299,6 +358,12 @@ def build_task(req: Request, *, repo_spec: str | None, base: str | None, workspa
                                        base=str(base_commit) if base_commit else None, issue_created_at=None, log=log)
             t.repo_path = path
             t.metadata["intake_notes"] = notes
+        elif t.metadata.get("base_commit"):
+            notes = align_local_base(t.repo_path, str(t.metadata["base_commit"]))
+            if notes:
+                t.metadata["intake_notes"] = notes
+                for n in notes:
+                    log("note: " + n)
         return t
     if req.github:
         owner, repo, number = req.github

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import re
+import shlex
 from pathlib import Path
 
 SYSTEM = """You are an autonomous software engineer. You are working in the repository at {repo}. \
@@ -97,6 +99,16 @@ SUBMIT_EMPTY = (
     "You called submit, but the repository has no changes. If the issue needs a code change, make it first. "
     "If you really mean to submit no change, call submit again."
 )
+
+
+def submit_empty(earlier_files: list[str]) -> str:
+    if not earlier_files:
+        return SUBMIT_EMPTY
+    shown = ", ".join(earlier_files[:6]) + (f" and {len(earlier_files) - 6} more" if len(earlier_files) > 6 else "")
+    return ("You called submit, but the repository has no changes: the edits you made earlier (to " + shown + ") are "
+            "no longer in the working tree, e.g. after git stash, git checkout or git reset. Bring them back (for "
+            "example `git stash pop`) or redo them, then submit. If you submit again with no change, the harness "
+            "delivers your most recent earlier change whose checks passed, if there is one.")
 
 
 def _cmd(c: str, n: int = 70) -> str:
@@ -219,7 +231,34 @@ CUT_OFF = (
 )
 
 
-def evaluation_tests(tests: dict, applied_paths: list[str]) -> str:
+_DJANGO_NAME = re.compile(r"^(\w+) \(([\w.]+)\)")
+_ADDED_TEST = re.compile(r"^\+\s*(?:async\s+)?(?:def (test\w*)|func (Test\w+)|fn (test_\w+)|"
+                         r"(?:it|test)\(\s*['\"`]([^'\"`]{1,80})['\"`])", re.M)
+
+
+def tests_in_patch(patch: str) -> list[str]:
+    """Test names a supplied test patch adds or changes (when the task does not list them)."""
+    return list(dict.fromkeys(next(g for g in m.groups() if g) for m in _ADDED_TEST.finditer(patch or "")))
+
+
+def run_hint(names: list[str], repo: Path | None) -> str | None:
+    """A command that runs the named tests, when their format says which runner they belong to."""
+    if not names:
+        return None
+    few = names[:6]
+    if all("::" in n for n in few):
+        return "python -m pytest -rA " + " ".join(shlex.quote(n) for n in few)
+    if repo is not None and all(_DJANGO_NAME.match(n) for n in few) and (repo / "tests" / "runtests.py").is_file():
+        labels = [f"{m.group(2)}.{m.group(1)}" for m in map(_DJANGO_NAME.match, few)]
+        settings = " --settings=test_sqlite" if (repo / "tests" / "test_sqlite.py").is_file() else ""
+        return f"python tests/runtests.py{settings} --parallel 1 " + " ".join(labels)
+    if repo is not None and (repo / "go.mod").is_file() and all(re.fullmatch(r"Test\w+(/\S+)?", n) for n in few):
+        top = sorted({n.split("/")[0] for n in names[:30]})
+        return f"go test ./... -run '^({'|'.join(top)})$'"
+    return None
+
+
+def evaluation_tests(tests: dict, applied_paths: list[str], repo: Path | None = None) -> str:
     """The tests the evaluation will run, when the task names them (capped: they are paid for per request)."""
     lines = ["", "## Tests the evaluation will run (they decide the result)"]
     if applied_paths:
@@ -228,10 +267,19 @@ def evaluation_tests(tests: dict, applied_paths: list[str]) -> str:
     f2p, p2p = tests.get("fail_to_pass") or [], tests.get("pass_to_pass") or []
     if f2p:
         lines.append(f"Must pass (currently failing): {', '.join(f2p[:15])}" + (f" ... ({len(f2p)} in all)" if len(f2p) > 15 else ""))
+    elif tests.get("test_patch"):
+        added = tests_in_patch(tests["test_patch"])
+        if added:
+            lines.append(f"Tests the supplied test changes add or modify: {', '.join(added[:15])}"
+                         + (f" ... ({len(added)} in all)" if len(added) > 15 else ""))
     if p2p:
         lines.append(f"Must keep passing: {len(p2p)} test(s), e.g. {', '.join(p2p[:8])}")
     if tests.get("test_command"):
         lines.append(f"Test command: `{tests['test_command']}`")
+    else:
+        hint = run_hint(f2p, repo)
+        if hint:
+            lines.append(f"They can probably be run with: `{hint}` (adjust if the repository needs otherwise)")
     lines.append("Run them before and after your change. Make them pass by fixing the source, not the tests, and "
                  "handle the general case they exercise, not only the listed inputs.")
     return "\n".join(lines)

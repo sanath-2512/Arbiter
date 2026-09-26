@@ -457,7 +457,7 @@ def run_one(task: dict, config: str, **kw: Any) -> dict[str, Any]:
 def _run_one(task: dict, config: str, *, repeat: int = 0, policy: str | None = None, faults: list | None = None,
              sig: tuple[str, float] | None = None, key_env: str | None = None, profile: Path | None = None,
              limits_override: dict | None = None, upstream: str | None = None, injection: str | None = None,
-             key_mode: str | None = None, log=print) -> dict[str, Any]:
+             key_mode: str | None = None, emulate: str | None = None, log=print) -> dict[str, Any]:
     manifest = load_json(MANIFEST)
     repo = manifest[task["repo"]]
     configs = load_json(CONFIGS)
@@ -480,7 +480,13 @@ def _run_one(task: dict, config: str, *, repeat: int = 0, policy: str | None = N
     if policy:
         from scripts.policy_server import PolicyServer, load_policy  # noqa: PLC0415
 
-        srv = PolicyServer(load_policy(policy)).__enter__()
+        if emulate:  # the policy decides; a DeepSeek-/Qwen-like endpoint shapes the wire behaviour
+            from scripts.provider_emulator import ProviderEmulator  # noqa: PLC0415
+
+            fam, _, scale = emulate.partition(":")
+            srv = ProviderEmulator(load_policy(policy), fam, seed=repeat, scale=float(scale or 1.0)).__enter__()
+        else:
+            srv = PolicyServer(load_policy(policy)).__enter__()
         servers.append(srv)
         upstream = srv.base_url.rsplit("/v1", 1)[0]
         model = {"provider": "openai_chat", "name": "scripted-policy", "base_url": srv.base_url,
@@ -530,6 +536,7 @@ def _run_one(task: dict, config: str, *, repeat: int = 0, policy: str | None = N
         harness_timeout = True
     finally:
         stderr.close()
+        emu_stats = next((s.stats() for s in servers if hasattr(s, "stats")), None)
         for s in servers:
             s.__exit__(None, None, None)
     wall = time.monotonic() - t0
@@ -549,6 +556,7 @@ def _run_one(task: dict, config: str, *, repeat: int = 0, policy: str | None = N
         "size_class": task["size_class"], "config": config, "repeat": repeat,
         "model_kind": "scripted-policy" if policy else "live", "policy": policy, "faults": faults or [],
         "signal": f"{sig[0]}@{sig[1]}" if sig else None, "injection": injection, "key_mode": key_mode,
+        "emulate": emulate, "emulator": emu_stats,
         "exit_code": proc.returncode, "stderr_tail": redact_tail(work / "harness.stderr", hen.get("AI_API_KEY")),
         "harness_version": harness_commit(),
         "limits": limits, "setup_s": round(setup_s, 2), "prepare_s": round(prep_s, 2), "wall_s": round(wall, 2),
@@ -570,6 +578,7 @@ def _run_one(task: dict, config: str, *, repeat: int = 0, policy: str | None = N
             "candidate_restored": not (result.get("selected_candidate") or {}).get("is_final_state", True),
             "patch_bytes": d.get("patch_bytes"), "harness_reconstruction": d.get("reconstruction_verified"),
             "audit": audit(run_dir) if run_dir.exists() else [],
+            "model_quirks": result.get("model_quirks"),
             "advisory_count": max([len(a.get("advisory") or []) for a in (result.get("proof") or {}).get("attempts")
                                    or []] or [0]),
             "run_dir": str(run_dir),
@@ -691,7 +700,8 @@ def expectation(sc: dict, config: str, checks: dict) -> tuple[bool | None, list[
     return not misses, misses
 
 
-def mechanisms(manifest: dict, only: list[str] | None, configs: list[str] | None, out: Path, log=print) -> list[dict]:
+def mechanisms(manifest: dict, only: list[str] | None, configs: list[str] | None, out: Path, log=print,
+               emulate: str | None = None) -> list[dict]:
     recs = []
     for sc in manifest["scenarios"]:
         if only and sc["id"] not in only:
@@ -701,7 +711,8 @@ def mechanisms(manifest: dict, only: list[str] | None, configs: list[str] | None
             try:
                 rec = run_one(task, cfg, policy=sc["policy"], faults=sc.get("faults"),
                               sig=parse_signal(sc.get("signal")), limits_override=sc.get("limits"),
-                              key_mode=sc.get("key_mode"), injection=sc["id"], log=log)
+                              key_mode=sc.get("key_mode"), injection=sc["id"], emulate=emulate or sc.get("emulate"),
+                              log=log)
             except Exception as e:  # noqa: BLE001 - one broken run must not end the matrix
                 rec = lab_error_record(task, cfg, e)
             rec["scenario"] = sc["id"]
@@ -917,6 +928,7 @@ def main() -> int:
     r.add_argument("--profile", help="base profile (default: profiles/default.toml)")
     r.add_argument("--out", default=None)
     r.add_argument("--upstream", help="provider root URL the fault proxy forwards to (live runs with --faults)")
+    r.add_argument("--emulate", help="with --policy: deepseek|qwen[:scale] provider emulator in front of the policy")
     g = sub.add_parser("gauntlet", help="the Judge Gauntlet (rehearsal/manifests/gauntlet.json)")
     g.add_argument("--configs", default="A,F")
     g.add_argument("--repeats", type=int, default=1)
@@ -931,6 +943,7 @@ def main() -> int:
     mch.add_argument("--configs")
     mch.add_argument("--out", default=None)
     mch.add_argument("--report", help="only render the report of an existing results.jsonl")
+    mch.add_argument("--emulate", help="deepseek|qwen[:scale]: run the scripted policies behind a provider emulator")
     b = sub.add_parser("base", help="build a task's clean base checkout (no labels) at --dest")
     b.add_argument("--task", required=True)
     b.add_argument("--dest", required=True)
@@ -983,7 +996,7 @@ def main() -> int:
             out = Path(args.out or RESULTS / "runs" / ("mechanisms-" + time.strftime("%Y%m%dT%H%M%S", time.gmtime())))
             out.mkdir(parents=True, exist_ok=True)
             recs = mechanisms(manifest, args.scenarios.split(",") if args.scenarios else None,
-                              args.configs.split(",") if args.configs else None, out)
+                              args.configs.split(",") if args.configs else None, out, emulate=args.emulate)
             (out / "report.md").write_text(mechanisms_report(manifest, recs))
         print(mechanisms_report(manifest, recs))
         return 0 if all(r["expectation_met"] is not False for r in recs) else 1
@@ -1004,7 +1017,8 @@ def main() -> int:
     if args.cmd == "run":
         faults = json.loads(args.faults) if args.faults else None
         recs.append(run_one(load_task(Path(args.task)), args.config, repeat=args.repeat, policy=args.policy,
-                            faults=faults, sig=parse_signal(args.signal), profile=profile, upstream=args.upstream))
+                            faults=faults, sig=parse_signal(args.signal), profile=profile, upstream=args.upstream,
+                            emulate=args.emulate))
         with open(out / "results.jsonl", "a") as fh:
             fh.write(json.dumps(recs[-1], default=str) + "\n")
     else:

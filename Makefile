@@ -8,13 +8,17 @@
 #   make run ISSUE="text of the issue" REPO=/path/to/repo       # non-interactive, local repo
 #
 # Recipes never expand $(AI_API_KEY): the key cannot be echoed by make. Inputs reach the harness
-# through the environment ("$$VAR" in recipes), so spaces, quotes and $ in values are safe.
+# through the environment ("$$VAR" in recipes), literally, so spaces, quotes and $ in values are safe.
 # Works from any directory (`make -f /path/to/Makefile run`); relative paths in ISSUE=@file,
 # TASK, REPO and OUT are resolved against the directory make was started in.
 HERE := $(if $(filter Makefile,$(lastword $(MAKEFILE_LIST))),.,$(abspath $(dir $(lastword $(MAKEFILE_LIST)))))
 PY := bash scripts/py.sh
 export GHEEREFILL_CALLER_DIR := $(CURDIR)
-export ISSUE ISSUE_URL ISSUE_FILE GITHUB_ISSUE REPO REPO_PATH REPO_URL BASE TASK PROFILE OUT TIME_LIMIT MAX_STEPS SUITE SYSTEMS
+INPUTS := ISSUE ISSUE_URL ISSUE_FILE GITHUB_ISSUE REPO REPO_PATH REPO_URL BASE TASK PROFILE OUT TIME_LIMIT MAX_STEPS SUITE SYSTEMS
+# Take inputs literally: make would otherwise expand "$(...)" inside a value (an issue that quotes
+# `$(shell ...)` or `$(CC)` would be evaluated or mangled) when exporting or testing it.
+$(foreach v,$(INPUTS),$(if $(filter undefined,$(origin $v)),,$(eval override $v := $$(value $v))))
+export $(INPUTS)
 
 .PHONY: setup run test clean check-config probe smoke demo chaos baseline-setup eval
 

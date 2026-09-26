@@ -1,9 +1,11 @@
 """Model-family output quirks (Qwen, DeepSeek and the servers in front of them)."""
 
 import json
+import subprocess
 import unittest
 
 from gheerefill.models import quirks
+from gheerefill.models.quirks import normalize_call
 from gheerefill.models.base import ToolCall
 from gheerefill.tools import tool_specs
 from gheerefill.config import ToolsConfig
@@ -215,3 +217,54 @@ class ProviderErrorTest(unittest.TestCase):
             ("chunk", {"choices": [{"delta": {"content": "x"}, "finish_reason": "stop"}]}),
             ("done", None)]))
         self.assertEqual(data["choices"][0]["message"]["reasoning_content"], "because")
+
+
+class ForeignToolVocabularyTest(unittest.TestCase):
+    """Calls written for other agents' tool sets (Qwen Code, Claude Code, Codex, Cline, OpenHands, a
+    Python interpreter tool) reach the offered tools with their meaning intact."""
+
+    def setUp(self):
+        self.specs = {s.name: s for s in tool_specs(ToolsConfig())}
+
+    def norm(self, name, args):
+        call = ToolCall(id="c1", name=name, arguments=args, raw_arguments=json.dumps(args))
+        out, notes = normalize_call(call, self.specs)
+        return out.name, out.arguments, notes
+
+    def test_python_tool_becomes_a_heredoc(self):
+        name, args, _ = self.norm("python", {"code": "import sys\nprint(sys.version_info[0] + 1)"})
+        self.assertEqual(name, "bash")
+        out = subprocess.run(["bash", "-c", args["command"]], capture_output=True, text=True).stdout
+        self.assertEqual(out.strip(), "4")
+
+    def test_codex_argv_and_plain_argv(self):
+        self.assertEqual(self.norm("shell", {"command": ["bash", "-lc", "pytest -x 'a b'"]})[1]["command"],
+                         "pytest -x 'a b'")
+        self.assertEqual(self.norm("shell", {"command": ["grep", "-rn", "a b", "src"]})[1]["command"],
+                         "grep -rn 'a b' src")
+
+    def test_listing_glob_and_line_windows(self):
+        self.assertEqual(self.norm("list_directory", {"dir_path": "src"})[:2], ("read_file", {"path": "src"}))
+        self.assertEqual(self.norm("LS", {})[:2], ("read_file", {"path": "."}))
+        name, args, _ = self.norm("Glob", {"pattern": "*.py"})
+        self.assertEqual((name, args["command"]), ("bash", "git ls-files -co --exclude-standard -- ':(glob)**/*.py' | head -200"))
+        self.assertIn("cd /abs/src && ", self.norm("glob", {"pattern": "**/*.ts", "path": "/abs/src/"})[1]["command"])
+        self.assertEqual(self.norm("Read", {"file_path": "a.py", "offset": 10, "limit": 5})[1],
+                         {"path": "a.py", "start_line": 10, "end_line": 14})
+        self.assertEqual(self.norm("run_shell_command", {"command": "ls"})[0], "bash")
+        self.assertEqual(self.norm("search_file_content", {"pattern": "x"})[0], "search")
+        self.assertEqual(self.norm("write_to_file", {"path": "a", "content": "b"})[0], "write_file")
+
+    def test_cline_search_replace_block(self):
+        diff = "<<<<<<< SEARCH\n    return a // b\n=======\n    return a / b\n>>>>>>> REPLACE"
+        self.assertEqual(self.norm("replace_in_file", {"path": "calc/ops.py", "diff": diff})[:2],
+                         ("edit_file", {"path": "calc/ops.py", "old_str": "    return a // b", "new_str": "    return a / b"}))
+
+    def test_extra_arguments_other_agents_send(self):
+        name, args, notes = self.norm("execute_command", {"command": "pytest -q", "requires_approval": False,
+                                                          "explanation": "run tests", "cwd": "pkg/sub dir"})
+        self.assertEqual((name, args), ("bash", {"command": "cd 'pkg/sub dir' && pytest -q"}))
+        self.assertEqual(self.norm("bash", {"command": "make", "timeout_ms": 120000})[1], {"command": "make", "timeout": 120})
+        self.assertEqual(self.norm("read_file", {"path": "a.py", "thought": "look"})[1], {"path": "a.py"})
+        # an argument that would change the meaning is not dropped silently
+        self.assertIn("mystery", self.norm("read_file", {"path": "a.py", "mystery": 1})[1])

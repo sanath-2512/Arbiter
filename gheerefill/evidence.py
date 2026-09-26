@@ -320,19 +320,27 @@ def select_candidate(
     *,
     dominance: bool = True,
     recover_empty_final: bool = True,
+    recover_verified: bool = False,
+    also_empty: tuple[str, ...] = (),
 ) -> tuple[str, str]:
     """Choose the deliverable among archived states. `history` lists distinct trees in the
-    order they were observed. Returns (tree, reason)."""
-    candidates = [t for t in dict.fromkeys(history + [final_tree]) if t != base_tree]
-    if final_tree == base_tree:
+    order they were observed. Returns (tree, reason).
+
+    An empty final state (no change against `base_tree` or any of `also_empty`) is replaced by the
+    latest earlier candidate: any candidate when `recover_empty_final`, else (`recover_verified`) only
+    one whose checks passed, e.g. after the model stashed or reset a verified fix and then submitted."""
+    empty = {base_tree, *also_empty}
+    candidates = [t for t in dict.fromkeys(history + [final_tree]) if t not in empty]
+    if final_tree in empty:
+        passing = [t for t in candidates if "pass" in verdicts(records, t).values()
+                   and "fail" not in verdicts(records, t).values()]
         if recover_empty_final and candidates:
-            best = candidates[-1]
-            passing = [t for t in candidates if "pass" in verdicts(records, t).values()
-                       and "fail" not in verdicts(records, t).values()]
-            if passing:
-                best = passing[-1]
-            return best, "final working tree had no changes; restored the most recent archived non-empty candidate" + (
-                " with passing checks" if passing else "")
+            return (passing or candidates)[-1], (
+                "final working tree had no changes; restored the most recent archived non-empty candidate"
+                + (" with passing checks" if passing else ""))
+        if recover_verified and passing:
+            return passing[-1], ("final working tree had no changes, but an earlier candidate passed its checks "
+                                 "(its changes were undone before submitting); restored that candidate")
         return final_tree, "final working tree has no changes and no earlier candidate exists"
     if not dominance:
         return final_tree, "final working tree (dominance selection disabled)"

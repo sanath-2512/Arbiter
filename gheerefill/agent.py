@@ -49,6 +49,7 @@ RESULT_SCHEMA = "gheerefill.result/v1"
 HARNESS_ROOT = Path(__file__).resolve().parent.parent
 TEST_PATH_RE = proof.TEST_PATH_RE
 MIN_ATTEMPT_STEPS = 5  # fewer steps than this cannot fund a fresh attempt from the original code
+MAX_CALLS_PER_TURN = 12  # a reply with dozens of calls is a malfunction; each executed call costs real time
 FATAL_TERMINATIONS = ("cancelled", "crash", "setup_failed", "deadline_reached", "token_budget", "cost_budget",
                       "step_limit", "repeated_format_errors")
 
@@ -110,6 +111,7 @@ class Agent:
         self.recent_actions: list[tuple[str, str]] = []
         self.repetition_warned: set[tuple[str, str]] = set()
         self.target_git_initial = None
+        self.target_stash_initial: str | None = None
         self.target_git_fp_initial = None
         self.sandbox: Sandbox | None = None
         self.base_ignored: set[str] = set()
@@ -180,6 +182,7 @@ class Agent:
                 "termination": self.termination,
                 "target_git_initial": self.target_git_initial.to_dict() if self.target_git_initial else None,
                 "target_git_fingerprint": self.target_git_fp_initial,
+                "target_stash_initial": self.target_stash_initial,
                 "base_ignored": sorted(self.base_ignored),
                 "attempt": self.attempt,
                 "attempts": self.attempts,
@@ -282,6 +285,7 @@ class Agent:
         tg = state.get("target_git_initial")
         agent.target_git_initial = TargetGitState(**tg) if tg else None
         agent.target_git_fp_initial = state.get("target_git_fingerprint")
+        agent.target_stash_initial = state.get("target_stash_initial")
         agent.base_ignored = set(state.get("base_ignored") or [])
         agent.attempt = int(state.get("attempt") or 1)
         agent.attempts = list(state.get("attempts") or [])
@@ -321,6 +325,9 @@ class Agent:
                                 else f"inactive ({self.sandbox.status.get('reason')})"))
         self.target_git_fp_initial = self.ws.target_git_fingerprint()
         self.target_git_initial = self.ws.target_git_state()
+        self.target_stash_initial = self.ws.target_stash()
+        if self.profile.policy.git_hygiene:
+            self.log(f"target .git copy: {self.ws.backup_target_git()}")
         self.base_tree = self.ws.init()
         self.last_tree = self.base_tree
         self.history = [self.base_tree]
@@ -365,7 +372,7 @@ class Agent:
         hint = prompts.REPRODUCE_HINT if "register_reproduction" in self.tools.specs else ""
         self._system_msg = prompts.SYSTEM.format(repo=self.tools.repo, scratch=self.tools.scratch, reproduce=hint)
         if self.eval_tests:
-            overview += prompts.evaluation_tests(self.eval_tests, self.eval_paths)
+            overview += prompts.evaluation_tests(self.eval_tests, self.eval_paths, self.task.repo_path)
         self._task_msg = prompts.TASK.format(issue=issue, overview=overview)
         self._append({"role": "system", "content": self._system_msg})
         self._append({"role": "user", "content": self._task_msg})
@@ -383,9 +390,15 @@ class Agent:
         paths = sorted(set(re.findall(r"^diff --git a/(\S+) b/", patch, re.M)) |
                        set(re.findall(r"^\+\+\+ b/(\S+)", patch, re.M)))
         env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG", "TMPDIR")}
-        p = subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "apply", "--whitespace=nowarn", str(pf)],
-                           cwd=self.task.repo_path, capture_output=True, text=True, timeout=120,
-                           env={**env, "GIT_CONFIG_NOSYSTEM": "1"})
+        for lenient in ([], ["--recount", "-C1", "--ignore-whitespace"]):  # the second for drifted context
+            p = subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "apply", "--whitespace=nowarn", *lenient,
+                                str(pf)], cwd=self.task.repo_path, capture_output=True, text=True, timeout=120,
+                               env={**env, "GIT_CONFIG_NOSYSTEM": "1"})
+            if p.returncode == 0:
+                if lenient:
+                    self.notes.append("evaluation tests applied with reduced context (the checkout differs slightly "
+                                      "from the patch's base)")
+                break
         if p.returncode != 0:
             self.notes.append(f"evaluation tests could not be applied ({p.stderr[-200:]}); left in {pf}")
             return
@@ -523,9 +536,14 @@ class Agent:
                     return
                 continue
             submitted, any_valid = False, False
-            for call in turn.tool_calls:
+            for n_call, call in enumerate(turn.tool_calls):
                 if submitted:
                     self._tool_message(call, "Not executed: submit was already called earlier in this reply.", {})
+                    continue
+                if n_call >= MAX_CALLS_PER_TURN and call.name != "submit":
+                    self._tool_message(call, f"Not executed: at most {MAX_CALLS_PER_TURN} tool calls are run per reply. "
+                                             "Send the remaining ones in your next reply, after reading these results.", {})
+                    self._quirk("tool calls beyond the per-reply limit not executed")
                     continue
                 if call.name == "register_reproduction" and "register_reproduction" in self.tools.specs:
                     any_valid = True
@@ -620,6 +638,15 @@ class Agent:
         pre_tree = self._capture_state(f"before check at step {self.budget.steps}") if is_check else None
         self._audit_access(call)
         res = self.tools.execute(call)
+        if cmd and self.profile.policy.git_hygiene and self.ws is not None:
+            try:
+                fixed = self.ws.repair_target_git(self.target_git_initial, thorough="git" in cmd)
+            except (OSError, WorkspaceError) as e:
+                fixed = [f"could not restore the repository's .git: {e}"]
+            if fixed:
+                self.notes += fixed
+                res.content += ("\n[harness] This command removed or replaced the repository's .git; the harness put "
+                                "the original back (your files are unchanged). Do not delete or re-initialise .git.")
         self.budget.record_tool(call.name, float(res.meta.get("duration_s", 0.0)))
         self._tool_message(call, res.content, res.meta)
         append_jsonl(self.run_dir / "actions.jsonl", self.redactor.obj({
@@ -721,8 +748,12 @@ class Agent:
             return None
         assert self.ws is not None and self.base_tree is not None
         tree = self._capture_state("at submit")
-        if tree == self.base_tree:
-            return prompts.SUBMIT_EMPTY if reviews_done == 0 else None
+        if tree in (self.base_tree, self.start_tree):
+            if reviews_done:
+                return None
+            earlier = [t for t in dict.fromkeys(self.attempt_trees) if t not in (self.base_tree, self.start_tree)]
+            files = [f["path"] for f in self.ws.changed_files(self.base_tree, earlier[-1])] if earlier else []
+            return prompts.submit_empty(files)
         assessment = self._verify_candidate(tree) if pol.verify_at_submit else None
         if reviews_done == 1 and (assessment is None or assessment.level != "refuted"):
             return None
@@ -964,7 +995,8 @@ class Agent:
         pol = self.profile.policy
         candidate, why = select_candidate(
             final, self.base_tree, list(self.attempt_trees), self.records, dominance=pol.dominance_selection,
-            recover_empty_final=pol.recover_empty_final and self.termination != "model_submitted")
+            recover_empty_final=pol.recover_empty_final and self.termination != "model_submitted",
+            recover_verified=pol.recover_empty_final, also_empty=(self.start_tree or self.base_tree,))
         entry: dict[str, Any] = {
             "n": self.attempt, "termination": self.termination, "steps": self.budget.steps - int(self.attempt_start["step"]),
             "elapsed_s": round(self.budget.elapsed() - self.attempt_start["elapsed"], 2), "candidate": candidate,
@@ -1010,6 +1042,7 @@ class Agent:
         assert self.ws is not None and self.base_tree is not None
         self.ws.restore(self.start_tree or self.base_tree)
         if self.profile.policy.git_hygiene and self.target_git_initial is not None:
+            self.ws.repair_target_git(self.target_git_initial)
             self.ws.restore_target_git(self.target_git_initial)
         self.attempt += 1
         self.termination = None
@@ -1100,14 +1133,17 @@ class Agent:
             self.final_state_tree = final_tree
             if pol.git_hygiene:
                 try:
+                    fin_notes += self.ws.repair_target_git(self.target_git_initial)
                     fin_notes += self.ws.restore_target_git(self.target_git_initial)
+                    fin_notes += self.ws.drop_new_stash(self.target_stash_initial)
                 except WorkspaceError as e:
                     fin_notes.append(f"target git hygiene failed: {e}")
             if len(self.attempts) < self.attempt:  # the current attempt never closed (interrupted / recovered)
                 cand, why = select_candidate(
                     final_tree, self.base_tree, self.attempt_trees or self.history, self.records,
                     dominance=pol.dominance_selection,
-                    recover_empty_final=pol.recover_empty_final and self.termination != "model_submitted")
+                    recover_empty_final=pol.recover_empty_final and self.termination != "model_submitted",
+                    recover_verified=pol.recover_empty_final, also_empty=(self.start_tree or self.base_tree,))
                 a = self._verify_candidate(cand, allow_runs=False) if cand != self.base_tree else None
                 self.attempts.append({"n": self.attempt, "termination": self.termination, "candidate": cand,
                                       "candidate_reason": why, "level": a.level if a else "unverified",

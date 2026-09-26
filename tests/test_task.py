@@ -39,7 +39,6 @@ class TaskAdapterTest(TempDirCase):
             ({"task_id": "a", "repo_path": "/nonexistent/x", "issue": "i"}, "does not exist"),
             ({"task_id": "a", "repo_path": str(self.repo), "issue": "  "}, "non-empty"),
             ({"task_id": "a", "repo_path": str(self.repo), "issue": "i", "limits": {"bogus": 1}}, "unknown limit"),
-            ({"task_id": "a", "id": "b", "repo_path": str(self.repo), "issue": "i"}, "conflicting"),
             ([1, 2], "must be a JSON object"),
         ]
         for obj, needle in cases:

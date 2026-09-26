@@ -38,7 +38,14 @@ def _ssl_context() -> ssl.SSLContext:
     return ctx
 
 
-def post_json(url: str, headers: dict[str, str], body: dict[str, Any], timeout_s: float) -> dict[str, Any]:
+def post_json(url: str, headers: dict[str, str], body: dict[str, Any], timeout_s: float,
+              total_s: float | None = None) -> dict[str, Any]:
+    """`timeout_s` bounds each wait for data (connect, every read); `total_s` (default: timeout_s)
+    bounds the whole response. They differ for thinking models: DeepSeek keeps a long non-streamed
+    response alive with blank lines for many minutes."""
+    import time as _time
+
+    deadline = _time.monotonic() + (total_s or timeout_s)
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Content-Type", "application/json")
@@ -47,7 +54,20 @@ def post_json(url: str, headers: dict[str, str], body: dict[str, Any], timeout_s
     ctx = _ssl_context() if url.startswith("https://") else None
     try:
         with urllib.request.urlopen(req, timeout=timeout_s, context=ctx) as resp:
-            raw = resp.read()
+            parts = []
+            while True:
+                if _time.monotonic() > deadline:
+                    raise ModelError(ErrorClass.TIMEOUT, f"response exceeded {total_s or timeout_s:.0f}s",
+                                     usage_uncertain=True)
+                line = resp.readline(1 << 20)
+                if not line:
+                    break
+                parts.append(line)
+            raw = b"".join(parts)
+            if getattr(resp, "length", None):  # connection closed before Content-Length bytes arrived
+                raise http.client.IncompleteRead(raw, resp.length)
+    except ModelError:
+        raise
     except urllib.error.HTTPError as e:
         try:
             err_body = e.read().decode("utf-8", errors="replace")
@@ -83,10 +103,10 @@ def post_json(url: str, headers: dict[str, str], body: dict[str, Any], timeout_s
     return parsed
 
 
-def post_sse(url: str, headers: dict[str, str], body: dict[str, Any], timeout_s: float):
+def post_sse(url: str, headers: dict[str, str], body: dict[str, Any], timeout_s: float, total_s: float | None = None):
     """POST and yield parsed Server-Sent-Event payloads (dicts) until the stream ends.
 
-    `timeout_s` bounds both the gap between reads and the total duration of the stream.
+    `timeout_s` bounds the gap between reads; `total_s` (default: timeout_s) the whole stream.
     Any failure after the request was sent is classified with usage_uncertain=True.
     Yields ("done", None) for an OpenAI `[DONE]` sentinel.
     """
@@ -99,7 +119,7 @@ def post_sse(url: str, headers: dict[str, str], body: dict[str, Any], timeout_s:
     for k, v in headers.items():
         req.add_header(k, v)
     ctx = _ssl_context() if url.startswith("https://") else None
-    deadline = _time.monotonic() + timeout_s
+    deadline = _time.monotonic() + (total_s or timeout_s)
     try:
         resp = urllib.request.urlopen(req, timeout=timeout_s, context=ctx)
     except urllib.error.HTTPError as e:
@@ -138,7 +158,8 @@ def post_sse(url: str, headers: dict[str, str], body: dict[str, Any], timeout_s:
             saw_finish = False
             while True:
                 if _time.monotonic() > deadline:
-                    raise ModelError(ErrorClass.TIMEOUT, f"stream exceeded {timeout_s:.0f}s", usage_uncertain=True)
+                    raise ModelError(ErrorClass.TIMEOUT, f"stream exceeded {total_s or timeout_s:.0f}s",
+                                     usage_uncertain=True)
                 line_b = resp.readline()
                 if not line_b:
                     break

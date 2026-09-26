@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
+import shlex
 import uuid
 from typing import Any
 
@@ -56,14 +58,17 @@ def split_think(text: str) -> tuple[str, str]:
 _NAME_PREFIX = re.compile(r"^(functions?|tools?|default_api|api|tool_call|call)[.:/]", re.I)
 NAME_ALIASES = {
     "bash": ("execute_bash", "run_bash", "bash_command", "shell", "run_shell", "execute_command", "run_command",
-             "terminal", "run_terminal_cmd", "exec", "execute", "cmd", "command", "sh", "run"),
+             "terminal", "run_terminal_cmd", "exec", "execute", "cmd", "command", "sh", "run", "run_shell_command",
+             "container.exec", "local_shell"),
     "read_file": ("read", "view", "view_file", "open_file", "open", "cat", "get_file", "file_read", "readfile",
-                  "read_file_content", "show_file"),
-    "write_file": ("write", "create_file", "create", "save_file", "file_write", "writefile", "new_file", "overwrite_file"),
+                  "read_file_content", "show_file", "list_directory", "list_dir", "list_files", "listdir", "ls",
+                  "view_directory"),
+    "write_file": ("write", "create_file", "create", "save_file", "file_write", "writefile", "new_file", "overwrite_file",
+                   "write_to_file"),
     "edit_file": ("edit", "replace", "str_replace", "replace_in_file", "file_edit", "modify_file", "apply_edit",
                   "search_replace", "replace_string"),
     "search": ("grep", "rg", "ripgrep", "search_code", "code_search", "find_in_files", "grep_search", "search_files",
-               "find"),
+               "find", "search_file_content", "search_dir", "search_file", "search_text"),
     "submit": ("finish", "done", "complete", "task_complete", "end", "attempt_completion", "final_answer",
                "submit_solution", "stop"),
     "read_output": ("get_output", "read_tool_output"),
@@ -72,14 +77,14 @@ NAME_ALIASES = {
 _ALIAS_INDEX = {a: canon for canon, aliases in NAME_ALIASES.items() for a in aliases}
 ARG_ALIASES = {
     "path": ("file_path", "filepath", "filename", "file", "path_name", "target_file", "file_name", "dir", "directory",
-             "absolute_path", "relative_path"),
+             "absolute_path", "relative_path", "dir_path", "folder"),
     "command": ("cmd", "bash_command", "shell_command", "script", "commands"),
     "old_str": ("old_string", "old_text", "old", "search", "find", "original", "old_content", "target"),
     "new_str": ("new_string", "new_text", "new", "replace", "replacement", "new_content", "updated"),
     "content": ("file_text", "text", "contents", "data", "body", "file_content", "code"),
     "pattern": ("query", "regex", "search_term", "term", "expression", "search_pattern", "keyword"),
     "summary": ("message", "result", "explanation", "reason", "final_answer", "answer"),
-    "start_line": ("line_start", "from_line", "offset", "start"),
+    "start_line": ("line_start", "from_line", "offset", "start", "start_line_number"),
     "end_line": ("line_end", "to_line", "end"),
     "description": ("desc",),
 }
@@ -131,9 +136,85 @@ def canonical_arguments(tool: str, args: dict[str, Any], spec: ToolSpec) -> tupl
             out[canon] = out.pop(present[0])
             renamed.append(f"{present[0]}->{canon}")
     if tool == "bash" and isinstance(out.get("command"), list):
-        out["command"] = " ".join(str(x) for x in out["command"])
+        argv = [str(x) for x in out["command"]]
+        # Codex-style argv: ["bash", "-lc", "<script>"] runs the script; anything else is quoted as argv
+        if len(argv) >= 3 and os.path.basename(argv[0]) in ("bash", "sh", "zsh") and argv[1] in ("-c", "-lc", "-ic"):
+            out["command"] = argv[2]
+        else:
+            out["command"] = shlex.join(argv)
         renamed.append("command list->string")
+    if tool == "read_file" and "limit" in out and "limit" not in props and "end_line" in props and "end_line" not in out:
+        try:  # offset/limit (lines) as Claude Code / Qwen Code read files
+            n = int(out.pop("limit"))
+            start = int(out.get("start_line") or 1)
+            if n > 0:
+                out["end_line"] = start + n - 1
+            renamed.append("limit->end_line")
+        except (TypeError, ValueError):
+            pass
+    if tool == "bash":
+        cwd = next((k for k in ("cwd", "workdir", "working_dir", "working_directory", "dir", "directory", "path")
+                    if k not in props and isinstance(out.get(k), str)), None)
+        if cwd and isinstance(out.get("command"), str):
+            d = out.pop(cwd).strip()
+            if d not in ("", ".", "./"):
+                out["command"] = f"cd {shlex.quote(d)} && {out['command']}"
+            renamed.append(f"{cwd}->cd prefix")
+        for k, scale in (("timeout_s", 1), ("timeout_seconds", 1), ("timeout_ms", 0.001), ("max_time", 1)):
+            if k in out and "timeout" in props and "timeout" not in out:
+                try:
+                    out["timeout"] = max(1, int(float(out.pop(k)) * scale))
+                    renamed.append(f"{k}->timeout")
+                except (TypeError, ValueError):
+                    pass
+    dropped = [k for k in list(out) if k not in props and k.lower() in HARMLESS_EXTRAS]
+    for k in dropped:
+        out.pop(k)
+    if dropped:
+        renamed.append(f"ignored {', '.join(dropped)}")
+    if tool == "read_file" and "path" in props and not out.get("path"):  # list_directory() with no path
+        out["path"] = "."
+        renamed.append("path defaulted to .")
     return (out if renamed else args), renamed
+
+
+# Arguments other agents' tools take that carry no instruction for ours (commentary, UI hints).
+HARMLESS_EXTRAS = {"explanation", "reason", "reasoning", "thought", "thoughts", "justification", "rationale",
+                   "purpose", "intent", "note", "notes", "title", "description", "is_background", "background",
+                   "run_in_background", "requires_approval", "safe_to_auto_run", "risk", "security_risk", "confidence",
+                   "task_progress", "status"}
+
+PYTHON_TOOLS = ("python", "python3", "execute_python", "run_python", "python_interpreter", "code_interpreter",
+                "ipython", "jupyter", "execute_code", "run_code")
+GLOB_TOOLS = ("glob", "find_file", "find_files", "file_search", "glob_search", "find_by_name")
+_SEARCH_REPLACE = re.compile(r"<<<<<<< ?SEARCH\n(.*?)\n?=======\n(.*?)\n?>>>>>>> ?REPLACE", re.S)
+
+
+def translate_call(name: str, args: dict[str, Any], specs: dict[str, ToolSpec]) -> tuple[str, dict[str, Any]] | None:
+    """Tools other agents offer whose arguments need translation, not renaming."""
+    n = _NAME_PREFIX.sub("", name.strip()).lower()
+    if n in PYTHON_TOOLS and "bash" in specs:
+        code = next((args[k] for k in ("code", "script", "source", "input", "command", "cmd") if isinstance(args.get(k), str)),
+                    None)
+        if code is None:
+            return None
+        return "bash", {"command": f"python3 - <<'GHEEREFILL_PY'\n{code}\nGHEEREFILL_PY"}
+    if n in GLOB_TOOLS and "bash" in specs:
+        pattern = next((args[k] for k in ("pattern", "glob", "file_pattern", "name", "query") if isinstance(args.get(k), str)),
+                       None)
+        if not pattern:
+            return None
+        base = next((args[k] for k in ("path", "dir", "directory", "dir_path") if isinstance(args.get(k), str)), "")
+        base = base.strip().rstrip("/")
+        spec = ":(glob)" + (pattern if "/" in pattern else "**/" + pattern)
+        cd = f"cd {shlex.quote(base)} && " if base not in ("", ".") else ""
+        return "bash", {"command": f"{cd}git ls-files -co --exclude-standard -- {shlex.quote(spec)} | head -200"}
+    if n in ("replace_in_file", "apply_diff") and "edit_file" in specs and isinstance(args.get("diff"), str):
+        blocks = _SEARCH_REPLACE.findall(args["diff"])
+        path = next((args[k] for k in ("path", "file_path", "file") if isinstance(args.get(k), str)), None)
+        if len(blocks) == 1 and path:
+            return "edit_file", {"path": path, "old_str": blocks[0][0], "new_str": blocks[0][1]}
+    return None
 
 
 # ------------------------------------------------------------------ lenient argument JSON
@@ -209,7 +290,12 @@ def normalize_call(call: ToolCall, specs: dict[str, ToolSpec]) -> tuple[ToolCall
         if mapped and mapped[0] in specs:
             name, args = mapped
             notes.append(f"`{call.name}` command mapped to `{name}`")
-    if name != call.name and name in specs and not any("mapped to" in n for n in notes):
+    if call.name not in specs and isinstance(args, dict):
+        translated = translate_call(call.name, args, specs)
+        if translated:
+            name, args = translated
+            notes.append(f"`{call.name}` call translated to `{name}`")
+    if name != call.name and name in specs and not any("mapped to" in n or "translated to" in n for n in notes):
         notes.append(f"tool name `{call.name}` mapped to `{name}`")
     if name in specs and isinstance(args, dict):
         args, renamed = canonical_arguments(name, args, specs[name])

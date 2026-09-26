@@ -26,9 +26,11 @@ def estimate_tokens(messages: list[dict[str, Any]]) -> int:
 
 class ContextManager:
     # Thinking models return long reasoning every turn and thinking-mode APIs take it back on tool-call
-    # turns; beyond the newest few turns it is cut to a stub (deterministically by position, so each
-    # message changes once and the cached prefix stays stable afterwards).
+    # turns; beyond the newest turns it is cut to a stub. The cut-off advances in steps of
+    # REASONING_STEP turns: a sliding cut-off would change one message per request and void the
+    # provider's prompt cache for every turn after it; stepped, the cached prefix changes once per step.
     REASONING_KEEP_TURNS = 4
+    REASONING_STEP = 8
     REASONING_STUB_CHARS = 400
 
     def __init__(self, context_window: int, max_output_tokens: int, reduce_at: float, keep_recent: int,
@@ -55,7 +57,8 @@ class ContextManager:
     def _render(self, transcript: list[dict[str, Any]]) -> list[dict[str, Any]]:
         out = []
         assistants = [i for i, m in enumerate(transcript) if m.get("role") == "assistant"]
-        old_reasoning = set(assistants[:-self.REASONING_KEEP_TURNS]) if len(assistants) > self.REASONING_KEEP_TURNS else set()
+        cut = max(0, len(assistants) - self.REASONING_KEEP_TURNS) // self.REASONING_STEP * self.REASONING_STEP
+        old_reasoning = set(assistants[:cut])
         for i, m in enumerate(transcript):
             r = m.get("reasoning")
             if r and i in old_reasoning and len(r) > self.REASONING_STUB_CHARS:

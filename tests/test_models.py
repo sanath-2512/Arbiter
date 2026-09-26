@@ -389,6 +389,14 @@ class StreamingTest(unittest.TestCase):
         self.assertEqual(cm.exception.cls, ErrorClass.NETWORK)
         self.assertTrue(cm.exception.usage_uncertain)
 
+    def test_long_answer_with_short_gaps_outlives_the_gap_timeout(self):
+        """A thinking model's answer that takes longer than request_timeout_s in total, never pausing
+        that long, is received (total bounded separately)."""
+        slow = [oa_chunk({"content": "x"})] * 8 + [oa_chunk({}, finish="stop")] + ["[DONE]"]
+        with ScriptedServer([("sse", slow, 0.2)]) as srv:
+            turn = OpenAIChatClient(self.cfg(srv.url), "k").complete(MSGS, [TOOL], timeout_s=1.0, total_s=10.0)
+        self.assertEqual(turn.text, "x" * 8)
+
     def test_stream_total_deadline_enforced(self):
         slow = [oa_chunk({"content": "x"})] * 20 + ["[DONE]"]
         t0 = time.monotonic()

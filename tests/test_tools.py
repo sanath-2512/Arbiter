@@ -270,3 +270,53 @@ class EditSafetyTest(TempDirCase):
         self.assertEqual(r.meta.get("error"), "no_match")
         self.assertIn("most similar text is at lines 1-3", r.content)
         self.assertIn("        return 1", r.content)
+
+
+class LenientEditTest(TempDirCase):
+    """Edits that fail verbatim for a known, mechanical reason are applied when exactly one region fits."""
+
+    def edit(self, name, data, old, new):
+        repo = self.tmp / "r"
+        repo.mkdir(exist_ok=True)
+        (repo / name).write_bytes(data)
+        tb = ToolBox(repo, self.tmp / "scratch", OutputArchive(self.tmp / "out", Redactor([])), ToolsConfig(),
+                     tool_environment(dict(os.environ), self.tmp / "scratch", ("AI_API_KEY",)))
+        res = tb.execute(ToolCall(id="1", name="edit_file", arguments={"path": name, "old_str": old, "new_str": new},
+                                  raw_arguments="{}"))
+        return res, (repo / name).read_bytes()
+
+    def test_go_file_edited_with_spaces(self):
+        src = b"func f(x int) int {\n\tif x > 0 {\n\t\treturn x\n\t}\n\treturn 0\n}\n"
+        res, out = self.edit("f.go", src, "    if x > 0 {\n        return x\n    }",
+                             "    if x >= 0 {\n        return x + 1\n    }")
+        self.assertEqual(res.status, "ok", res.content)
+        self.assertEqual(out, b"func f(x int) int {\n\tif x >= 0 {\n\t\treturn x + 1\n\t}\n\treturn 0\n}\n")
+        self.assertIn("re-indented", res.content)
+
+    def test_uniform_indent_offset_and_line_numbers(self):
+        src = b"class A:\n    def f(self):\n        return 1 // 2\n"
+        res, out = self.edit("a.py", src, "def f(self):\n    return 1 // 2", "def f(self):\n    return 1 / 2")
+        self.assertEqual((res.status, out), ("ok", b"class A:\n    def f(self):\n        return 1 / 2\n"), res.content)
+        res, out = self.edit("b.py", src, "     3\t        return 1 // 2", "     3\t        return 1 / 2")
+        self.assertEqual((res.status, out), ("ok", b"class A:\n    def f(self):\n        return 1 / 2\n"), res.content)
+        self.assertIn("line numbers", res.content)
+
+    def test_top_level_match_keeps_space_indentation_of_new_block(self):
+        src = b"x = 1\ny = 2\n"
+        res, out = self.edit("c.py", src, "y = 2  ", "def g():\n    return 2\ny = g()")
+        self.assertEqual((res.status, out), ("ok", b"x = 1\ndef g():\n    return 2\ny = g()\n"), res.content)
+
+    def test_ambiguous_or_inconsistent_is_still_refused(self):
+        src = b"if a:\n    go()\nif b:\n    go()\n"
+        res, out = self.edit("d.py", src, "  go()", "  stop()")
+        self.assertEqual((res.status, out), ("error", src))
+
+    def test_non_utf8_file_round_trips(self):
+        src = "# caf\xe9\nx = 1 // 2\n".encode("latin-1")
+        res, out = self.edit("e.py", src, "x = 1 // 2", "x = 1 / 2")
+        self.assertEqual((res.status, out), ("ok", "# caf\xe9\nx = 1 / 2\n".encode("latin-1")), res.content)
+
+    def test_crlf_file_with_wrong_indentation(self):
+        src = b"def f():\r\n\treturn 1 // 2\r\n"
+        res, out = self.edit("g.py", src, "def f():\n    return 1 // 2", "def f():\n    return 1 / 2")
+        self.assertEqual((res.status, out), ("ok", b"def f():\r\n\treturn 1 / 2\r\n"), res.content)

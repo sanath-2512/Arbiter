@@ -150,7 +150,8 @@ class TextProtocolClient:
     def adapt(self, error):
         return self.inner.adapt(error) if hasattr(self.inner, "adapt") else None
 
-    def complete(self, messages: list[dict[str, Any]], tools: list[ToolSpec], *, timeout_s: float) -> ModelTurn:
-        turn = self.inner.complete(convert_messages(messages, tools), [], timeout_s=timeout_s)
+    def complete(self, messages: list[dict[str, Any]], tools: list[ToolSpec], *, timeout_s: float,
+                 total_s: float | None = None) -> ModelTurn:
+        turn = self.inner.complete(convert_messages(messages, tools), [], timeout_s=timeout_s, total_s=total_s)
         turn.tool_calls = parse_actions(turn.text, tools)
         return turn

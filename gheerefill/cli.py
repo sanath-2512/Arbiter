@@ -183,7 +183,7 @@ def _first_env(names: tuple[str, ...]) -> str | None:
 def cmd_run(args: argparse.Namespace) -> int:
     from gheerefill.agent import Agent
     from gheerefill.credentials import take_credential
-    from gheerefill.intake import IntakeError, Request, build_task, parse_github_ref, parse_input
+    from gheerefill.intake import IntakeError, Request, build_task, parse_github_ref, parse_input, release_workspace
     from gheerefill.models import make_client
     from gheerefill.report import card, is_tty, write_report
     from gheerefill.resolve import resolve
@@ -316,6 +316,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             result = agent.run()
         finally:
             current.pop("agent", None)
+            release_workspace(task.repo_path)
         if resolution is not None:
             result["model"]["resolution"] = resolution.to_dict()
         if task.metadata.get("intake_notes"):
@@ -341,6 +342,11 @@ def cmd_run(args: argparse.Namespace) -> int:
             detail = str((result.get("error") or {}).get("message") or "")[:200]
             _err(f"error: the model endpoint {what}; the run stopped ({detail})")
             return 2 if term.endswith("authentication") else 3
+        if term.startswith("model_error:") and not (result.get("usage") or {}).get("requests_ok"):
+            # not one model response: nothing was attempted, whatever the (empty) deliverable says
+            detail = str((result.get("error") or {}).get("message") or "")[:200]
+            _err(f"error: no response from the model endpoint ({term.split(':', 1)[1]}): {detail}")
+            return 4
         return 0 if result.get("status") == "completed" else 1
 
     old = {s: signal.signal(s, on_signal) for s in (signal.SIGTERM, signal.SIGINT)}

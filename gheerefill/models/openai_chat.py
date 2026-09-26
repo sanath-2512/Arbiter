@@ -196,16 +196,17 @@ class OpenAIChatClient:
             return "provider requires streaming for this model; now streaming"
         return None
 
-    def complete(self, messages: list[dict[str, Any]], tools: list[ToolSpec], *, timeout_s: float) -> ModelTurn:
+    def complete(self, messages: list[dict[str, Any]], tools: list[ToolSpec], *, timeout_s: float,
+                 total_s: float | None = None) -> ModelTurn:
         url = self.cfg.base_url.rstrip("/") + "/chat/completions"
         headers = {"Authorization": f"Bearer {self._api_key}", **self.cfg.extra_headers}
         body = self.build_body(messages, tools)
         if not self.cfg.stream:
-            return self.parse_response(post_json(url, headers, body, timeout_s))
+            return self.parse_response(post_json(url, headers, body, timeout_s, total_s))
         body["stream"] = True
         if self.cfg.stream_usage:
             body["stream_options"] = {"include_usage": True}
-        return self.parse_response(accumulate_openai_stream(post_sse(url, headers, body, timeout_s)))
+        return self.parse_response(accumulate_openai_stream(post_sse(url, headers, body, timeout_s, total_s)))
 
 
 def accumulate_openai_stream(events) -> dict[str, Any]:
