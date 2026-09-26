@@ -1,0 +1,21 @@
+FAIL ./calc.test.js
+  ● half
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 3.5
+    Received: 3
+
+      1 | const {divide}=require("./calc");
+      2 | test("exact",()=>expect(divide(6,3)).toBe(2));
+    > 3 | test("half",()=>expect(divide(7,2)).toBe(3.5));
+        |                                     ^
+      4 |
+
+      at Object.toBe (calc.test.js:3:37)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 passed, 2 total
+Snapshots:   0 total
+Time:        0.372 s
+Ran all test suites.

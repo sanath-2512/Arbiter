@@ -68,7 +68,30 @@ def failing_tests(text: str, runner: str | None) -> list[str] | None:
         names = re.findall(r"^test (\S+) \.\.\. FAILED", text, re.M)
     elif runner == "jest/vitest":
         names = [n.strip() for n in re.findall(r"^\s*● (.+?)\s*$", text, re.M) if "Test suite failed to run" not in n]
-        names += [n.strip() for n in re.findall(r"^\s*[✕×] (.+?)(?: \(\d+ ?m?s\))?\s*$", text, re.M)]
+        names += [re.sub(r"\s+\(?\d+(?:\.\d+)? ?m?s\)?$", "", n.strip())
+                  for n in re.findall(r"^\s*[✕×] (.+?)\s*$", text, re.M)]
+        names += [n.strip() for n in re.findall(r"^\s*FAIL\s+\S+ > (.+?)\s*$", text, re.M)]  # vitest detail headers
+        names = [n for n in names if not re.match(r"^\S+\.(?:m?[jt]sx?) \(", n)]
+    elif runner == "mocha":
+        after = text.split(" failing", 1)[1] if " failing" in text else ""
+        for m in re.finditer(r"^[ \t]*\d+\) (.+?)\n((?:[ \t]{4,}\S[^\n]*?:[ \t]*\n)*)", after, re.M):
+            parts = [m.group(1).rstrip(":")] + [l.strip().rstrip(":") for l in m.group(2).splitlines() if l.strip()]
+            names.append(" ".join(parts))
+    elif runner == "tap":
+        names = [n.strip() for n in re.findall(r"^\s*not ok \d+(?: -)? (.+?)(?:\s+# (?!SKIP|TODO).*)?$", text, re.M)
+                 if not re.search(r"# (SKIP|TODO)", n, re.I)]
+    elif runner == "minitest":
+        names = re.findall(r"^\s*\d+\) (?:Failure|Error):\n(\S+?#\S+?)(?: \[|:|$)", text, re.M)
+    elif runner == "gradle":
+        names = [f"{c}.{t}" for c, t in re.findall(r"^(\S+) > (.+?) FAILED\s*$", text, re.M)]
+    elif runner == "phpunit":
+        names = re.findall(r"^\d+\) ([\w\\]+::\w+)", text, re.M)
+    elif runner == "dotnet":
+        names = re.findall(r"^\s*Failed (\S+) \[", text, re.M)
+    elif runner == "ctest":
+        names = re.findall(r"^\s*\d+ - (\S+) \((?:Failed|SEGFAULT|Timeout|Not Run)\)", text, re.M)
+    elif runner == "exunit":
+        names = [f"{mod} {t}" for t, mod in re.findall(r"^\s+\d+\) test (.+?) \((\S+)\)", text, re.M)]
     elif runner == "rspec":
         names = re.findall(r"^rspec (\S+)", text, re.M)
     elif runner == "junit":

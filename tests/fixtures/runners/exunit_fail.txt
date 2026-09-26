@@ -1,0 +1,11 @@
+.
+
+  1) test divides with a fraction (CalcTest)
+     test/calc_test.exs:8
+     Assertion with == failed
+     code:  assert Calc.divide(7, 2) == 3.5
+     left:  3
+     right: 3.5
+
+Finished in 0.02 seconds (0.00s async, 0.02s sync)
+2 tests, 1 failure

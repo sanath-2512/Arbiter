@@ -1,0 +1,14 @@
+running 2 tests from ./calc_test.ts
+exact ... ok (1ms)
+half ... FAILED (1ms)
+
+ ERRORS
+
+half => ./calc_test.ts:4:6
+error: AssertionError: Values are not equal.
+
+ FAILURES
+
+half => ./calc_test.ts:4:6
+
+FAILED | 1 passed | 1 failed (5ms)

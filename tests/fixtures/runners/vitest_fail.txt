@@ -1,0 +1,32 @@
+
+ RUN  v5.0.2 /work/js
+
+ ❯ vt/calc.test.mjs (2 tests | 1 failed) 8ms
+   × half 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  vt/calc.test.mjs > half
+AssertionError: expected 3 to be 3.5 // Object.is equality
+
+- Expected
++ Received
+
+- 3.5
++ 3
+
+ ❯ vt/calc.test.mjs:4:37
+      2| const divide=(a,b)=>Math.trunc(a/b);
+      3| test("exact",()=>expect(divide(6,3)).toBe(2));
+      4| test("half",()=>expect(divide(7,2)).toBe(3.5));
+       |                                     ^
+      5|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  19:16:06
+   Duration  190ms (transform 60%, import 19%, tests 15%, worker 6%)
+

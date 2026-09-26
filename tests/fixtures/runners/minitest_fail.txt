@@ -1,0 +1,14 @@
+Run options: --seed 16353
+
+# Running:
+
+F.
+
+Finished in 0.001492s, 1340.7414 runs/s, 1340.7414 assertions/s.
+
+  1) Failure:
+CalcTest#test_half [rb/calc_test.rb:5]:
+Expected: 3.5
+  Actual: 3
+
+2 runs, 2 assertions, 1 failures, 0 errors, 0 skips

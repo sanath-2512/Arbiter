@@ -1,0 +1,9 @@
+
+ RUN  v5.0.2 /work/js
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  19:16:34
+   Duration  171ms (transform 50%, import 30%, worker 11%, tests 8%)
+

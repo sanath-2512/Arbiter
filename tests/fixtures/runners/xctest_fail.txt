@@ -1,0 +1,6 @@
+Test Suite 'All tests' started at 2026-09-26 10:00:00.000
+Test Case '-[CalcTests.CalcTests testHalf]' started.
+/work/Tests/CalcTests.swift:10: error: -[CalcTests.CalcTests testHalf] : XCTAssertEqual failed: ("3.0") is not equal to ("3.5")
+Test Case '-[CalcTests.CalcTests testHalf]' failed (0.001 seconds).
+Test Suite 'All tests' failed at 2026-09-26 10:00:00.010.
+	 Executed 2 tests, with 1 failure (0 unexpected) in 0.002 (0.003) seconds

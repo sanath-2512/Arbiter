@@ -1,0 +1,10 @@
+> Task :compileJava
+> Task :compileTestJava
+> Task :test
+
+CalcTest > divideExact() PASSED
+
+CalcTest > divideHalf() PASSED
+
+BUILD SUCCESSFUL in 2s
+3 actionable tasks: 3 executed

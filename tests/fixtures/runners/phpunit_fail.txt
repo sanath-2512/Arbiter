@@ -1,0 +1,15 @@
+PHPUnit 11.5.0 by Sebastian Bergmann and contributors.
+
+.F                                                                  2 / 2 (100%)
+
+Time: 00:00.010, Memory: 8.00 MB
+
+There was 1 failure:
+
+1) Tests\CalcTest::testHalf
+Failed asserting that 3 matches expected 3.5.
+
+/work/tests/CalcTest.php:14
+
+FAILURES!
+Tests: 2, Assertions: 2, Failures: 1.

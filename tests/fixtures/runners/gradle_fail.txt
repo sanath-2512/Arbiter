@@ -1,0 +1,18 @@
+> Task :compileJava
+> Task :compileTestJava
+> Task :test FAILED
+
+CalcTest > divideExact() PASSED
+
+CalcTest > divideHalf() FAILED
+    org.opentest4j.AssertionFailedError at CalcTest.java:12
+
+2 tests completed, 1 failed
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':test'.
+> There were failing tests. See the report at: file:///work/build/reports/tests/test/index.html
+
+BUILD FAILED in 3s

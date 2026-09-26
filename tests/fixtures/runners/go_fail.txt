@@ -1,0 +1,5 @@
+--- FAIL: TestHalf (0.00s)
+    calc_test.go:4: got 3
+FAIL
+FAIL	example.com/calc	0.011s
+FAIL

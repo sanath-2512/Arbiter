@@ -1,0 +1,5 @@
+1..2
+ok 1 divides exactly
+not ok 2 divides with a fraction
+# (in test file test/calc.bats, line 8)
+#   `[ "$output" = "3.5" ]' failed

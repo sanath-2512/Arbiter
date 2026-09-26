@@ -1,0 +1,14 @@
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.example.CalcTest
+[ERROR] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.02 s <<< FAILURE! -- in com.example.CalcTest
+[ERROR] com.example.CalcTest.divideHalf -- Time elapsed: 0.005 s <<< FAILURE!
+[INFO]
+[INFO] Results:
+[INFO]
+[ERROR] Failures:
+[ERROR]   CalcTest.divideHalf:12 expected: <3.5> but was: <3.0>
+[INFO]
+[ERROR] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0
+[INFO] BUILD FAILURE

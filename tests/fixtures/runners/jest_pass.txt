@@ -1,0 +1,17 @@
+FAIL vt/calc.test.mjs
+  ● Test suite failed to run
+
+    Must use import to load ES Module: /work/js/vt/calc.test.mjs
+
+    The file contains ESM syntax (import/export) that could not be executed as CommonJS. Either:
+      - Configure a transform (e.g. babel-jest) that compiles this file to CommonJS (see https://jestjs.io/docs/code-transformation)
+      - If the file is in "node_modules", allow it to be transformed by adjusting "transformIgnorePatterns" (see https://jestjs.io/docs/configuration#transformignorepatterns-arraystring)
+      - Use Node v24.9+ where Jest supports require(esm) natively (see https://jestjs.io/docs/ecmascript-modules#require-of-esm)
+
+      at createRequireEsmError (node_modules/jest-runtime/build/index.js:452:17)
+
+Test Suites: 1 failed, 2 passed, 3 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        0.469 s, estimated 1 s
+Ran all test suites.

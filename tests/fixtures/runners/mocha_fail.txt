@@ -1,0 +1,27 @@
+
+
+  calc
+    ✔ exact
+    1) half
+
+
+  1 passing (4ms)
+  1 failing
+
+  1) calc
+       half:
+
+      AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+3 !== 3.5
+
+      + expected - actual
+
+      -3
+      +3.5
+      
+      at Context.<anonymous> (mt/calc.spec.js:2:93)
+      at process.processImmediate (node:internal/timers:484:21)
+
+
+

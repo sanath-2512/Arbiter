@@ -26,7 +26,12 @@ CHECK_COMMAND_RE = re.compile(
     r"(npm|pnpm|yarn|bun)\s+(run\s+)?(test|jest|vitest|mocha)|npx\s+(jest|vitest|mocha)|jest|vitest|mocha|"
     r"mvn\b.*\b(test|verify)\b|(\./)?gradlew?\b.*\btest\b|"
     r"make\s+(test|check)|ctest|rspec|bundle\s+exec\s+(rake|rspec)|phpunit|(\./)?vendor/bin/phpunit|"
-    r"dotnet\s+test|swift\s+test|mix\s+test|bazel\s+test"
+    r"dotnet\s+test|swift\s+test|mix\s+test|bazel\s+test|"
+    r"node\s+(--test|--run\s+test)|node\s+\S*(test|spec)\S*\.[cm]?[jt]s|bun\s+test|deno\s+test|(\./)?\S*bats|"
+    r"ruby\s+(-\S+\s+)*\S*(_test|test_|_spec)\S*\.rb|(bundle\s+exec\s+)?rake\s+(test|spec)|"
+    r"php\s+artisan\s+test|(\./)?(vendor/bin/)?pest|hatch\s+(test|run\s+\S*test)|"
+    r"python[\d.]*\s+(-[a-zA-Z]+\s+)*\S*test\S*\.py|(\./)?\S*(run_?tests?|runtests)\S*\.(py|sh)|"
+    r"(bash|sh)\s+\S*test\S*\.sh"
     r")(\s|$)"
 )
 _WRAPPERS = {"time", "env", "nice", "xvfb-run", "sudo", "command", "exec"}
@@ -105,24 +110,6 @@ def classify_output(text: str, exit_code: int | None, *, timed_out: bool = False
         counts = {"passed": max(0, ran - failures - errors - skipped), "failed": failures, "errors": errors, "skipped": skipped}
         if re.search(r"ImportError|ModuleNotFoundError|Failed to import test module", text) and ran <= errors:
             collection_error = True
-    # go test
-    elif re.search(r"^(ok|FAIL|\?)\s+\S+", text, re.M) or "--- FAIL:" in text:
-        runner = "go"
-        counts = {
-            "passed": len(re.findall(r"^\s*--- PASS:", text, re.M)),
-            "failed": len(re.findall(r"^\s*--- FAIL:", text, re.M)),
-            "skipped": len(re.findall(r"^\s*--- SKIP:", text, re.M)),
-        }
-        ok_pkgs = len(re.findall(r"^ok\s+\S+", text, re.M))
-        fail_pkgs = len(re.findall(r"^FAIL\s+\S+", text, re.M))
-        if counts["passed"] == 0 and ok_pkgs:
-            counts["passed"] = ok_pkgs  # non-verbose: count passing packages
-        if fail_pkgs and not counts["failed"]:
-            counts["failed"] = fail_pkgs
-        if re.search(r"\[build failed\]|\[setup failed\]|cannot find package|undefined: ", text):
-            collection_error = True
-        if "[no tests to run]" in text and not counts["passed"] and not counts["failed"]:
-            counts = {}
     # cargo
     elif "test result:" in text:
         runner = "cargo"
@@ -132,12 +119,16 @@ def classify_output(text: str, exit_code: int | None, *, timed_out: bool = False
             counts["skipped"] = counts.get("skipped", 0) + int(ig)
     elif re.search(r"error(\[E\d+\])?: could not compile|error: could not compile", text):
         runner, collection_error = "cargo", True
-    # jest / vitest
+    # jest / vitest (before go: jest prints "FAIL path" lines too)
     elif re.search(r"^\s*Tests:?\s+.*\d+ (passed|failed|total)", text, re.M):
         runner = "jest/vitest"
         line = re.findall(r"^\s*Tests:?\s+(.*)$", text, re.M)[-1]
         for n, kind in re.findall(r"(\d+) (passed|failed|skipped|todo)", line):
             counts[kind] = counts.get(kind, 0) + int(n)
+        broken = len(re.findall(r"Test suite failed to run|Failed to load (?:url|test file)|Error: Cannot find module",
+                                text))
+        if broken:  # a test file that failed to load is a failure even when every test that ran passed
+            counts["errors"] = counts.get("errors", 0) + broken
         if re.search(r"Test suite failed to run|Failed to load|SyntaxError", text) and not counts.get("passed"):
             collection_error = True
     elif re.search(r"No tests found", text):
@@ -147,7 +138,26 @@ def classify_output(text: str, exit_code: int | None, *, timed_out: bool = False
         runner = "mocha"
         counts = {"passed": _num(r"^\s*(\d+) passing", text), "failed": _num(r"^\s*(\d+) failing", text),
                   "skipped": _num(r"^\s*(\d+) pending", text)}
-    # maven / gradle / surefire
+    # TAP: node --test, tape, bats, prove
+    elif re.search(r"^# (pass|fail) \d+", text, re.M) or (re.search(r"^1\.\.\d+", text, re.M)
+                                                          and re.search(r"^(not )?ok \d+", text, re.M)):
+        runner = "tap"
+        if re.search(r"^# pass \d+", text, re.M):
+            counts = {"passed": _num(r"^# pass (\d+)", text), "failed": _num(r"^# fail (\d+)", text),
+                      "skipped": _num(r"^# skipped (\d+)", text) + _num(r"^# todo (\d+)", text)}
+        else:
+            lines = re.findall(r"^(not ok|ok) \d+.*$", text, re.M)
+            skip = len(re.findall(r"^(?:not )?ok \d+.*# (?:SKIP|TODO)", text, re.M | re.I))
+            counts = {"passed": sum(1 for l in lines if l == "ok"), "failed": sum(1 for l in lines if l == "not ok"),
+                      "skipped": skip}
+            counts["passed"] = max(0, counts["passed"] - skip)
+    # minitest (Ruby)
+    elif re.search(r"\d+ runs, \d+ assertions, \d+ failures, \d+ errors", text):
+        runner = "minitest"
+        r, f, e, sk = (int(x) for x in re.findall(r"(\d+) runs, \d+ assertions, (\d+) failures, (\d+) errors, "
+                                                   r"(\d+) skips", text)[-1])
+        counts = {"passed": max(0, r - f - e - sk), "failed": f, "errors": e, "skipped": sk}
+    # maven / surefire
     elif re.search(r"Tests run: \d+, Failures: \d+", text):
         runner = "junit"
         last = re.findall(r"Tests run: (\d+), Failures: (\d+), Errors: (\d+)(?:, Skipped: (\d+))?", text)[-1]
@@ -155,12 +165,82 @@ def classify_output(text: str, exit_code: int | None, *, timed_out: bool = False
         counts = {"passed": max(0, run - f - e - sk), "failed": f, "errors": e, "skipped": sk}
         if "COMPILATION ERROR" in text:
             collection_error = True
+    # gradle
+    elif re.search(r"\d+ tests? completed, \d+ failed", text) or re.search(r"> Task :\S*test\S*", text, re.I):
+        runner = "gradle"
+        m = re.findall(r"(\d+) tests? completed, (\d+) failed(?:, (\d+) skipped)?", text)
+        if m:
+            done, f, sk = int(m[-1][0]), int(m[-1][1]), int(m[-1][2] or 0)
+            counts = {"passed": max(0, done - f - sk), "failed": f, "skipped": sk}
+        elif "BUILD SUCCESSFUL" in text:
+            counts = {"passed": max(1, len(re.findall(r" PASSED$", text, re.M)))}
+        if re.search(r"Compilation failed|compileTestJava FAILED|compileJava FAILED|compileKotlin FAILED", text):
+            collection_error = True
     # rspec
     elif re.search(r"\d+ examples?, \d+ failures?", text):
         runner = "rspec"
         m = re.findall(r"(\d+) examples?, (\d+) failures?(?:, (\d+) pending)?", text)[-1]
         ex, f, pend = int(m[0]), int(m[1]), int(m[2] or 0)
         counts = {"passed": ex - f - pend, "failed": f, "skipped": pend}
+    # phpunit
+    elif re.search(r"^OK \(\d+ tests?, \d+ assertions?\)|^Tests: \d+, Assertions: \d+", text, re.M):
+        runner = "phpunit"
+        ok = re.findall(r"^OK \((\d+) tests?", text, re.M)
+        if ok:
+            counts = {"passed": int(ok[-1])}
+        else:
+            t = _num(r"^Tests: (\d+)", text)
+            f, e = _num(r"Failures: (\d+)", text), _num(r"Errors: (\d+)", text)
+            sk = _num(r"Skipped: (\d+)", text) + _num(r"Incomplete: (\d+)", text)
+            counts = {"passed": max(0, t - f - e - sk), "failed": f, "errors": e, "skipped": sk}
+    # dotnet test
+    elif re.search(r"(Passed|Failed)!\s+-\s+Failed:\s+\d+, Passed:\s+\d+", text):
+        runner = "dotnet"
+        for f, pz, sk in re.findall(r"Failed:\s+(\d+), Passed:\s+(\d+), Skipped:\s+(\d+)", text):
+            counts["failed"] = counts.get("failed", 0) + int(f)
+            counts["passed"] = counts.get("passed", 0) + int(pz)
+            counts["skipped"] = counts.get("skipped", 0) + int(sk)
+    # ctest
+    elif re.search(r"\d+% tests passed, \d+ tests? failed out of \d+", text):
+        runner = "ctest"
+        f, total = (int(x) for x in re.findall(r"tests passed, (\d+) tests? failed out of (\d+)", text)[-1])
+        counts = {"passed": total - f, "failed": f}
+    # ExUnit (Elixir)
+    elif re.search(r"^\d+ (?:tests?|doctests?)(?:, \d+ doctests?)?, \d+ failures?", text, re.M):
+        runner = "exunit"
+        m = re.findall(r"^(\d+) tests?, (\d+) failures?(?:, (\d+) (?:skipped|excluded))?", text, re.M)
+        if m:
+            t, f, sk = int(m[-1][0]), int(m[-1][1]), int(m[-1][2] or 0)
+            counts = {"passed": max(0, t - f - sk), "failed": f, "skipped": sk}
+    # swift / XCTest
+    elif re.search(r"Executed \d+ tests?, with \d+ failures?", text):
+        runner = "xctest"
+        t, f = (int(x) for x in re.findall(r"Executed (\d+) tests?, with (\d+) failures?", text)[-1])
+        counts = {"passed": t - f, "failed": f}
+    # deno
+    elif re.search(r"^(ok|FAILED) \| \d+ passed.*\| \d+ failed", text, re.M):
+        runner = "deno"
+        p_, f_ = (int(x) for x in re.findall(r"\| (\d+) passed.*?\| (\d+) failed", text)[-1])
+        counts = {"passed": p_, "failed": f_}
+    # go test (strict: package lines carry a duration or "(cached)")
+    elif re.search(r"^(ok|FAIL)\s+\S+\s+(\d+(\.\d+)?s|\(cached\))", text, re.M) or re.search(r"^\s*--- (FAIL|PASS):", text, re.M) \
+            or re.search(r"^\?\s+\S+\s+\[no test files\]|^FAIL\s+\S+\s+\[(build|setup) failed\]", text, re.M):
+        runner = "go"
+        counts = {
+            "passed": len(re.findall(r"^\s*--- PASS:", text, re.M)),
+            "failed": len(re.findall(r"^\s*--- FAIL:", text, re.M)),
+            "skipped": len(re.findall(r"^\s*--- SKIP:", text, re.M)),
+        }
+        ok_pkgs = len(re.findall(r"^ok\s+\S+", text, re.M))
+        fail_pkgs = len(re.findall(r"^FAIL\s+\S+\s", text, re.M))
+        if counts["passed"] == 0 and ok_pkgs:
+            counts["passed"] = ok_pkgs  # non-verbose: count passing packages
+        if fail_pkgs and not counts["failed"]:
+            counts["failed"] = fail_pkgs
+        if re.search(r"\[build failed\]|\[setup failed\]|cannot find package|undefined: ", text):
+            collection_error = True
+        if "[no tests to run]" in text and not counts["passed"] and not counts["failed"]:
+            counts = {}
 
     if runner is None:
         return CheckOutcome("inconclusive", detail=f"unrecognised runner output (exit code {exit_code})")
