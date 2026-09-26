@@ -29,11 +29,12 @@ import subprocess
 import sys
 import threading
 import time
-import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PI_BIN = ROOT / "baselines" / "pi" / "node_modules" / ".bin" / "pi"
+sys.path.insert(0, str(ROOT))  # same resolver as the harness: identical model for every system
+from gheerefill.config import tomllib  # noqa: E402 - stdlib tomllib, or vendored tomli on 3.9/3.10
 SECRET_SUFFIXES = ("_API_KEY", "_TOKEN", "_SECRET", "_SECRET_ACCESS_KEY", "_PASSWORD")
 PROMPT = ("Resolve the following issue by changing the repository in the current directory. "
           "Work autonomously; nobody will answer questions.\n\n<issue>\n{issue}\n</issue>")
@@ -57,7 +58,6 @@ def main() -> int:
     if not key:
         print("API key not set", file=sys.stderr)
         return 2
-    sys.path.insert(0, str(ROOT))  # same resolver as the harness: identical model for every system
     from gheerefill.config import load_profile
     from gheerefill.resolve import resolve
 

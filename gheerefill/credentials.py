@@ -20,12 +20,22 @@ PR_SET_DUMPABLE = 4
 _taken: dict[str, str] = {}
 
 
+def normalize(value: str) -> str:
+    """Tolerate copy-paste artefacts: surrounding whitespace/CR (Windows .env files) and one pair
+    of matching quotes (`export AI_API_KEY="'sk-...'"`). The key itself is never altered."""
+    v = value.strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"":
+        v = v[1:-1].strip()
+    return v
+
+
 def take_credential(name: str) -> str:
     if name in _taken:
         return _taken[name]
-    value = os.environ.get(name, "")
+    raw = os.environ.get(name, "")
+    value = normalize(raw)
     _taken[name] = value
-    if not value:
+    if not raw:
         return value
     if sys.platform.startswith("linux"):
         try:
@@ -33,7 +43,7 @@ def take_credential(name: str) -> str:
             libc.getenv.restype = ctypes.c_void_p
             ptr = libc.getenv(name.encode())
             if ptr:
-                ctypes.memset(ptr, ord("x"), len(value.encode()))
+                ctypes.memset(ptr, ord("x"), len(raw.encode()))
             libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)
         except (OSError, AttributeError):
             pass

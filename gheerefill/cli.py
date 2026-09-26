@@ -14,9 +14,11 @@ or infrastructure error; 2 = configuration error (no task attempted).
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
+import re
 import signal
 import sys
 import time
@@ -41,8 +43,30 @@ def _emit(record: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
+def _caller_dir() -> Path:
+    """Directory the user started from (`make` exports it; recipes themselves run in the harness)."""
+    return Path(os.environ.get("GHEEREFILL_CALLER_DIR") or os.getcwd())
+
+
+def _user_path(value: str, *, harness_fallback: bool = False) -> Path:
+    p = Path(value).expanduser()
+    if p.is_absolute():
+        return p
+    here = _caller_dir() / p
+    if harness_fallback and not here.exists() and (HARNESS_ROOT / p).exists():
+        return HARNESS_ROOT / p
+    return here
+
+
 def _profile_path(arg: str | None) -> Path:
-    return Path(arg or os.environ.get("GHEEREFILL_PROFILE") or DEFAULT_PROFILE)
+    value = arg or os.environ.get("GHEEREFILL_PROFILE")
+    return _user_path(value, harness_fallback=True) if value else DEFAULT_PROFILE
+
+
+def _repo_spec(value: str | None) -> str | None:
+    if not value or re.match(r"^(https?://|git@|ssh://|file://)", value):
+        return value
+    return str(_user_path(value))
 
 
 def _redactor(profile: Profile) -> Redactor:
@@ -52,6 +76,77 @@ def _redactor(profile: Profile) -> Redactor:
 def _config_error_record(task_id: str | None, message: str) -> dict[str, Any]:
     return {"schema": "gheerefill.result/v1", "task_id": task_id, "status": "configuration_error",
             "submission_ready": False, "error": {"message": message}}
+
+
+PASTE_START, PASTE_END = "\x1b[200~", "\x1b[201~"
+COMMANDS = ("/quit", "/exit", "/help", "quit", "exit", "help")
+
+
+class PromptReader:
+    """Input for the interactive `make run` prompt.
+
+    Pastes are delimited with the terminal's bracketed-paste mode (xterm/VTE, iTerm2, tmux, Windows
+    Terminal, VS Code): a multi-line paste ends at the terminal's end marker, so "paste, then Enter"
+    submits it even when the text contains blank lines. Typed text, and terminals without the mode,
+    end with a line containing only /go (or Ctrl-D). A URL, owner/repo#N or @file line is taken at once.
+    Line-mode terminals cap a single line at ~4 KB: very long text is better given as ISSUE=@file.
+    """
+
+    def __init__(self, stdin, out):
+        from gheerefill.report import is_tty
+
+        self.stdin, self.out = stdin, out
+        self.tty = is_tty(stdin) and is_tty(out)
+
+    @contextlib.contextmanager
+    def bracketed_paste(self):
+        if self.tty:
+            self.out.write("\x1b[?2004h")
+            self.out.flush()
+        try:
+            yield
+        finally:
+            if self.tty:
+                self.out.write("\x1b[?2004l")
+                self.out.flush()
+
+    def _prompt(self, prompt: str) -> str:
+        self.out.write(prompt)
+        self.out.flush()
+        return self.stdin.readline()
+
+    def read_line(self, prompt: str) -> str:
+        return self._prompt(prompt).replace(PASTE_START, "").replace(PASTE_END, "")
+
+    def read_entry(self, prompt: str) -> str | None:
+        """One unit of input; None at end of input."""
+        from gheerefill.intake import parse_github_ref
+
+        line = self._prompt(prompt)
+        if not line:
+            return None
+        if PASTE_START in line:
+            buf = line.split(PASTE_START, 1)[1]
+            while PASTE_END not in buf:
+                more = self.stdin.readline()
+                if not more:
+                    break
+                buf += more
+            text, _, rest = buf.partition(PASTE_END)
+            rest = rest.replace(PASTE_START, "").replace(PASTE_END, "").strip()
+            return text.replace(PASTE_START, "") + (rest if rest and rest != "/go" else "")
+        s = line.strip()
+        if not s or s in COMMANDS or s.startswith(("@", "{")) or parse_github_ref(s):
+            return line
+        self.out.write("(typing: end with a line containing only /go, or Ctrl-D)\n")
+        self.out.flush()
+        buf = [line]
+        while True:
+            more = self.stdin.readline()
+            if not more or more.strip() == "/go":
+                break
+            buf.append(more)
+        return "".join(buf)
 
 
 ISSUE_VARS = ("ISSUE", "ISSUE_URL", "GITHUB_ISSUE")
@@ -94,16 +189,18 @@ def cmd_run(args: argparse.Namespace) -> int:
     from gheerefill.sandbox import Sandbox
 
     load_dotenv(HARNESS_ROOT / ".env")
-    out_root = Path(args.out or os.environ.get("GHEEREFILL_OUT") or HARNESS_ROOT / "runs").resolve()
+    out_arg = args.out or os.environ.get("GHEEREFILL_OUT")
+    out_root = (_user_path(out_arg) if out_arg else HARNESS_ROOT / "runs").resolve()
     workspace = Path(os.environ.get("GHEEREFILL_WORKSPACE") or HARNESS_ROOT / "workspace").resolve()
     human = is_tty(sys.stdout)
     color = human and not os.environ.get("NO_COLOR")
     issue_arg = args.issue or _first_env(ISSUE_VARS)
     if not issue_arg and os.environ.get("ISSUE_FILE"):
         issue_arg = "@" + os.environ["ISSUE_FILE"]
-    repo_arg = args.repo or _first_env(REPO_VARS)
+    repo_arg = _repo_spec(args.repo or _first_env(REPO_VARS))
     base_arg = args.base or os.environ.get("BASE") or None
     interactive = not issue_arg and args.task in (None, "-") and is_tty(sys.stdin)
+    cli_limits = {k: v for k, v in (("time_limit_s", args.time_limit), ("max_steps", args.max_steps)) if v is not None}
 
     def emit(record: dict[str, Any]) -> None:
         if not human:
@@ -149,9 +246,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     requests: list[Request] = []
     try:
         if issue_arg:
-            requests = parse_input(issue_arg, base_dir=Path.cwd(), source="ISSUE")
+            requests = parse_input(issue_arg, base_dir=_caller_dir(), source="ISSUE")
         elif args.task not in (None, "-"):
-            tp = Path(args.task)
+            tp = _user_path(args.task)
             if not tp.exists() or tp.is_dir():  # FIFOs, /dev/stdin and process substitution are fine
                 _err(f"error: task file not found: {tp}")
                 emit(_config_error_record(None, f"task file not found: {tp}"))
@@ -159,7 +256,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             with open(tp, encoding="utf-8", errors="replace") as fh:
                 requests = parse_input(fh.read(), base_dir=tp.resolve().parent, source=str(tp))
         elif not interactive:
-            requests = parse_input(sys.stdin.read(), base_dir=Path.cwd(), source="stdin")
+            requests = parse_input(sys.stdin.read(), base_dir=_caller_dir(), source="stdin")
     except IntakeError as e:
         _err(f"invalid input: {e}")
         emit({"schema": "gheerefill.result/v1", "task_id": None, "status": "invalid_input", "submission_ready": False,
@@ -170,12 +267,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     current: dict[str, Any] = {}
 
     def on_signal(signum, frame):  # noqa: ARG001
-        _err(f"received signal {signum}; finalising current task")
         agent = current.get("agent")
         if agent is not None:
+            _err(f"received signal {signum}; finalising current task")
             agent.request_cancel()
-        else:
-            current["stop"] = True
+            return
+        current["stop"] = True
+        if current.get("idle"):
+            raise KeyboardInterrupt  # waiting for input: leave now instead of after the next Enter
 
     def process(req: Request, repo_spec: str | None) -> int:
         if req.error is not None:
@@ -191,8 +290,14 @@ def cmd_run(args: argparse.Namespace) -> int:
             emit({"schema": "gheerefill.result/v1", "task_id": None, "status": "invalid_input",
                   "submission_ready": False, "error": {"message": str(e), "source": req.source}})
             return 1
+        if current.get("stop"):
+            emit({"schema": "gheerefill.result/v1", "task_id": task.task_id, "status": "cancelled",
+                  "submission_ready": False, "error": {"message": "interrupted before the task started"}})
+            return 1
         try:
             tp_profile = apply_task_limits(profile, task.limits)
+            if cli_limits:  # TIME_LIMIT= / MAX_STEPS= given to this invocation win over profile and task
+                tp_profile = apply_task_limits(tp_profile, cli_limits)
             validate(tp_profile)
         except ConfigError as e:
             emit(_config_error_record(task.task_id, f"invalid task limits: {e}"))
@@ -234,46 +339,42 @@ def cmd_run(args: argparse.Namespace) -> int:
     try:
         if interactive:
             _err("\nSupply the task: a GitHub issue URL (or owner/repo#N), @path/to/issue.md, or paste the issue "
-                 "text and end it with a line containing only /go. Commands: /help, /quit.")
-            while not current.get("stop"):
-                sys.stderr.write("issue> ")
-                sys.stderr.flush()
-                line = sys.stdin.readline()
-                if not line:
-                    break
-                s = line.strip()
-                if s in ("/quit", "/exit", "quit", "exit"):
-                    break
-                if not s:
-                    continue
-                if s in ("/help", "help"):
-                    _err("GitHub issue URL | owner/repo#N | @file | pasted text ending with /go | /quit. "
-                         "Set REPO=<path or git URL> for text issues; BASE=<commit|before-issue> to pin the base.")
-                    continue
-                text = s
-                if not (parse_github_ref(s) or s.startswith("@") or s.startswith("{")):
-                    buf = [line]
-                    _err("(pasting: end with a line containing only /go, or Ctrl-D)")
-                    while True:
-                        more = sys.stdin.readline()
-                        if not more or more.strip() == "/go":
+                 "text and press Enter (type /go on its own line if your terminal does not mark pastes). "
+                 "Commands: /help, /quit.")
+            reader = PromptReader(sys.stdin, sys.stderr)
+            with reader.bracketed_paste():
+                while not current.get("stop"):
+                    try:
+                        current["idle"] = True
+                        text = reader.read_entry("issue> ")
+                        if text is None or text.strip() in ("/quit", "/exit", "quit", "exit"):
                             break
-                        buf.append(more)
-                    text = "".join(buf)
-                try:
-                    reqs = parse_input(text, base_dir=Path.cwd(), source="interactive")
-                except IntakeError as e:
-                    _err(f"invalid input: {e}")
-                    continue
-                for req in reqs:
-                    spec = repo_arg
-                    if req.issue_text is not None and not spec:
-                        sys.stderr.write("repository (local path or git URL)> ")
-                        sys.stderr.flush()
-                        spec = sys.stdin.readline().strip() or None
-                    exit_code = max(exit_code, process(req, spec))
-                    if current.get("stop"):
+                        if not text.strip():
+                            continue
+                        if text.strip() in ("/help", "help"):
+                            _err("GitHub issue URL | owner/repo#N | @file | pasted text | /quit. Optional: REPO=<path "
+                                 "or git URL> for text issues; BASE=<commit|before-issue>; TIME_LIMIT=<s>; MAX_STEPS=<n>.")
+                            continue
+                        try:
+                            reqs = parse_input(text, base_dir=_caller_dir(), source="interactive")
+                        except IntakeError as e:
+                            _err(f"invalid input: {e}")
+                            continue
+                        specs = []
+                        for req in reqs:
+                            spec = repo_arg
+                            if req.issue_text is not None and not spec:
+                                spec = _repo_spec(reader.read_line("repository (local path or git URL)> ").strip() or None)
+                            specs.append(spec)
+                    except KeyboardInterrupt:
+                        _err("")
                         break
+                    finally:
+                        current["idle"] = False
+                    for req, spec in zip(reqs, specs):
+                        exit_code = max(exit_code, process(req, spec))
+                        if current.get("stop"):
+                            break
         else:
             if not requests:
                 _err("no task supplied. Give ISSUE=<GitHub issue URL | owner/repo#N | @file | text> (with REPO=... "
@@ -425,7 +526,24 @@ def cmd_probe(args: argparse.Namespace) -> int:
     return 0 if report.get("tool_call_ok") and report.get("tool_result_turn_ok") else 1
 
 
+def _positive(kind):
+    def parse(text: str):
+        try:
+            v = kind(text)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"not a number: {text!r}") from None
+        if v <= 0:
+            raise argparse.ArgumentTypeError(f"must be positive: {text!r}")
+        return v
+    return parse
+
+
 def main(argv: list[str] | None = None) -> int:
+    for stream in (sys.stdout, sys.stderr):  # never crash on a non-UTF-8 terminal/locale
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
     parser = argparse.ArgumentParser(prog="gheerefill", description=f"gheerefill coding-agent harness {__version__}")
     sub = parser.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("run", help="solve tasks (JSON / JSON Lines on stdin or --task FILE)")
@@ -436,6 +554,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--repo", help="repository path or git URL for the issue (or REPO=...)")
     p.add_argument("--base", help="base commit, or 'before-issue' (or BASE=...)")
     p.add_argument("--no-discover", action="store_true", help="skip the provider /models lookup")
+    p.add_argument("--time-limit", type=_positive(float), help="wall-clock limit per task in seconds (TIME_LIMIT=...)")
+    p.add_argument("--max-steps", type=_positive(int), help="model-turn limit per task (MAX_STEPS=...)")
     p.set_defaults(fn=cmd_run)
     p = sub.add_parser("finalize", help="finalise an interrupted run from its checkpoint (no model calls)")
     p.add_argument("--run-dir", required=True)

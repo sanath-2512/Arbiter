@@ -21,12 +21,18 @@ from typing import Callable
 
 SECRET_NAME_SUFFIXES = ("_API_KEY", "_TOKEN", "_SECRET", "_SECRET_ACCESS_KEY", "_PASSWORD", "_CREDENTIALS")
 SECRET_NAMES = {"AI_API_KEY", "GH_TOKEN", "GITHUB_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"}
+# Harness inputs (Makefile variables) and make's own state: a model command that runs the target
+# project's build must not inherit them (a sub-make would treat `REPO=...` from MAKEFLAGS as a
+# command-line override of the project's own variable).
+HARNESS_INPUT_NAMES = {"ISSUE", "ISSUE_URL", "ISSUE_FILE", "GITHUB_ISSUE", "REPO", "REPO_PATH", "REPO_URL", "BASE",
+                       "TASK", "PROFILE", "OUT", "TIME_LIMIT", "MAX_STEPS", "SUITE", "SYSTEMS",
+                       "MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "MAKE_TERMOUT", "MAKE_TERMERR"}
 
 
 def tool_environment(base: dict[str, str], scratch: Path, extra_secret_names: tuple[str, ...] = ()) -> dict[str, str]:
     """Environment for model-issued commands: credentials removed, non-interactive defaults.
     Filtering variables is NOT process isolation (see NOTES.md)."""
-    drop = SECRET_NAMES | set(extra_secret_names)
+    drop = SECRET_NAMES | HARNESS_INPUT_NAMES | set(extra_secret_names)
     env = {
         k: v
         for k, v in base.items()

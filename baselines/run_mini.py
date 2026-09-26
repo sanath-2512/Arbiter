@@ -26,7 +26,6 @@ import os
 import re
 import sys
 import time
-import tomllib
 from pathlib import Path
 
 SECRET_SUFFIXES = ("_API_KEY", "_TOKEN", "_SECRET", "_SECRET_ACCESS_KEY", "_PASSWORD")
@@ -34,6 +33,7 @@ SECRET_SUFFIXES = ("_API_KEY", "_TOKEN", "_SECRET", "_SECRET_ACCESS_KEY", "_PASS
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))  # gheerefill is stdlib-only: importable from the baseline venv
+from gheerefill.config import tomllib  # noqa: E402 - stdlib tomllib, or vendored tomli on 3.9/3.10
 
 
 def resolved_model(profile_path: Path, key: str) -> dict:

@@ -54,3 +54,13 @@ class ConfigTest(TempDirCase):
     def test_profile_roundtrip_identity(self):
         prof = load_profile(self.write("[model]\nname='m'\nbase_url='https://a'\n[model.pricing]\ninput=1.0\n"), env={})
         self.assertEqual(profile_from_dict(prof.to_dict()).identity(), prof.identity())
+
+
+class CredentialNormalizationTest(TempDirCase):
+    def test_copy_paste_artefacts_are_tolerated(self):
+        from gheerefill.credentials import normalize
+
+        for raw in ("sk-abc", " sk-abc\n", "sk-abc\r", '"sk-abc"', "'sk-abc'", ' "sk-abc" '):
+            self.assertEqual(normalize(raw), "sk-abc", repr(raw))
+        self.assertEqual(normalize('"sk-abc'), '"sk-abc')  # unmatched quote: left as is
+        self.assertEqual(normalize(""), "")

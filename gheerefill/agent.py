@@ -447,7 +447,8 @@ class Agent:
             self.records.append(rec)
             append_jsonl(self.run_dir / "evidence.jsonl", rec.to_dict())
         if cmd and self.profile.policy.repetition_notice:
-            key = (normalize_command(cmd), hashlib.sha1(res.content.encode()).hexdigest())
+            stable = re.sub(r" · [0-9.]+s\]", "]", res.content)  # durations differ between identical runs
+            key = (normalize_command(cmd), hashlib.sha1(stable.encode()).hexdigest())
             self.recent_actions = (self.recent_actions + [key])[-8:]
             n = self.recent_actions.count(key)
             if n >= 3 and key not in self.repetition_warned:

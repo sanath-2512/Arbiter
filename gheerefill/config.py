@@ -14,10 +14,14 @@ import dataclasses
 import hashlib
 import json
 import os
-import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.9/3.10: the vendored upstream of tomllib
+    from gheerefill._vendor import tomli as tomllib  # type: ignore[no-redef]
 
 PROVIDERS = ("openai_chat", "anthropic_messages", "fake")
 AUTO = "auto"  # provider resolved from the credential's format via the profile's [[auto]] rules
@@ -286,6 +290,9 @@ def apply_task_limits(profile: Profile, limits: dict[str, Any]) -> Profile:
     """Task-supplied limits take precedence over profile defaults (they come from the evaluator)."""
     p = copy.deepcopy(profile)
     _apply(p, {"limits": limits})
+    if "time_limit_s" in limits and "finalize_reserve_s" not in limits:
+        # Keep the reserve proportionate for short limits (45 s of a 60 s task would leave 15 s of work).
+        p.limits.finalize_reserve_s = min(p.limits.finalize_reserve_s, max(5.0, p.limits.time_limit_s * 0.15))
     if p.limits.finalize_reserve_s >= p.limits.time_limit_s:
         p.limits.finalize_reserve_s = max(5.0, p.limits.time_limit_s * 0.1)
     return p

@@ -58,7 +58,7 @@ def fresh_repo(spec: dict[str, Any], dest: Path, overlay: Path | None = None) ->
         shutil.rmtree(dest)
     shutil.copytree(spec["dir"] / "repo", dest)
     env = {**os.environ, **GIT_ENV}
-    for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"], ["git", "commit", "-q", "-m", "base"]):
+    for cmd in (["git", "init", "-q"], ["git", "symbolic-ref", "HEAD", "refs/heads/main"], ["git", "add", "-A"], ["git", "commit", "-q", "-m", "base"]):
         subprocess.run(cmd, cwd=dest, check=True, env=env, capture_output=True)
     if overlay is not None:
         shutil.copytree(overlay, dest, dirs_exist_ok=True)

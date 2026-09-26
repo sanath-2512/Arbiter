@@ -16,11 +16,11 @@ import json
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Dict, List, Union
 
 from gheerefill.models.base import ErrorClass, ModelError, ModelTurn, ToolCall, ToolSpec, Usage
 
-Turn = dict[str, Any] | Callable[[list[dict[str, Any]]], dict[str, Any]]
+Turn = Union[Dict[str, Any], Callable[[List[Dict[str, Any]]], Dict[str, Any]]]  # typing forms: runtime alias on 3.9
 
 
 def load_script(path: str | Path) -> list[dict[str, Any]]:

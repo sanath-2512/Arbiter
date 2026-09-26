@@ -4,6 +4,7 @@ import signal
 import subprocess
 import sys
 import time
+import unittest
 from pathlib import Path
 
 from tests.helpers import CALC, ROOT, TEST_CMD, TempDirCase, make_repo, tc, turn
@@ -178,3 +179,44 @@ class CliTest(TempDirCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         p = self.run_cli(["check-config"], env=base_env(AI_MODEL="m", AI_BASE_URL="https://x/v1"))
         self.assertEqual(p.returncode, 2)
+
+    def test_make_from_another_directory_resolves_caller_relative_paths(self):
+        prof = self.fake_profile([turn(FIX), turn(tc("submit"))])
+        caller = self.tmp / "caller"
+        caller.mkdir()
+        (caller / "task.json").write_text(json.dumps({"task_id": "rel", "repo_path": str(self.repo), "issue": "fix"}))
+        p = subprocess.run(["make", "-s", "-f", str(ROOT / "Makefile"), "run", "TASK=task.json", f"PROFILE={prof}",
+                            "OUT=my runs", "MAX_STEPS=7"], cwd=caller, capture_output=True, text=True,
+                           env=base_env(), timeout=120, stdin=subprocess.DEVNULL)
+        self.assertEqual(p.returncode, 0, p.stderr[-2000:])
+        (rec,) = self.records(p)
+        self.assertTrue(Path(rec["run_dir"]).is_relative_to(caller / "my runs"))
+        limits = json.loads((Path(rec["run_dir"]) / "profile.json").read_text())["limits"]
+        self.assertEqual(limits["max_steps"], 7)
+
+
+class PromptReaderTest(unittest.TestCase):
+    def reader(self, text):
+        import io
+
+        from gheerefill.cli import PromptReader
+
+        return PromptReader(io.StringIO(text), io.StringIO())
+
+    def test_bracketed_paste_with_blank_lines_is_one_entry(self):
+        r = self.reader("\x1b[200~Title\n\nBody line\n\x1b[201~\n")
+        self.assertEqual(r.read_entry("> "), "Title\n\nBody line\n")
+        self.assertIsNone(r.read_entry("> "))
+
+    def test_paste_without_trailing_newline_and_text_typed_after_it(self):
+        self.assertEqual(self.reader("\x1b[200~line1\nline2\x1b[201~\n").read_entry("> "), "line1\nline2")
+        self.assertEqual(self.reader("\x1b[200~see\x1b[201~ below\n").read_entry("> "), "seebelow")
+        self.assertEqual(self.reader("\x1b[200~text\x1b[201~/go\n").read_entry("> "), "text")
+
+    def test_single_line_forms_are_taken_immediately(self):
+        for line in ("https://github.com/o/r/issues/3\n", "o/r#3\n", "@issue.md\n", "/quit\n"):
+            self.assertEqual(self.reader(line + "unrelated\n").read_entry("> "), line)
+
+    def test_typed_text_ends_with_go_or_eof(self):
+        self.assertEqual(self.reader("[Bug] divide\ndetails\n/go\nnext\n").read_entry("> "), "[Bug] divide\ndetails\n")
+        self.assertEqual(self.reader("only line\n").read_entry("> "), "only line\n")

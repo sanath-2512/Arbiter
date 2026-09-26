@@ -36,7 +36,8 @@ def make_repo(root: Path, files: dict[str, Any], *, init_git: bool = True, commi
         else:
             p.write_text(content)
     if init_git:
-        git(root, "init", "-q", "-b", "main")
+        git(root, "init", "-q")
+        git(root, "symbolic-ref", "HEAD", "refs/heads/main")  # `init -b` needs git >= 2.28
         if commit:
             git(root, "add", "-A")
             git(root, "commit", "-q", "-m", "base")

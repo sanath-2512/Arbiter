@@ -32,7 +32,7 @@ def prepare(name: str, work: Path) -> dict:
     env = {"GIT_AUTHOR_NAME": "example", "GIT_AUTHOR_EMAIL": "example@localhost",
            "GIT_COMMITTER_NAME": "example", "GIT_COMMITTER_EMAIL": "example@localhost",
            "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "PATH": "/usr/bin:/bin:/usr/local/bin"}
-    for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"], ["git", "commit", "-q", "-m", "base"]):
+    for cmd in (["git", "init", "-q"], ["git", "symbolic-ref", "HEAD", "refs/heads/main"], ["git", "add", "-A"], ["git", "commit", "-q", "-m", "base"]):
         subprocess.run(cmd, cwd=dest, check=True, env=env)
     issue = (spec_path.parent / spec["issue_file"]).read_text()
     return {"task_id": spec["task_id"], "repo_path": str(dest), "issue": issue, "limits": spec.get("limits", {})}
