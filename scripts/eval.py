@@ -159,7 +159,8 @@ def run_ours(spec, repo, profile_path, out_dir, limits) -> dict[str, Any]:
                                              "total_tokens", "requests", "requests_usage_unknown", "cost_usd")},
         "steps": usage.get("steps"), "tool_calls": usage.get("tool_calls"), "timing": rec.get("timing"),
         "wall_s": round(wall, 2), "patch": patch, "trail": trail, "run_dir": str(run_dir) if run_dir else None,
-        "error": rec.get("error"),
+        "error": rec.get("error"), "proof_level": (rec.get("proof") or {}).get("level"),
+        "attempts": len((rec.get("proof") or {}).get("attempts") or []),
     }
 
 
@@ -237,6 +238,49 @@ def binom_two_sided(k: int, n: int) -> float:
     return min(1.0, sum(p for p in probs if p <= probs[k] + 1e-12))
 
 
+def pass_at_k(n: int, c: int, k: int) -> float:
+    """Unbiased pass@k (Chen et al., 2021): P(at least one of k runs passes)."""
+    return 1.0 if n - c < k else 1.0 - math.comb(n - c, k) / math.comb(n, k)
+
+
+def pass_hat_k(n: int, c: int, k: int) -> float:
+    """pass^k (Yao et al., tau-bench): P(all k runs pass), estimated without bias as C(c,k)/C(n,k)."""
+    return math.comb(c, k) / math.comb(n, k) if k <= n else 0.0
+
+
+def reliability_lines(records: list[dict[str, Any]], systems: list[str]) -> list[str]:
+    """Per system: pass@1, pass^k over repeats (consistency), cost per solved task, and for systems that
+    report one, how often each proof level was confirmed by the hidden tests (calibration)."""
+    out = ["", "| system | pass@1 | pass^k (k = repeats) | tokens / solved | wall s / solved | cost / solved |",
+           "|---|---|---|---|---|---|"]
+    for s in systems:
+        rs = [r for r in records if r["system"] == s]
+        by_task: dict[str, list[bool]] = {}
+        for r in rs:
+            by_task.setdefault(r["task_id"], []).append(bool(r["label"]["judge_pass"]))
+        if not by_task:
+            continue
+        k = min(len(v) for v in by_task.values())
+        p1 = sum(pass_at_k(len(v), sum(v), 1) for v in by_task.values()) / len(by_task)
+        pk = sum(pass_hat_k(len(v), sum(v), k) for v in by_task.values()) / len(by_task)
+        solved = sum(r["label"]["judge_pass"] for r in rs) or None
+        tok = sum((r["usage"] or {}).get("total_tokens") or 0 for r in rs)
+        costs = [(r["usage"] or {}).get("cost_usd") for r in rs]
+        cost = f"{sum(costs) / solved:.4f}" if solved and all(c is not None for c in costs) else "n/a"
+        out.append(f"| {s} | {p1:.3f} | {pk:.3f} (k={k}) | {tok / solved if solved else float('nan'):.0f} | "
+                   f"{sum(r['wall_s'] or 0 for r in rs) / solved if solved else float('nan'):.0f} | {cost} |")
+    calib = [r for r in records if r.get("proof_level")]
+    if calib:
+        out += ["", "Proof level vs hidden-test outcome (does the harness's own evidence predict correctness?):", "",
+                "| system | proof level | runs | judged pass |", "|---|---|---|---|"]
+        for s in systems:
+            for level in ("proven", "fixed", "passing", "unverified", "refuted"):
+                rs = [r for r in calib if r["system"] == s and r["proof_level"] == level]
+                if rs:
+                    out.append(f"| {s} | {level} | {len(rs)} | {sum(r['label']['judge_pass'] for r in rs)} |")
+    return out
+
+
 def summarize(records: list[dict[str, Any]], systems: list[str], out: Path) -> str:
     lines = ["# Evaluation summary", "", f"Records: {len(records)} (every scheduled run is listed; failures included)", ""]
     live = {r["live"] for r in records}
@@ -260,6 +304,7 @@ def summarize(records: list[dict[str, Any]], systems: list[str], out: Path) -> s
         lines.append(f"| {s} | {sum(r['label']['judge_pass'] for r in rs)} | {len(rs)} | "
                      f"{sum(bool(r['submission_ready']) for r in rs)} | {tok} | {sum(r['wall_s'] or 0 for r in rs):.0f} | "
                      f"{sum(bool(r['audit']) for r in rs)} |")
+    lines += reliability_lines(records, systems)
     if len(systems) >= 2:
         a = systems[0]
         lines += ["", f"Paired comparison against `{a}` (same task and repeat index):", ""]

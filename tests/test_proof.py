@@ -214,3 +214,35 @@ class MemoryTest(TempDirCase):
         self.assertIn("From 1 earlier run(s) on this repository", task_msg)
         self.assertIn(f"`{TEST_CMD}` ran (unittest", task_msg)
         self.assertNotIn("a / b", task_msg)  # no code or patches are carried over
+
+
+class AttestationTest(TempDirCase):
+    def test_attestation_verifies_and_detects_tampering(self):
+        import subprocess
+        import sys
+
+        from tests.helpers import ROOT
+
+        repo = make_repo(self.tmp / "repo", CALC)
+        run_dir = self.tmp / "run"
+        result, _ = run_agent(repo, [turn(FIX), turn(TEST), turn(SUBMIT)], run_dir)
+        st = json.loads((run_dir / "attestation.json").read_text())
+        self.assertEqual(st["_type"], "https://in-toto.io/Statement/v1")
+        self.assertEqual(st["subject"][0]["digest"]["sha256"], result["deliverable"]["patch_sha256"])
+        self.assertEqual(st["predicate"]["proof"]["level"], "proven")
+
+        def verify(*extra):
+            p = subprocess.run([sys.executable, "-m", "gheerefill", "verify", "--run-dir", str(run_dir), *extra],
+                               cwd=ROOT, capture_output=True, text=True, timeout=300)
+            return p.returncode, json.loads(p.stdout)
+
+        code, report = verify("--rerun")
+        self.assertEqual(code, 0, report)
+        self.assertTrue(all(r["agrees"] for r in report["reruns"]), report["reruns"])
+        self.assertEqual(report["reruns"][0]["rerun"], ["fail", "pass"])  # fails on the original, passes patched
+        (run_dir / "patch.diff").write_text((run_dir / "patch.diff").read_text().replace("a / b", "a * b"))
+        code, report = verify()
+        self.assertEqual(code, 1)
+        failed = {c["check"] for c in report["checks"] if not c["ok"]}
+        self.assertIn("patch digest matches the attestation", failed)
+        self.assertIn("patch applied to the base reproduces the selected tree", failed)

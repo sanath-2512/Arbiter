@@ -34,7 +34,7 @@ from gheerefill.evidence import (
 from gheerefill.models.base import (AttemptRecord, ErrorClass, ModelClient, ModelError, ToolCall, call_with_retry,
                                     output_token_limit)
 from gheerefill.outputs import OutputArchive
-from gheerefill import locate, memory, prompts, proof
+from gheerefill import attest, locate, memory, prompts, proof
 from gheerefill.records import Redactor, append_jsonl, atomic_write_bytes, atomic_write_json
 from gheerefill.sandbox import Sandbox, confine_paths
 from gheerefill.shell import read_output_file, run_shell, tool_environment
@@ -50,7 +50,7 @@ FATAL_TERMINATIONS = ("cancelled", "crash", "setup_failed", "deadline_reached", 
 
 
 class Cancelled(Exception):
-    pass
+    recorded_by_caller = True  # the loop records the interrupted request itself (call_with_retry must not)
 
 
 def _short(s: str, n: int = 90) -> str:
@@ -1010,6 +1010,16 @@ class Agent:
             self.log(f"finalisation error: {e}")
         result["notes"] = self.notes + fin_notes
         self._checkpoint("finalized")
+        if result.get("status") == "completed":
+            try:
+                sel = result["selected_candidate"]["tree"]
+                cf = self._counterfactual(sel) if sel != self.base_tree else None
+                atomic_write_json(self.run_dir / "attestation.json",
+                                  attest.build(self.run_dir, result, self.records, self.base_tree, cf))
+                result["attestation"] = {"path": str(self.run_dir / "attestation.json"),
+                                         "verify": f"python -m gheerefill verify --run-dir {self.run_dir}"}
+            except Exception as e:  # noqa: BLE001 - the attestation must never break delivery
+                result["notes"].append(f"attestation not written: {type(e).__name__}: {e}")
         self.log(
             f"done · termination={self.termination} · verification={result.get('verification', {}).get('status')} · "
             f"files={len(result.get('deliverable', {}).get('files', []))} · submission_ready={result['submission_ready']}"

@@ -303,6 +303,11 @@ def call_with_retry(
                 ) from e
             sleep(delay)
             continue
+        except Exception as e:  # a client bug or an unexpected library error: the request may have been billed
+            if not getattr(e, "recorded_by_caller", False):
+                on_attempt(AttemptRecord(attempt, started, time.monotonic() - t0, "client_exception", None, None, True,
+                                         f"{type(e).__name__}: {e}"[:300]))
+            raise
         latency = time.monotonic() - t0
         turn.latency_s = latency
         on_attempt(AttemptRecord(attempt, started, latency, "ok", 200, turn.usage.to_dict(), False))

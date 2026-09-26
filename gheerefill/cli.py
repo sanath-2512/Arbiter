@@ -4,6 +4,7 @@
     python -m gheerefill finalize --run-dir DIR       # offline recovery from a checkpoint
     python -m gheerefill probe [--profile FILE]       # live endpoint compatibility check
     python -m gheerefill check-config [--profile FILE] [--offline]
+    python -m gheerefill verify --run-dir DIR [--rerun]    # offline check of a run's attestation
 
 `run` output protocol (LOCAL DEVELOPMENT PROTOCOL): one JSON result record per task on
 stdout, one line each, in input order; human-readable progress on stderr.
@@ -437,6 +438,15 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     return 0 if result.get("status") == "completed" else 1
 
 
+def cmd_verify(args: argparse.Namespace) -> int:
+    """Check a run's attestation offline: patch digest, clean reconstruction, cited evidence."""
+    from gheerefill.attest import verify
+
+    report = verify(Path(args.run_dir), rerun=args.rerun)
+    print(json.dumps(report, indent=2, default=str))
+    return 0 if report["ok"] and all(r.get("agrees", True) for r in report.get("reruns", [])) else 1
+
+
 def _resolved_profile(args: argparse.Namespace, *, discover: bool):
     from gheerefill.credentials import take_credential
     from gheerefill.resolve import resolve
@@ -561,6 +571,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--run-dir", required=True)
     p.add_argument("--force", action="store_true")
     p.set_defaults(fn=cmd_finalize)
+    p = sub.add_parser("verify", help="check a run's attestation offline (patch digest, reconstruction, evidence)")
+    p.add_argument("--run-dir", required=True)
+    p.add_argument("--rerun", action="store_true", help="also re-execute each proof check in a temporary copy")
+    p.set_defaults(fn=cmd_verify)
     p = sub.add_parser("probe", help="live endpoint compatibility check (uses the credential)")
     p.add_argument("--profile")
     p.set_defaults(fn=cmd_probe)
