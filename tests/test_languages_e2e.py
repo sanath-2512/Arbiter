@@ -20,7 +20,7 @@ LANGS = {
     "go": {
         "tool": "go",
         "files": {
-            "go.mod": "module calc\n\ngo 1.21\n",
+            "go.mod": "module calc\n\ngo 1.18\n",
             "calc.go": "package calc\n\nfunc Divide(a, b float64) float64 {\n\treturn float64(int(a) / int(b))\n}\n",
             "calc_test.go": ('package calc\n\nimport "testing"\n\nfunc TestDivide(t *testing.T) {\n'
                              '\tif got := Divide(7, 2); got != 3.5 {\n\t\tt.Fatalf("Divide(7, 2) = %v, want 3.5", got)\n'
@@ -92,6 +92,7 @@ class RealToolchainTest(TempDirCase):
         if shutil.which(spec["tool"]) is None:
             self.skipTest(f"{spec['tool']} not installed")
         repo = make_repo(self.tmp / f"{lang}-{family}", spec["files"])
+        self.require_toolchain(repo, spec)
         prof = self.tmp / "p.toml"
         prof.write_text('[model]\nprovider = "openai_chat"\nname = "emulated"\nbase_url = "http://127.0.0.1:1/v1"\n'
                         '\n[limits]\ntime_limit_s = 400\nmax_steps = 30\n')
@@ -121,6 +122,20 @@ class RealToolchainTest(TempDirCase):
         # only the fix: no Cargo.lock or other byproduct of running the tests
         self.assertEqual([f["path"] for f in rec["deliverable"]["files"]], [spec["edit"][0]], detail)
         return rec
+
+    def require_toolchain(self, repo, spec):
+        """Skip unless this machine's toolchain runs the test and reports the planted failure (an old
+        node without --test, a Ruby without minitest, no network for a toolchain download)."""
+        from gheerefill.evidence import classify_output
+        try:
+            p = subprocess.run(spec["test"], shell=True, cwd=repo, capture_output=True, text=True, timeout=300,
+                               env={**os.environ, "GOFLAGS": "-mod=mod", "GOTOOLCHAIN": "local"})
+        except subprocess.TimeoutExpired:
+            self.skipTest(f"{spec['tool']} too slow here")
+        oc = classify_output(p.stdout + p.stderr, p.returncode, timed_out=False, piped=False)
+        if (oc.runner, oc.outcome) != (spec["runner"], "failed"):
+            self.skipTest(f"{spec['tool']} here does not run the test as expected: {oc.runner}/{oc.outcome}")
+        subprocess.run(["git", "clean", "-qfdx"], cwd=repo, check=True)  # build output from the pre-check
 
     def test_go_behind_deepseek(self):
         rec = self.run_lang("go", "deepseek", 1)
