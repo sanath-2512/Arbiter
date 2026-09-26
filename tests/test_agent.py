@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 
 from gheerefill.models.textproto import TextProtocolClient
 from gheerefill.models.fake import FakeClient
@@ -230,6 +231,21 @@ class AgentTest(TempDirCase):
         self.assertIn("END", shown)
         self.assertIn("ISSUE_FULL.md", shown)
         self.assertEqual((self.run_dir / "scratch" / "ISSUE_FULL.md").read_text(), issue)
+
+    def test_integrity_observations(self):
+        run_dir = self.run_dir
+        turns = [turn(tc("bash", command=f"cat {run_dir}/evidence.jsonl; ls {run_dir}/scratch")),
+                 turn(tc("read_file", path=str(Path(__file__).resolve().parent.parent / "evalsuite" / "README.md"))),
+                 turn(tc("edit_file", path="tests/test_ops.py", old_str="divide(7, 2), 3.5", new_str="divide(7, 2), 3")),
+                 turn(tc("write_file", path="tests/test_new.py", content="import unittest\n")),
+                 turn(tc("bash", command=f"echo hi > {run_dir}/scratch/ok.txt")),
+                 turn(SUBMIT), turn(SUBMIT)]
+        result, _ = run_agent(self.repo, turns, run_dir)
+        integ = result["integrity"]
+        self.assertEqual([x["step"] for x in integ["controller_state_access"]], [1])
+        self.assertEqual([x["step"] for x in integ["harness_repo_access"]], [2])
+        self.assertEqual(integ["modified_existing_test_files"], ["tests/test_ops.py"])
+        self.assertEqual(integ["added_test_files"], ["tests/test_new.py"])
 
     def test_setup_failure_reports_infrastructure_error(self):
         (self.run_dir / "shadow.git").mkdir(parents=True)  # pre-existing store: refuse to clobber

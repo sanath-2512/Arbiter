@@ -58,6 +58,7 @@ implementation brief.
 | Candidate preservation and dominance restoration | yes | yes | no | no |
 | Artifact fidelity (add/delete/rename/mode/symlink/CRLF/binary/unicode paths) and clean reconstruction | yes | yes, including `git apply` in a fresh clone | no | — |
 | Failure handling (timeouts, descendants, runaway output, cancel, SIGTERM, SIGKILL + recovery, crash, budget exhaustion, context overflow, auth/quota/rate-limit/5xx) | yes | yes | no | — |
+| Integrity observations (controller-state / harness-repo access, edits to existing tests) in every result; eval trajectory audit | yes | yes (incl. a simulated `evalsuite/hidden` peek during an eval run) | no | — |
 | Better than mini-swe-agent / Pi | — | — | — | **no data** |
 
 The eval pipeline has been exercised end to end for ours, mini-swe-agent and Pi against a
@@ -122,6 +123,9 @@ In result records, `model.live=true` only means requests went to a network endpo
   - A shell-command denylist is not used and would not be a sandbox.
   - The model's bash can read the harness repository (including `evalsuite/`) and write outside the
     repo. The tool-level write boundary covers only `write_file`/`edit_file`.
+  - Such access is *recorded* in `result.integrity` and in the eval audit, not prevented. The
+    controller keeps its authoritative state in memory; files in the run directory are mirrors. The
+    exception is offline `finalize`, which trusts the run directory.
 - **Unsupported artifact types.** Empty directories; content inside nested git repositories or
   submodules; git-lfs smudge semantics. New files under ignored paths are excluded and listed.
 - **Recovery.**

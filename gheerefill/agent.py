@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import sys
 import time
 import traceback
@@ -40,6 +41,11 @@ from gheerefill.tools import ToolBox, ToolResult
 from gheerefill.workspace import Workspace, WorkspaceError
 
 RESULT_SCHEMA = "gheerefill.result/v1"
+HARNESS_ROOT = Path(__file__).resolve().parent.parent
+TEST_PATH_RE = re.compile(
+    r"(^|/)(tests?|testing|__tests__|spec|specs)/|(^|/)test_[^/]*\.py$|_test\.(py|go)$|\.(test|spec)\.[cm]?[jt]sx?$|"
+    r"(^|/)conftest\.py$|Test\.java$|_spec\.rb$"
+)
 
 
 class Cancelled(Exception):
@@ -93,6 +99,7 @@ class Agent:
         self.target_git_initial = None
         self.base_ignored: set[str] = set()
         self.submit_summary = ""
+        self.integrity: dict[str, list[dict[str, Any]]] = {"controller_state_access": [], "harness_repo_access": []}
 
     # ------------------------------------------------------------------ utils
     def log(self, msg: str) -> None:
@@ -388,6 +395,7 @@ class Agent:
         cmd = (call.arguments or {}).get("command") if call.name == "bash" else None
         is_check = isinstance(cmd, str) and call.parse_error is None and is_check_command(cmd)
         pre_tree = self._capture_state(f"before check at step {self.budget.steps}") if is_check else None
+        self._audit_access(call)
         res = self.tools.execute(call)
         self.budget.record_tool(call.name, float(res.meta.get("duration_s", 0.0)))
         self._tool_message(call, res.content, res.meta)
@@ -421,6 +429,29 @@ class Agent:
                 self.repetition_warned.add(key)
                 self._append({"role": "user", "content": prompts.REPETITION.format(n=n)})
         return res
+
+    def _audit_access(self, call: ToolCall) -> None:
+        """Record (not block) references to controller-owned state or the harness repository.
+        Observations for audit only: without OS isolation these cannot be enforced."""
+        args = call.arguments or {}
+        text = " ".join(str(v) for v in args.values() if isinstance(v, str))
+        if not text:
+            return
+        run_dir, scratch = str(self.run_dir.resolve()), str(self.tools.scratch)
+        paths = [text]
+        if call.name in ("read_file", "search", "write_file", "edit_file") and isinstance(args.get("path"), str):
+            p = Path(args["path"])
+            paths.append(str((p if p.is_absolute() else self.tools.repo / p).resolve()))
+        for t in paths:
+            if run_dir in t.replace(scratch, ""):
+                self.integrity["controller_state_access"].append({"step": self.budget.steps, "tool": call.name,
+                                                                  "detail": _short(text, 200)})
+                break
+        harness, repo = str(HARNESS_ROOT), str(self.tools.repo)
+        # Work repos and run dirs may live inside the harness checkout (eval runs): strip them first.
+        if any(harness in t.replace(repo, "").replace(run_dir, "") for t in paths):
+            self.integrity["harness_repo_access"].append({"step": self.budget.steps, "tool": call.name,
+                                                         "detail": _short(text, 200)})
 
     def _submit_gate(self, reviews_done: int) -> str | None:
         if not self.profile.policy.submit_review or reviews_done >= 1:
@@ -534,6 +565,13 @@ class Agent:
                 "selected_candidate": {"tree": selected, "reason": reason, "step": step_of.get(selected),
                                        "is_final_state": selected == final_tree},
                 "candidates_observed": len([t for t in self.history if t != self.base_tree]),
+                "integrity": {
+                    "note": "observations for audit, not a verdict; the harness does not have OS-level isolation",
+                    "modified_existing_test_files": [f["path"] for f in files if f["status"] in "MDR"
+                                                     and TEST_PATH_RE.search(f.get("old_path") or f["path"])],
+                    "added_test_files": [f["path"] for f in files if f["status"] == "A" and TEST_PATH_RE.search(f["path"])],
+                    **{k: v[:20] for k, v in self.integrity.items()},
+                },
                 "verification": {
                     "status": vstatus,
                     "detail": vdetail,
