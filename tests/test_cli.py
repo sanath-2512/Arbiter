@@ -78,6 +78,19 @@ class CliTest(TempDirCase):
         self.assertEqual(rec["task_id"], "mk")
         self.assertIn("+    return a / b", Path(rec["deliverable"]["patch_path"]).read_text())
 
+    def test_task_from_fifo_and_empty_device(self):
+        prof = self.fake_profile([turn(FIX), turn(tc("submit"))])
+        p = self.run_cli(["run", "--profile", str(prof), "--out", str(self.out), "--task", "/dev/null"])
+        self.assertEqual((p.returncode, p.stdout), (0, ""))
+        fifo = self.tmp / "tasks.fifo"
+        os.mkfifo(fifo)
+        proc = subprocess.Popen([sys.executable, "-m", "gheerefill", "run", "--profile", str(prof), "--out", str(self.out),
+                                 "--task", str(fifo)], cwd=ROOT, env=base_env(), stdout=subprocess.PIPE, text=True)
+        with open(fifo, "w") as fh:
+            fh.write(self.task_line("fifo-task"))
+        out, _ = proc.communicate(timeout=60)
+        self.assertEqual(json.loads(out)["task_id"], "fifo-task")
+
     def test_output_dir_inside_repo_rejected(self):
         prof = self.fake_profile([turn(tc("submit"))])
         p = self.run_cli(["run", "--profile", str(prof), "--out", str(self.repo / "runs")], self.task_line())

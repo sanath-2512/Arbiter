@@ -75,7 +75,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         stream, base_dir, source = sys.stdin, Path.cwd(), "stdin"
     else:
         tp = Path(args.task)
-        if not tp.is_file():
+        if not tp.exists() or tp.is_dir():  # FIFOs, /dev/stdin and process substitution are fine
             _err(f"error: task file not found: {tp}")
             _emit(_config_error_record(None, f"task file not found: {tp}"))
             return 2
