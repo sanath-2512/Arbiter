@@ -1,147 +1,188 @@
 # gheerefill
 
-An autonomous coding-agent harness for the AI Coding Harness Hackathon. It gives one model session
-validated tools inside a target repository. It preserves every candidate state the model produces
-and binds test evidence to the exact code it ran on. It always finishes by exporting a byte-exact,
-clean-reconstruction-verified deliverable.
+An autonomous coding-agent harness for the AI Coding Harness Hackathon. Every team runs the same
+prescribed model, so the harness is what decides the outcome. Most harnesses end with the model
+saying "done". gheerefill ends with a **proof-carrying patch**. The harness itself checks, by
+running code, that:
 
-> **Status:** implemented and deterministically tested (see [NOTES.md](NOTES.md)). **Not yet
-> live-validated.** The organiser-prescribed model, endpoint and task protocol have not been
-> supplied, so no claim here rests on a real model call.
+- the change makes something pass that failed on the original code, and
+- it breaks nothing that passed before.
 
-## Requirements
+Then it exports a patch that is verified byte-for-byte, with an attestation anyone can re-check
+offline.
 
-- Python ≥ 3.11 (standard library only) and `git` ≥ 2.25, `bash`.
-- Optional: `rg` (ripgrep). If it is missing, search falls back to `grep`.
-- No third-party runtime packages. `make setup` needs no network.
+> **Status:** implemented and deterministically tested: 177 tests, plus 200 fault-injection seeds
+> with 0 invariant violations. **Not yet live-validated.** The organisers have not yet supplied the
+> prescribed model and a key, so no result here comes from a real model call. See
+> [NOTES.md](NOTES.md) for every claim and its evidence.
+
+```text
+━━ Result: calc-divide ━━                              (make demo: scripted model, not live)
+status        completed · termination model_submitted · submission_ready yes
+verification  checks_passed — 2 check run(s) on the selected code (details in report.md)
+proof         PROVEN — 2 check(s) fail without the change and pass with it
+  check                                                original  patched  result
+  repro python -c "from calc.ops import divide; asser…     FAIL     pass  fail to pass
+  python -m unittest discover -s tests                     FAIL     pass  fail to pass · fixes test_ops.OpsTest.test_divide_true_division
+changes       2 files changed, 5 insertions(+), 1 deletion(-)
+export        verified: patch applied to a clean base copy reproduces the selected tree exactly
+isolation     active — a sandboxed child could not read a parent process's environment
+```
 
 ## Quick start (the official evaluation procedure)
 
 ```bash
 export AI_API_KEY="<PROVIDED_API_KEY>"   # the only required configuration
-make setup                               # offline: picks Python >= 3.11, checks git, byte-compiles
-make run                                 # launches the harness; then supply the issue:
-#   issue> https://github.com/OWNER/REPO/issues/123        (or OWNER/REPO#123, or @issue.md,
-#                                                             or paste text and end with /go)
+make setup                               # offline: picks Python >= 3.9, checks git, byte-compiles
+make run                                 # then supply the issue at the prompt:
+#   issue> https://github.com/OWNER/REPO/issues/123      (or OWNER/REPO#123, or @issue.md,
+#                                                           or paste the issue text and press Enter)
 make test                                # deterministic tests: no network, no credentials
 ```
 
-The same run can also be driven without a terminal:
+Without a terminal, or to pass options:
 
 ```bash
-make run ISSUE=https://github.com/OWNER/REPO/issues/123      # clone + fetch issue + solve
-make run ISSUE="text of the issue" REPO=/path/to/repo       # local repository
-make run TASK=tasks.jsonl                                   # JSON / JSON Lines tasks
-BASE=before-issue make run ISSUE=...                        # historical base for a closed issue
+make run ISSUE=https://github.com/OWNER/REPO/issues/123        # clone + fetch issue + solve
+make run ISSUE="text of the issue" REPO=/path/to/repo         # local repository
+make run TASK=tasks.jsonl TIME_LIMIT=900 MAX_STEPS=80         # JSON tasks, explicit limits
+make run ISSUE=... BASE=before-issue                          # historical base for a closed issue
 ```
 
-`make run` never prompts when it has no terminal, and never fails merely because no input was
-given. At start-up it prints three things: the resolved model, the verified isolation status, and
-where results go.
+- `make run` never prompts without a terminal, and exits 0 when no input is given.
+- It works from any directory (`make -f /path/to/Makefile run`).
+- It needs only Python ≥ 3.9 (standard library) and git ≥ 2.25. `make run` runs `make setup`
+  itself if needed.
+- At start-up it prints the resolved model, the verified isolation status and where results go.
+- Results:
+  - **Terminal:** the card above.
+  - **Target repository:** the change is left uncommitted on the original base.
+  - **Run directory** `runs/<task>/<run>/`:
+    - `patch.diff`;
+    - `report.md`, where every claim names the file it comes from;
+    - `attestation.json`;
+    - `result.json` and the full records.
+  - Without a terminal, results come as one JSON line per task.
 
-**Model configuration** (`profiles/default.toml`, committed). If the organisers prescribe a model,
-set `[model] provider/name/base_url` and the harness uses exactly that and never substitutes another
-model. Until then `provider = "auto"` applies. Ordered `[[auto]]` rules map the credential's
-*format* (for example `sk-ant-`, `sk-proj-`, `AIza`) to exactly one provider endpoint and a
-model-preference list. The first preferred model that the provider's `/models` endpoint lists is
-used, and its exact id is recorded. The key is sent only to that one endpoint, never tried against
-other providers. `AI_MODEL`, `AI_BASE_URL` and `AI_PROVIDER` override the file without editing it,
-and `make check-config` shows the resolution without spending tokens.
+## How it solves an issue
 
-**Result:**
-- **Terminal:** a card with status, verification evidence, changed files and the diff.
-- **Repository:** the change is left uncommitted on the original base.
-- **Run directory** (`runs/<task>/<run>/`):
-  - `patch.diff`, byte-exact and verified by clean reconstruction;
-  - `report.md`, where each claim names the file it comes from;
-  - `result.json` and the full records.
+1. **Localise.** The issue's own anchors are resolved against the repository, deterministically
+   and without an extra model: file paths, stack-trace frames, and definitions of the identifiers
+   it mentions. Source files are ranked with BM25. The first prompt shows these as unverified hints
+   (`localization.json`).
+2. **Reproduce.** The model registers a reproduction command (`register_reproduction`). The harness
+   runs it on the original code *at once* and tells the model whether it really fails there. A
+   reproduction that passes on buggy code is caught before it can mislead.
+3. **Edit safely.** Exact and unique string edits are used:
+   - A near miss shows the most similar region verbatim.
+   - An edit that would make an existing `.py` or `.json` file unparseable is refused, with the
+     error location. This is confirmed with the project's own interpreter first.
+4. **Verify against the counterfactual.** At submit, each of the agent's test commands, and each
+   registered reproduction, is run twice:
+   - on the original code *plus the patch's own test changes*, so new tests exist but the fix
+     does not;
+   - on the patched code.
 
-When stdout is not a terminal, results are emitted as one JSON line per task.
+   Failing test names are compared (pytest, unittest, go, cargo, jest, rspec, junit). The result is
+   the **fail→pass** set (the fix is demonstrated) and the **pass→fail** set (regressions, reported
+   to the model by name).
+5. **Decide by evidence.** Each candidate gets a deterministic level:
 
-## Input and output formats
+   | level | meaning |
+   |---|---|
+   | `proven` | ≥1 check fails without the change and passes with it; no regression; nothing unchecked; existing tests not edited |
+   | `fixed` | fail→pass shown, no regression found, but something could not be compared (or existing tests were edited) |
+   | `passing` | checks pass, but nothing was shown to fail without the change |
+   | `unverified` | no conclusive evidence |
+   | `refuted` | a regression, or a confirmed reproduction still failing |
 
-- **Inputs** (auto-detected):
-  - a GitHub issue or pull-request URL, or `OWNER/REPO#N`, whose title, body and discussion are
-    fetched;
-  - `@file`;
-  - plain text, which needs `REPO`;
-  - JSON, e.g.
-    `{"task_id": "...", "repo_path": "...", "issue": "...", "limits": {"time_limit_s": 900, "max_steps": 80}}`,
-    as one object, an array, or JSON Lines.
-- **Issue text is untrusted input.** It reaches the model inside `<issue>` tags as a problem
-  description.
-- **Repositories:** an explicit `REPO` (path or git URL) wins. Otherwise GitHub issues are cloned
-  into `workspace/OWNER__REPO__N`, as a partial clone of the default branch. For a *closed* issue
-  the harness warns that the fix may already exist, and `BASE=before-issue` selects the last commit
-  before the issue was opened.
-- **Outputs:**
-  - A terminal card, or one JSON result record per task on stdout when it is not a terminal.
-    Progress goes to stderr.
-  - The record never claims correctness. `submission_ready` is an artifact condition;
-    `verification.status` is one of `checks_passed`, `checks_failed`,
-    `verification_inconclusive` or `verification_unavailable`.
-- **Exit status:**
-  - 0: tasks completed, or no input was given.
-  - 1: invalid input, or an infrastructure error.
-  - 2: configuration error, e.g. a missing key or an unknown key format.
+6. **Retry only when it pays.** A new attempt starts from the original code, with a fresh context
+   and the harness's observations. It happens only when a submitted candidate is `refuted`, or an
+   attempt used its time share without a verified change, and only if time remains. Easy issues
+   finish in one attempt. Candidates from all attempts are cross-checked on every reproduction and
+   ranked by:
+   1. level;
+   2. fail→pass checks;
+   3. agreement between attempts (CodeT's dual execution agreement);
+   4. patch size.
+7. **Export and attest.** The selected state is exported as a byte-exact patch and verified by
+   applying it to a clean copy of the base. `attestation.json` is an in-toto Statement binding the
+   patch digest to the trees, the proof and the digests of every cited output.
+   `python -m gheerefill verify --run-dir DIR [--rerun]` re-checks it offline.
 
-## What the harness does
+Why this design: see [NOTES.md](NOTES.md#why-this-design) for the evidence behind each choice
+(LangChain's harness-only gains, Agentless, TestPrune, CodeT, SWE-Replay, the 2026 harness-design
+study).
+
+## Robustness and safety
 
 | Mechanism | What it guarantees |
 |---|---|
-| **Validated tools** | `bash`, `read_file`, `search`, `edit_file`, `write_file`, `read_output`, `submit`. Arguments are validated before dispatch. Edits must match exactly and uniquely, or they fail without touching the file. |
-| **Bounded observations** | Every output is archived verbatim. The model sees head, tail and error-like lines, plus exact line ranges for anything omitted. |
-| **Credential isolation** | Model commands, and the harness's own git calls into the target repo, run in a Linux Landlock domain with the ptrace-type capabilities dropped. From there they cannot read `/proc/<pid>/environ` of the harness, `make` or the evaluator's shell. It needs no root, container or packages, and is verified by a self-test at startup. The harness also scrubs the key from its own environment block. |
-| **Processes** | Each command runs in its own process group. Timeouts, cancellation and an exact output cap all kill the group. Background leftovers are stopped. Credentials are stripped from the command environment. |
-| **Candidate capture** | A shadow git store in the run directory snapshots the full working tree after every step (~0.04 s per step). This covers adds, deletes, renames, modes, symlinks, CRLF and binary files. Nothing is ever written into the target's `.git`. |
-| **Evidence** | Test-runner output is classified (pytest, unittest, go, cargo, jest/vitest, mocha, junit, rspec) and bound to the exact tree it ran on. A zero exit code alone never counts as a pass. |
-| **Selection** | The final state is kept unless an earlier archived candidate *dominates* it on shared checks. If the run ended with an empty tree, the latest non-empty candidate is restored. |
-| **Budget** | A monotonic deadline and a finalisation reserve. Every request attempt is recorded, and usage of interrupted requests is marked unknown, never zero. |
-| **Model client** | Failures are classified: auth, quota, rate limit, server, unsupported parameter, context overflow, timeout, network. Retries are bounded, deadline-aware and honour Retry-After. |
-| **Finalisation** | Always runs, including after crash, SIGTERM or budget exhaustion. It undoes agent commits/branch switches/staging, and re-runs the last check on the selected tree when that evidence is stale. After SIGKILL, run `python -m gheerefill finalize --run-dir DIR` (no model calls). |
+| **Crash-proof finalisation** | Every step's working tree is snapshotted into a shadow git store in the run directory; nothing is written to the target's `.git`. Finalisation always runs: after a crash, SIGTERM or budget exhaustion. After SIGKILL, `python -m gheerefill finalize --run-dir DIR` finishes the run offline, without model calls. |
+| **Fault injection** | `make chaos` runs random trajectories with provider errors, crashes, cancellations, multiple attempts and real SIGKILL+recovery. It checks eight invariants, including: the patch reconstructs; the tree equals the selection; the target's HEAD and index are restored; every request is counted; the attestation verifies. It found one accounting bug, which is fixed and has a regression test. |
+| **Credential isolation** | Model commands, and the harness's git calls into the target, run in a Linux Landlock domain with the ptrace-type capabilities dropped. They cannot read the environment of the harness, `make` or the evaluator's shell. This needs no root, container or packages, and is verified by a self-test at startup. The harness also scrubs the key from its own memory image, and the key is only ever sent to the one endpoint its format maps to. |
+| **Bounded, honest accounting** | A monotonic deadline and a finalisation reserve. Every request attempt is counted. Interrupted or failed requests are recorded as usage-unknown, never zero. |
+| **Provider tolerance** | Errors are classified and retried within bounds, deadline-aware and honouring Retry-After. The harness adapts to parameter rejections: an output-token cap, `max_tokens` vs `max_completion_tokens`, temperature. Restricted keys that cannot list models still work. Anthropic prompt caching is on. Streaming is optional. |
+| **Safe repository memory** | Later runs on the same repository see facts the harness *observed by execution*: test commands that ran, and installs that succeeded. Never code, patches or issue text. |
 
 ## Configuration
 
-Profiles are TOML files in `profiles/`, strictly validated so unknown keys are errors. They pin the
-provider (`openai_chat` or `anthropic_messages`), the model and endpoint, and the tool protocol:
-`native` function calling, or an explicitly chosen `text` protocol. They also pin generation
-settings, limits and policy flags. `model.stream = true` enables SSE streaming. `AI_MODEL`, `AI_BASE_URL` and `AI_PROVIDER` override the profile,
-and the result records which values came from overrides. Per-task `limits` from the evaluator take
-precedence.
-
-Sources of randomness:
-- Model sampling, set by the provider and profile settings.
-- Retry jitter, which is seeded (`retry.seed`).
+- **Model** (`profiles/default.toml`, committed):
+  - If a model is prescribed, set `[model] provider/name/base_url`. It is then used exactly and
+    never substituted.
+  - Until then `provider = "auto"`. Ordered `[[auto]]` rules map the key's *format* to exactly one
+    provider endpoint and a model preference list. The first preferred model that the provider
+    lists is used and recorded.
+  - `AI_MODEL`, `AI_BASE_URL` and `AI_PROVIDER` override the profile.
+  - `make check-config` shows the resolution without spending tokens. `make probe` tests tool
+    calling live.
+- **Policies** are profile flags, strictly validated:
+  - `verify_at_submit`;
+  - `max_attempts` (3), `first_attempt_share`, `retry_below`, `min_attempt_s`;
+  - `localize`, `memory`, `tools.syntax_guard`;
+  - `sandbox` (`key` | `confine` | `off`), plus the context and budget settings.
+- **Limits:** per-task limits from the evaluator take precedence over the profile. `TIME_LIMIT` and
+  `MAX_STEPS` on the command line win over both.
 
 ## Development evaluation (dev only; needs live credentials)
 
 ```bash
 make baseline-setup                                   # pinned mini-swe-agent 2.4.6 + Pi 0.73.1
-python3 scripts/eval.py --validate-suite              # judges fail on base, pass on reference
-python3 scripts/eval.py --partition dev --systems ours,mini,pi --repeats 1
-python3 scripts/demo_live.py                          # live demo incl. SIGKILL → offline recovery
+python3 scripts/eval.py --validate-suite              # hidden tests fail on base, pass on reference
+make eval SYSTEMS=ours,mini,pi                         # same model, same limits, same tasks
 ```
 
-`evalsuite/` holds 8 small, owned screening tasks (Python, JS, Go) with judge-owned hidden tests,
-split into dev, selection and final partitions. Each system's exported patch is judged on a clean
-base. The runner writes a record for every scheduled run, plus a paired summary. See
-[evalsuite/README.md](evalsuite/README.md).
+The summary reports:
+- pass@1 and pass^k over repeats;
+- tokens, wall time and cost per solved task;
+- a paired sign test against each baseline;
+- a calibration table: how often each proof level was confirmed by the hidden tests.
+
+`evalsuite/` holds 8 owned tasks (Python, JS, Go) with judge-owned hidden tests, split into dev,
+selection and final partitions.
 
 ## Layout
 
 ```
-gheerefill/     runtime (stdlib only): cli, task adapter, config, models/, tools, shell, outputs,
-                workspace (shadow git), evidence, budget, context, prompts, agent (controller)
-profiles/       run profiles (default.toml is the submission profile)
-tests/          deterministic unittest suite (no network, no credentials)
-evalsuite/      dev evaluation tasks — evaluation boundary, never read by the runtime
-baselines/      pinned upstream baselines (dev only)
-scripts/        setup, example preparation, eval runner, live demo
-examples/       example repository + scripted demo (clearly labelled non-live)
+gheerefill/   runtime (stdlib only)
+  cli, intake (issue URL/text/JSON), resolve (model), config, agent (controller, attempts),
+  proof (counterfactual evidence), locate (anchors + BM25), memory, tools, shell, workspace
+  (shadow git), evidence, attest (in-toto + verify), budget, context, prompts, report, sandbox
+  _vendor/tomli (MIT; only on Python 3.9/3.10)
+profiles/     run profiles (default.toml is the submission profile)
+tests/        deterministic unittest suite (no network, no credentials)
+scripts/      setup, py.sh, chaos (fault injection), eval, examples, live demo
+evalsuite/    dev evaluation tasks: evaluation boundary, never read by the runtime
+baselines/    pinned upstream baselines (dev only)
+docs/         proof-v1.md (attestation predicate)
 ```
 
 ## Licence and provenance
 
-`gheerefill/shell.py` adapts the process-group timeout pattern from mini-swe-agent (MIT, © 2025
-Kilian A. Lieret and Carlos E. Jimenez). Both baselines are installed from pinned upstream
-releases and are not vendored. Details are in [NOTES.md](NOTES.md#provenance).
+- `gheerefill/shell.py` adapts the process-group timeout pattern from mini-swe-agent (MIT,
+  © 2025 Kilian A. Lieret and Carlos E. Jimenez).
+- `gheerefill/_vendor/tomli` is tomli 2.2.1, verbatim (MIT, © 2021 Taneli Hukkinen). It is used
+  only where the standard library lacks `tomllib`.
+- The baselines are installed from pinned upstream releases, not vendored.
+
+Details are in [NOTES.md](NOTES.md#provenance).

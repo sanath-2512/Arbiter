@@ -1,6 +1,6 @@
 # Engineering notes
 
-These are persistent working notes. Update them when evidence changes.
+These are persistent working notes. Update them when the evidence changes.
 
 ## 1. Contract status
 
@@ -11,196 +11,211 @@ Setup" (received 2026-09-26).
 
 | Item | Current handling |
 |---|---|
-| Root `Makefile` with `setup`, `run`, `test` (`clean` where applicable); at minimum setup and run must work | All four exist. Setup is offline and takes ~0.2 s. The official sequence has been rehearsed from a fresh clone. |
-| Credential only via `AI_API_KEY`; never hard-coded, committed, or in `.env`/docs | Read once, then scrubbed from the process. Recipes never expand it (`make -n` shows no key). A `.env.example` is provided; `.env` is git-ignored and never overrides the environment. |
-| The evaluator runs only `export AI_API_KEY; make setup; make run` and must not edit files or configuration | The model configuration is committed. `provider = "auto"` resolves the endpoint and model from the key format, with no other variables needed. |
-| Model configuration clearly defined in the application/config files; use the prescribed model if specified; no substitution | `profiles/default.toml` holds `[model]` plus the `[[auto]]` rules. A pinned name is never replaced. Resolution is printed and recorded. |
-| Text-only models and input | Text only. |
-| `make run` launches the harness; the GitHub issue/test case is then supplied to the running harness | Interactive console on a TTY (URL, `owner/repo#N`, `@file`, or pasted text). Non-interactive via `ISSUE=`, `TASK=` or stdin. Loops for further issues. |
-| A TUI, if any, launches via `make run` | Line-mode console, no full-screen UI. Works over any terminal, and piped. |
-| Declare dependencies; document randomness and settings that affect results | Runtime needs only stdlib + git. Randomness is limited to provider sampling (provider default temperature) and seeded retry jitter. Every result records the resolved model, profile hash, and base commit. |
+| Root `Makefile` with `setup`, `run`, `test` (and `clean`); setup and run must work | All exist. Setup is offline (~0.2 s). Recipes `cd` to the harness, so `make -f /path/Makefile run` works from anywhere. `make run` runs setup itself if it was skipped. |
+| Credential only via `AI_API_KEY`; never hard-coded, committed, or in `.env`/docs | Read once, normalised (whitespace/quotes), then scrubbed from the process. Recipes never expand it (`make -n` shows no key). A `.env.example` holds only `AI_API_KEY=`; `.env` is git-ignored and never overrides the environment. |
+| The evaluator runs `export AI_API_KEY; make setup; make run` and does not edit files | The model configuration is committed. `provider = "auto"` resolves endpoint and model from the key format; no other variables are needed. |
+| Model configuration clearly defined; use the prescribed model; no substitution | `profiles/default.toml` holds `[model]` and the `[[auto]]` rules. A pinned name is never replaced. Resolution is printed and recorded. Nothing else ever calls a model: localisation is BM25, and selection is execution evidence. |
+| Text-only models and input | Text only. Screenshots in issues are announced as not visible, not silently dropped. |
+| `make run` launches the harness; the issue/test case is then supplied to it | Interactive console on a TTY: URL, `owner/repo#N`, `@file`, or a pasted text (bracketed paste: paste, then Enter; `/go` fallback). A supplied failing test is run first and fixed in the code, not the test. Also `ISSUE=`, `TASK=`, stdin. Loops for further issues; Ctrl-C at the prompt exits. |
+| Environment independence; reproducible execution | Python ≥ 3.9 standard library only (tomli vendored for 3.9/3.10) and git ≥ 2.25. Tested on 3.9, 3.10, 3.11, 3.13. Randomness is limited to provider sampling and seeded retry jitter. Every result records the resolved model, profile hash, base commit and an attestation. |
 
 **Still open (no organiser information yet)**
 
 | Item | Current handling |
 |---|---|
 | Which model/provider is prescribed | Auto-resolution from the key format. Pin it in `profiles/default.toml` once announced. |
-| How exactly the issue is "supplied to the running harness" | Every plausible channel is supported (TTY paste/URL, `ISSUE=`, stdin, file, JSON). |
-| Whether the repository is pre-provisioned or must be cloned | `REPO=` for a provided checkout; otherwise clone from GitHub. |
-| Time/token limits, concurrency, scoring weights | Defaults are 1800 s / 150 steps. Per-task limits are accepted. |
-| Network policy in the evaluation environment | Needs HTTPS to the model endpoint, plus GitHub if cloning. |
-| Cross-task persistence | None used. |
+| How the issue is "supplied to the running harness" | Every plausible channel is supported (TTY URL/paste, `ISSUE=`, stdin, file, JSON). |
+| Whether the repository is pre-provisioned | `REPO=` for a provided checkout. A checkout of the issue's repository in the `make` directory, or at `/testbed`, is used in place; its `.git/config` is read as text. Otherwise the repository is cloned. |
+| Time/token limits, scoring | Defaults are 1800 s / 150 steps. Per-task limits are accepted; `TIME_LIMIT`/`MAX_STEPS` override both. |
+| Network policy | Needs HTTPS to the model endpoint, plus GitHub when cloning. |
 
 ## 2. Claims and their evidence
 
 | Claim | Implemented | Deterministically tested | Live-tested | Benchmark-supported |
 |---|---|---|---|---|
-| End-to-end solve path (issue → model → tools → edit → check → export → record) | yes | yes: scripted model, and a scripted HTTP server through the real transport | **no** | no |
-| Endpoint compatibility (OpenAI/Anthropic, tool calls, usage, streaming and non-streaming) | yes | yes: local server, request shape, error classes, SSE reassembly | **no** | — |
-| Candidate preservation and dominance restoration | yes | yes | no | no |
-| Artifact fidelity (add/delete/rename/mode/symlink/CRLF/binary/unicode paths) and clean reconstruction | yes | yes, including `git apply` in a fresh clone | no | — |
-| Failure handling (timeouts, descendants, runaway output, cancel, SIGTERM, SIGKILL + recovery, crash, budget exhaustion, context overflow, auth/quota/rate-limit/5xx) | yes | yes | no | — |
-| Integrity observations (controller-state / harness-repo access, edits to existing tests) in every result; eval trajectory audit | yes | yes (incl. a simulated `evalsuite/hidden` peek during an eval run) | no | — |
-| Official procedure (`export AI_API_KEY; make setup; make run`; issue supplied as URL / text / file / JSON) | yes | yes (fake GitHub API + local remote, pty session, fresh-clone rehearsal) | no | — |
-| Credential isolation from model commands and target-repo git (Landlock + capability drop; self-verified) | yes | yes (real process chain, control run with sandbox off, fsmonitor exploit reproduction) | no | — |
+| End-to-end solve path (issue → model → tools → edit → check → proof → export → attestation) | yes | yes: scripted model, and a scripted HTTP server through the real transports | **no** | no |
+| Proof-carrying patches: reproductions confirmed on the original code; counterfactual fail→pass / pass→fail by test name; evidence levels | yes | yes (`tests/test_proof.py`: parsers, verdicts, levels, counterfactual tree, flows) | **no** | no |
+| Adaptive attempts: retry only on refuted/stuck; cross-checked ranking with CodeT agreement | yes | yes (refuted→proven, stuck→restart, no retry when verified, recovery keeps all candidates) | **no** | no |
+| Localisation hints (issue anchors + BM25) | yes | yes | no | no |
+| Edit syntax guard (confirmed with the project's interpreter) and near-miss hints | yes | yes | no | no |
+| Execution-verified repository memory | yes | yes (a second clone of the same repository sees the facts, never code) | no | no |
+| Attestation + offline `verify` (+ `--rerun`) | yes | yes (verifies; detects a tampered patch) | — | — |
+| Robustness under faults: 8 invariants over random trajectories, crashes, cancellations, SIGKILL + recovery | yes | yes: 200 seeds / 0 violations (`make chaos`); 8 seeds in `make test`. Found and fixed an uncounted-request bug. | — | — |
+| Endpoint compatibility (OpenAI/Anthropic, tool calls, usage, streaming, output-cap adaptation, restricted keys) | yes | yes (local servers, error-message fixtures) | **no** | — |
+| Artifact fidelity and clean reconstruction | yes | yes, including `git apply` in a fresh clone | no | — |
+| Credential isolation from model commands and target-repo git | yes | yes (real process chain with a control run) | no | — |
+| Official procedure (`export AI_API_KEY; make setup; make run` + URL/text/file/JSON; pty session) | yes | yes (fake GitHub API + local remote; bracketed paste and Ctrl-C through a pty) | no | — |
 | Better than mini-swe-agent / Pi | — | — | — | **no data** |
 
 The eval pipeline has been exercised end to end for ours, mini-swe-agent and Pi against a
 *scripted* OpenAI-compatible server. That checks wiring and matched conditions, not coding ability.
-In result records, `model.live=true` only means requests went to a network endpoint (see
-`model.base_url`). It does not by itself mean a real model was used.
+`model.live=true` in a record only means requests went to a network endpoint.
 
-## 3. Architecture decisions
+## 3. Why this design
 
-1. **Own stdlib runtime; mini-swe-agent kept as a pinned baseline, not a dependency.** Meeting the
-   brief with mini-swe-agent 2.4.6 would have meant replacing all of the following:
-   - its model layer (litellm; a 10× fixed retry; raises on unregistered pricing);
-   - its environment (forwards `os.environ`, including the API key, to model commands);
-   - its loop (no deadline reserve, no candidates or evidence).
+The model is fixed and identical for every team, so only the harness can change the outcome. The
+published evidence on what moves a fixed model's resolve rate, and what we took from it:
 
-   What remains useful is ~50 lines of pattern, adapted with attribution in `shell.py`. The
-   stdlib-only runtime makes `make setup` network-free and removes install risk.
-2. **Shadow git store for candidates** (`workspace.py`).
-   - Measured on 20k files: first snapshot 0.28 s, incremental 0.04 s. That makes per-step capture
-     affordable and catches shell-made mutations that structured edit tools would miss.
-   - `info/attributes` disables eol/filters so snapshots are byte-exact.
-   - Target-tracked files are force-added, so `.gitignore` cannot hide tracked changes.
-3. **Deliverable = working tree left at the selected candidate + byte-exact patch.**
-   - The patch has no rename detection, so both `git apply` and `patch` accept its text hunks.
-   - Finalisation proves the patch reproduces the selected tree from a clean base.
-   - Agent commits, branch switches and staging are undone without touching the working tree.
-4. **Evidence is bound to tree ids.** A content change produces a new tree with no evidence, so
-   stale verification cannot leak. Selection uses a deterministic dominance rule, not weighted scores.
-5. **Rule-based context reduction only.** Old tool outputs are elided with pointers to their
-   verbatim archive. Reductions are sticky, keeping the prompt prefix stable for provider caching.
-   Pressure escalates on provider-reported overflow. No summariser model.
-6. **One solver session.** No reviewer model, no generated tests, no multi-candidate search. These
-   stay conditional until paired evaluation shows they add correct submissions under the same budget.
-7. **HTTP via urllib; streaming is opt-in (`model.stream`).**
-   - Non-streaming is the default: it has the simplest failure semantics.
-   - Streaming (SSE) exists for endpoints that are slow enough to hit gateway idle timeouts, and it
-     enforces the total deadline mid-response. It is implemented for both providers and tested on
-     reassembly, cut streams, deadlines and error events.
-   - `make probe` measures both modes, so the choice rests on evidence.
-8. **Tests use `unittest`**, so `make test` has zero dependencies and works offline on the evaluator.
+| Evidence | What it shows | What we built |
+|---|---|---|
+| LangChain Deep Agents, Terminal-Bench 2.0: 52.8% → 66.5% (top-30 → top-5) with the model unchanged | Harness-only gains came from self-verification loops, environment context and doom-loop detection, not prompt tweaks | Submit gate with the harness's own verification; repo overview + localisation; repetition notice; "nothing verified yet" nudge |
+| Agentless (reproduction tests kept only if they fail on the original code; regression filtering; voting) | Generated reproductions are only useful once confirmed on the original code | `register_reproduction` runs on the original code immediately and tells the model if it does not reproduce |
+| TestPrune, FSE 2026: reusing existing regression tests gives +8–13% relative resolution | Existing tests are a cheap, strong signal against regressions | Counterfactual comparison of the agent's own test commands; pass→fail by test name |
+| CodeT (dual execution agreement): +18.8 pass@1 | Candidates that agree on passing the same tests are more likely right | Agreement term in the cross-attempt ranking |
+| Repeated attempts + consensus, e.g. Risa 44.9 → 48.2; SWE-Replay: −17% cost by reusing exploration | Extra attempts help, but blind resampling is wasteful | Retry only when evidence refutes or the attempt is stuck; the next attempt inherits the harness's observations, not the transcript |
+| Harness-design study (Sep 2026, 176 settings): context management mainly prevents overflow; planning helps weak models; tools help weak-bash models | Components should suit the model | Overflow learning; full tools and bash-only profiles; no planner model |
+| SWE-agent ACI: linting on edit | Refusing syntax-breaking edits prevents cascades | Syntax guard, confirmed with the project's interpreter |
+| Self-evolving skill libraries can "misevolve" (arXiv 2608.12851) | Learned procedures can drift into unsafe or wrong behaviour | Memory limited to execution-observed facts; nothing the model merely claims is kept |
 
-## 4. Runtime policies (defaults; each is a profile flag — unmeasured until live runs)
+**What rivals are likely to build**, and why we did not:
+- **Multi-agent planner/executor/reviewer stacks:** cost and latency, and planning adds little for
+  strong models.
+- **An LLM judge:** it approves wrong patches.
+- **Hermes-style memory and skills:** misevolution and leakage risk.
+- **Embedding search:** a second model risks the prescribed-model rule.
+- **Parallel repository copies:** editable installs make copies test the wrong code.
 
-| Policy | Default | Rationale | Measured? |
-|---|---|---|---|
-| `repo_overview` | on | Top-level listing, manifests and manifest-derived test-command hints (marked unverified) in the first message save 1–2 steps | no |
-| `submit_review` | on, at most once | Flags an empty diff, new (possibly scratch) files, or no check since the last edit | no |
-| `recover_empty_final` | on (not after a confirmed model submit) | An empty patch cannot pass; the latest archived candidate can | no |
-| `dominance_selection` | on | Deterministic; only acts on conflicting evidence from the same check | no |
-| `final_recheck` | on | Re-runs the last agent check on the selected tree when evidence is stale (no model tokens); if the new exact evidence shows an earlier candidate dominates, that candidate is restored | no |
-| `budget_notices` | on, once | Surfaces remaining steps/time near the end | no |
-| `repetition_notice` | on | Same command + same output ×3 | no |
-| `git_hygiene` | on | Undoes agent commits/branch/staging so the deliverable is uncommitted changes on the base | no |
+Our counter-position is to make each decision rest on an execution result, and to show the evidence
+to the judge.
 
-## 5. Known limitations
+## 4. Architecture decisions
 
-- **No live validation yet.** Prompt quality, tool-use reliability and solve rate with the
-  prescribed model are unknown.
+1. **Own stdlib runtime; mini-swe-agent kept as a pinned baseline.** Using mini-swe-agent 2.4.6
+   would have meant replacing its model layer (litellm, fixed retries), its environment (it forwards
+   `os.environ`, including the key, to model commands) and its loop (no deadline reserve, no
+   candidates). Stdlib-only makes `make setup` offline and install-risk free.
+2. **Shadow git store** for candidates and for the harness's detours. The store gives:
+   - byte-exact snapshots, 0.04 s per step at 20k files;
+   - counterfactual trees built from base plus test paths, in a temporary index;
+   - restores that are verified by tree id.
+3. **Deliverable = working tree at the selected candidate + byte-exact patch**, proven to
+   reconstruct from a clean base. Agent commits, branch switches and staging are undone.
+4. **Evidence bound to tree ids.** A content change gives a new tree with no evidence, so stale
+   verification cannot leak. Levels and ranking are deterministic functions of the records
+   (`proof.py`).
+5. **Harness detours.** To run a check on another state, the harness snapshots the model's state,
+   restores the target state, runs the check, restores back and verifies the tree id.
+   - `state.json` records the pending detour.
+   - Recovery restores the selected candidate regardless.
+6. **Attempts are sequential in one working tree**, not parallel copies. This keeps environment
+   fidelity: editable installs, node_modules and build caches all stay valid. Time shares apply per
+   attempt:
+   - attempt 1 gets 60% of the work time when more attempts are allowed;
+   - later attempts split the rest.
+7. **Rule-based context reduction only**, with sticky elision so the prompt prefix stays cacheable.
+   Anthropic prompt caching is enabled. No summariser model.
+8. **HTTP via urllib.** Streaming is opt-in.
+9. **Tests use `unittest`**, so `make test` has zero dependencies and runs offline.
+
+## 5. Runtime policies (profile flags; unmeasured until live runs)
+
+| Policy | Default | Rationale |
+|---|---|---|
+| `verify_at_submit` | on | The harness runs the agent's checks and reproductions on the counterfactual and the candidate before accepting |
+| `submit_review` | on: one review; a second only if the evidence refutes | Surfaces regressions by name, unconfirmed fixes, scratch files |
+| `max_attempts` / `first_attempt_share` / `retry_below` / `min_attempt_s` | 3 / 0.6 / `unverified` / 120 s | A submitted candidate is retried only if refuted. A stuck attempt (time share used without a fixed/proven change) is retried. No retry without time. |
+| `localize` | on | Anchors + BM25 hints (≤3 s); unverified |
+| `memory` | on (CLI only) | Execution-observed test/install commands from earlier runs on the same repository |
+| `tools.syntax_guard` | on | Refuses edits that break an existing parseable `.py`/`.json`; repeat to override |
+| `repo_overview`, `budget_notices`, `repetition_notice` | on | Context; wrap-up; loop detection |
+| `recover_empty_final`, `dominance_selection`, `final_recheck`, `git_hygiene` | on | Within-attempt selection and deliverable hygiene |
+| `sandbox` | `key` | Landlock domain for model commands and target-repo git |
+
+## 6. Known limitations
+
+- **No live validation yet.** Prompt quality, tool-use reliability, solve rate and the calibration
+  of the proof levels are unknown until the prescribed model is available.
+- **Proof scope.**
+  - A `proven` level covers only the checks that were run.
+  - A wrong reproduction can make a wrong fix look proven. Cross-checking across attempts reduces
+    this but does not remove it.
+  - Test names are parsed heuristically; without names, counts are compared.
+  - The counterfactual tree takes test files by path pattern. Test helpers stored elsewhere are
+    not carried over.
 - **Isolation.**
-  - Filtering environment variables is not isolation. A same-user process can read the harness's
-    memory or `/proc/<pid>/environ`.
-  - A shell-command denylist is not used and would not be a sandbox.
-  - The model's bash can read the harness repository (including `evalsuite/`) and write outside the
-    repo. The tool-level write boundary covers only `write_file`/`edit_file`.
-  - Such access is *recorded* in `result.integrity` and in the eval audit, not prevented. The
-    controller keeps its authoritative state in memory; files in the run directory are mirrors. The
-    exception is offline `finalize`, which trusts the run directory.
-- **Unsupported artifact types.** Empty directories; content inside nested git repositories or
-  submodules; git-lfs smudge semantics. New files under ignored paths are excluded and listed.
-- **Recovery.**
-  - SIGKILL cannot be handled in-process. Offline `finalize` recovers the deliverable from the
-    checkpoint, but only if someone runs it.
-  - The in-place working tree at kill time may be mid-edit.
-  - Conversation resumption is not supported; only finalisation is.
-- **Requests.** Non-streaming by default. Enable `model.stream` if the endpoint needs streaming or
-  is slow. A response slower than `request_timeout_s` fails with a classified timeout.
-- **Test-output parsing.** Heuristic; unrecognised output is `inconclusive`, never a pass.
+  - Model commands cannot read the credential from other processes' environments (verified at
+    start-up).
+  - They can read the harness repository and write outside the target repository. Such access is
+    recorded in `result.integrity`, not prevented.
+  - Isolation applies to model commands, not to the harness process itself.
+- **Unsupported artifact types:** empty directories, nested repositories/submodules, git-lfs
+  smudge.
+- **Recovery.** SIGKILL cannot be handled in-process. Offline `finalize` recovers the deliverable,
+  but someone has to run it.
+- **Interactive paste.** Terminals cap a single line at ~4 KB in line mode. For very long single
+  lines, use `ISSUE=@file`.
 - **Process groups.** Processes that call `setsid()` escape process-group cleanup.
-- **Upstream quirks.** Pi sends `store` and `max_completion_tokens` (its upstream behaviour). Some
-  OpenAI-compatible servers may reject these; if so, set Pi compat flags in `baselines/run_pi.py`
-  and document it.
 
-## 6. What we will not build (unless measurement changes the decision)
+## 7. What we did not build, and why
 
-Web dashboard, visual agent graphs, multi-agent orchestration, vector DB / embeddings, long-term
-memory, specialist-agent swarms, RL pipelines, model training, plugin ecosystems, UI polish,
-benchmark-specific hacks. The following conditional mechanisms wait for evidence:
-- generated tests (ExecCritic-style);
-- multiple candidates;
-- setup-recipe generation (BootstrapAgent-style);
-- model summarisation;
-- GEPA-style prompt optimisation, only after trustworthy measurement, with the model/metering/holdout protected.
+| Not built | Reason |
+|---|---|
+| Multi-agent orchestration, planner/reviewer models | Cost and latency; the evidence shows planning helps only weak models. Our verification is execution-based instead. |
+| LLM-as-judge selection | Approves wrong patches; selection uses execution evidence only |
+| Embeddings / vector DB | Needs a second model (prescribed-model rule); BM25 needs none |
+| Self-writing skill library | Misevolution and cross-task leakage risk; memory is limited to observed facts |
+| Parallel attempts in repository copies | Environment fidelity (editable installs, caches, ports) |
+| MCTS / tree search | Complexity without evidence of benefit at this budget |
+| Model summarisation of context | Extra calls; rule-based elision suffices |
+| `apply_patch` (V4A) tool for GPT-family models | Model-specific and unvalidated without the prescribed model; `edit_file` works for all |
+| Transcript replay command | `verify --rerun` covers re-checking the result; model outputs are not replayable on hosted APIs anyway |
+| Mined real-repository dev tasks | Without a live key they would yield no measurement; the 8 owned tasks validate the pipeline |
+| Full-screen TUI, web dashboard | Line console + proof card + `report.md` are enough and work over any terminal or pipe |
+| Docker/containers, egress proxy, confine-by-default | Not needed for the credential property (verified per run) and risky under an unknown evaluator environment |
+| Implicit `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`, Azure key headers | Implicit routing of the key is risky; only the documented `AI_*` overrides apply |
+| GitHub Enterprise/GitLab intake, PR creation | Outside the official procedure; `GHEEREFILL_GITHUB_API` exists for a GHE API |
+| Confining the harness process itself | Considered and not pursued in this version; the limitation is documented in §6 |
 
-## 7. Provenance
+## 8. Provenance
 
 | Component | Source | Version | Our changes |
 |---|---|---|---|
-| `gheerefill/shell.py` process-group kill on timeout | mini-swe-agent `environments/local.py` (MIT) | 2.4.6 | Pipe pump with exact output cap, cancel hook, TERM→KILL escalation, leftover cleanup |
-| Baseline `mini` | PyPI `mini-swe-agent` | 2.4.6 (`baselines/requirements-mini.lock`) | None to upstream code; runner documents the matching changes |
-| Baseline `pi` | npm `@mariozechner/pi-coding-agent` | 0.73.1 (`baselines/pi/package-lock.json`) | None to upstream code; runner documents the matching changes |
-| Research references (ExecCritic, SoL-Pi, BootstrapAgent, GEPA, HarnessOpt-Bench, Meerkat) | — | — | Not used in code. Their reported results are not our evidence. |
+| `gheerefill/shell.py` process-group kill on timeout | mini-swe-agent `environments/local.py` (MIT) | 2.4.6 | Pipe pump with an exact output cap, cancel hook, TERM→KILL, leftover cleanup |
+| `gheerefill/_vendor/tomli` | PyPI `tomli` sdist (MIT) | 2.2.1 (sha256 `cd45e1dc…45ff`) | None (verbatim); imported only without `tomllib` |
+| Baseline `mini` | PyPI `mini-swe-agent` | 2.4.6 (lock file) | None to upstream code |
+| Baseline `pi` | npm `@mariozechner/pi-coding-agent` | 0.73.1 (lock file) | None to upstream code |
+| Ideas (not code) | CodeT (arXiv 2207.10397); Agentless (2407.01489); TestPrune (2510.18270); SWE-Replay (2601.22129); Risa (2608.22191); harness-design study (2609.20804); LangChain Deep Agents blog; in-toto Statement v1; BM25 | — | Re-implemented from the published descriptions. Their reported numbers are not our evidence. |
 
-## 8. Current milestone and next actions
+## 9. Next actions
 
-Fixed request prefix: system prompt ~0.3k tokens + tool schemas ~0.9k (full set) or ~0.26k
-(bash-only).
-
-**Validated milestone.** A and B, deterministic only:
-- the full solve/export path;
-- the reliability core;
-- all three baselines wired through the eval runner;
-- 100+ unittest cases passing (`make test`);
-- a clean-checkout rehearsal (see §9).
-
-**Next concrete actions, in order** (from the 2026-09-26 red-team review, which is published
-separately as the gheerefill Red-Team Review artifact):
-1. Build, no credentials needed:
-   - B4 syntax guard on edits;
-   - B1 execution-state ledger (exact staleness from tree ids);
-   - B2 counterfactual fail-before/pass-after checks of the model's own tests (hybrid base+tests tree);
-   - B3 differential regression guard (selected tests, base vs candidate, newly-failing only);
-   - B5 in-toto attestation with receipts, plus `verify` and `replay`;
-   - B6 seeded chaos testing of the controller, run last so it covers the new paths.
-2. With a real key:
-   - `make probe`, then `scripts/eval.py --partition dev --systems ours,mini,pi --repeats 2`;
-   - classify every failure.
-3. Decision rule, fixed in advance:
-   - keep a mechanism only if dev+selection loses no task the default solves and it saves ≥10% tokens,
-     or it solves ≥1 more task at ≤1.2× cost; otherwise remove it;
-   - run the final partition once, at the end.
-4. Prototypes gated on data:
-   - P1 environment preflight/bootstrap;
-   - P2 localisation hints;
-   - P3 confine-by-default plus egress allow-list;
-   - P4 pass^3 reporting;
-   - P5 real-repository dev partition;
-   - P6 early reproduction nudge.
-5. When a model is prescribed: pin it in `[model]`; add B7 (model-native edit dialect).
+1. **With a real key**, in this order:
+   - `make probe`;
+   - `make eval SYSTEMS=ours,mini,pi` with `--repeats 2` on dev;
+   - classify every failure (taxonomy below);
+   - read the proof-level calibration table.
+2. **Decision rule, fixed in advance:**
+   - Keep a mechanism only if dev+selection loses no task the default solves and it saves ≥10% of
+     tokens, or it solves ≥1 more task at ≤1.2× cost. Otherwise switch it off in the profile.
+   - Run the final partition once, at the end.
+3. **When the model is prescribed:** pin it in `[model]`, re-run `make probe`, and revisit
+   `max_attempts` against the organisers' time limit.
 
 **Failure taxonomy for live runs:** investigation failure · wrong interpretation · correct
-diagnosis/wrong patch · incomplete patch · verification failure · false-positive verification ·
-setup failure · API failure · budget exhaustion · context failure · artifact/export failure ·
-regression introduced · selector failure.
+diagnosis/wrong patch · incomplete patch · verification failure · false-positive proof ·
+false-negative proof · setup failure · API failure · budget exhaustion · context failure ·
+artifact/export failure · regression introduced · selector failure.
 
-## 9. Clean-checkout rehearsal log
+## 10. Rehearsal log
 
-See the entry appended below by the rehearsal procedure (fresh `git clone` → `make setup` →
-`make test` → `make run` with the scripted demo profile).
+### 2026-09-26 — rehearsal on commit 3823c1a
+- Procedure: fresh `git clone`, AI_* variables unset.
+- `make setup`: ok, offline, 0.2 s.
+- `make test`: 100 tests OK.
+- `make run` without credentials: exit 2, `configuration_error`, repository untouched.
+- `make demo`: completed, checks passed, `live=false`.
+- Found and fixed a 3.12-only f-string in a test.
 
-### 2026-09-26 — rehearsal on commit 3823c1a (+ fixes in the following commit)
-Procedure: `git clone -b claude/modest-dirac-h7ees8` into an empty directory, with AI_* variables unset.
-- `make setup`: ok, offline, 0.2 s. It picked `/usr/bin/python3.13`.
-- `make test`: 100 tests OK (1 skipped: baselines are not installed in a fresh clone).
-- `make run TASK=… </dev/null` without credentials: exit 2. Each task gets a `configuration_error`
-  record ("model.name is not configured … never substitutes a default model"). The repo is untouched.
-- `make demo` (scripted model): `completed / model_submitted / submission_ready=true / checks_passed`,
-  labelled `live=false`.
-- Found and fixed: one *test* file used a Python 3.12-only f-string, so `make test` failed on 3.11.
-  The runtime itself compiled on 3.11. Added `tests/test_compat.py`. All tests now pass on 3.11,
-  3.12 and 3.13.
-- Not rehearsed: anything live (no credentials or model), and the official task protocol (not published).
+### 2026-09-26 — portability and proof pipeline
+- **Test suite:** 142 tests pass on Python 3.9 (uv-installed), 3.10, 3.11 and 3.13.
+  `tests/test_compat.py` parses every source file with the 3.9 grammar and imports it on the older
+  interpreters that are present.
+- **Make invocations:**
+  - `make -f /abs/Makefile run TASK=rel.json OUT="my runs" MAX_STEPS=7` from another directory
+    works; paths resolve against the caller directory.
+  - `make run` without a prior setup runs setup itself.
+- **Proof pipeline:**
+  - 177 tests pass.
+  - `make chaos` passes 200 seeds (25 SIGKILL + recovery) with 0 invariant violations, after fixing
+    the one bug it found (a non-`ModelError` client exception went uncounted).
+  - `make demo` shows `PROVEN`: the reproduction and the unittest suite both fail on the original
+    code and pass on the patch. `gheerefill verify --rerun` reproduces both verdicts.

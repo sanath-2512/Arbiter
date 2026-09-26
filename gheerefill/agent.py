@@ -987,8 +987,12 @@ class Agent:
                 "candidates_observed": len([t for t in self.history if t != self.base_tree]),
                 "integrity": {
                     "note": "observations for audit, not a verdict; the harness does not have OS-level isolation",
-                    "modified_existing_test_files": [f["path"] for f in files if f["status"] in "MDR"
-                                                     and TEST_PATH_RE.search(f.get("old_path") or f["path"])],
+                    "modified_existing_test_files": [
+                        f["path"] for f in files if f["status"] in "MDR" and TEST_PATH_RE.search(f.get("old_path") or f["path"])
+                        and not (f["status"] == "M" and self.ws.lines_removed(self.base_tree, selected, f["path"]) == 0)],
+                    "extended_existing_test_files": [
+                        f["path"] for f in files if f["status"] == "M" and TEST_PATH_RE.search(f["path"])
+                        and self.ws.lines_removed(self.base_tree, selected, f["path"]) == 0],
                     "added_test_files": [f["path"] for f in files if f["status"] == "A" and TEST_PATH_RE.search(f["path"])],
                     "target_git_control_files_changed": self._git_tamper(),
                     **{k: v[:20] for k, v in self.integrity.items()},

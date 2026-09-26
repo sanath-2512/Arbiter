@@ -31,7 +31,9 @@ def card(result: dict[str, Any], *, color: bool, max_diff_lines: int = 120) -> s
     if result.get("error"):
         lines.append(f"error         {json.dumps(result['error'])[:300]}")
     vs = v.get("status", "n/a")
-    lines.append(f"verification  {_c('32' if vs == 'checks_passed' else '33', vs, color)} — {v.get('detail', '')}"[:400])
+    n_sel = len(v.get("records_on_selected") or [])
+    lines.append(f"verification  {_c('32' if vs == 'checks_passed' else '33', vs, color)} — {n_sel} check run(s) on the "
+                 f"selected code (details in report.md)")
     lines += proof_lines(result.get("proof") or {}, color)
     if d:
         lines.append(f"changes       {d.get('shortstat') or 'no changes'}")
@@ -154,7 +156,8 @@ def write_report(result: dict[str, Any], task_issue: str) -> Path:
     iso = result.get("isolation") or {}
     out += ["", "## Integrity and isolation", "",
             f"- Isolation: {'active — ' + iso.get('verified', '') if iso.get('active') else 'inactive — ' + str(iso.get('reason'))}",
-            f"- Modified existing test files: {integ.get('modified_existing_test_files') or 'none'}",
+            f"- Modified existing test files (lines removed or changed): {integ.get('modified_existing_test_files') or 'none'}",
+            f"- Existing test files extended (lines added only): {integ.get('extended_existing_test_files') or 'none'}",
             f"- Added test files: {integ.get('added_test_files') or 'none'}",
             f"- Accesses to controller state: {len(integ.get('controller_state_access') or [])}; "
             f"to the harness checkout: {len(integ.get('harness_repo_access') or [])}",
