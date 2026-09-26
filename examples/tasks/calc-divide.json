@@ -1,0 +1,6 @@
+{
+  "task_id": "calc-divide",
+  "template_repo": "../repos/calc",
+  "issue_file": "calc-divide.issue.md",
+  "limits": {"time_limit_s": 600, "max_steps": 40}
+}

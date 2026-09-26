@@ -1,0 +1,8 @@
+# Ablation: bash + submit only (closest to upstream mini-swe-agent's tool capability).
+name = "bash-only"
+
+[model]
+provider = "openai_chat"
+
+[tools]
+set = "bash_only"

@@ -1,0 +1,46 @@
+# Default submission profile.
+#
+# The organiser-prescribed model is NOT yet known (see NOTES.md). Until it is, the model
+# identity and endpoint must be supplied explicitly (AI_MODEL / AI_BASE_URL environment
+# variables or edit this file). The harness refuses to run with an unset model and never
+# substitutes one. The credential is always read from AI_API_KEY.
+name = "default"
+
+[model]
+provider = "openai_chat"          # openai_chat | anthropic_messages  (development assumption)
+name = ""                         # REQUIRED: prescribed model id (or AI_MODEL)
+base_url = ""                     # REQUIRED: API prefix, e.g. https://host/v1 (or AI_BASE_URL)
+api_key_env = "AI_API_KEY"
+tool_protocol = "native"          # native function calling; "text" = delimited text actions
+max_output_tokens = 8192
+max_tokens_field = "max_tokens"   # some OpenAI-compatible servers need "max_completion_tokens"
+context_window = 128000           # development assumption; set to the prescribed model's window
+request_timeout_s = 300
+# temperature = 0.0               # leave unset unless the endpoint accepts it
+
+[retry]
+max_attempts = 6
+base_delay_s = 2.0
+max_delay_s = 60.0
+seed = 0
+
+[limits]                          # defaults; per-task limits from the evaluator take precedence
+time_limit_s = 1800
+max_steps = 150
+finalize_reserve_s = 45
+
+[tools]
+set = "full"
+bash_timeout_s = 180
+max_observation_chars = 12000
+read_max_lines = 400
+
+[policy]
+repo_overview = true
+submit_review = true
+recover_empty_final = true
+dominance_selection = true
+final_recheck = true
+budget_notices = true
+repetition_notice = true
+git_hygiene = true

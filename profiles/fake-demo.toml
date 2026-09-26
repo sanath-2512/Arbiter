@@ -1,0 +1,12 @@
+# Deterministic scripted model (NOT a live model). Used by tests and the offline demo.
+name = "fake-demo"
+
+[model]
+provider = "fake"
+name = "fake-scripted"
+script = "../examples/fake/calc_fix.json"
+
+[limits]
+time_limit_s = 120
+max_steps = 20
+finalize_reserve_s = 20

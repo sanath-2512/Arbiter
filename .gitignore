@@ -1,0 +1,7 @@
+runs/
+work/
+.harness-python
+.venv-baseline/
+__pycache__/
+*.pyc
+.env

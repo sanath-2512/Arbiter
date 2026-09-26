@@ -1,0 +1,6 @@
+# For endpoints without native tool calling: delimited text actions (explicitly selected).
+name = "text-protocol"
+
+[model]
+provider = "openai_chat"
+tool_protocol = "text"
