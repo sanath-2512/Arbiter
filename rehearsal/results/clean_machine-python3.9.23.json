@@ -1,0 +1,63 @@
+{
+  "schema": "gheerefill.clean-machine/v1",
+  "commit": "b0d1cfd9edd8",
+  "python": "3.9.23",
+  "passed": 7,
+  "total": 9,
+  "steps": [
+    {
+      "step": "setup",
+      "ok": true,
+      "seconds": 0.0,
+      "detail": "make: Leaving directory '/tmp/ghee-clean.bCf0ho/gheerefill'"
+    },
+    {
+      "step": "test",
+      "ok": false,
+      "seconds": 93.0,
+      "detail": "rc=2 Ran 200 tests ERROR: test_make_from_another_directory_resolves_caller_relative_paths (tests.test_cli.CliTest) ERROR: test_make_run_target (tests.test_cli.CliTest) ERROR: test_make_run_with_github_issue_url (tests.test_official_flow.OfficialFlowTest) "
+    },
+    {
+      "step": "run: no AI_API_KEY",
+      "ok": true,
+      "seconds": 0.0,
+      "detail": "rc=2: configuration error: AI_API_KEY is not set; export it before `make run`."
+    },
+    {
+      "step": "run: no TTY, no ISSUE",
+      "ok": true,
+      "seconds": 0.0,
+      "detail": "rc=2: {\"error\": {\"message\": \"cannot infer the provider from the AI_API_KEY format (no [[auto]] rule matches). Set AI_BASE_URL "
+    },
+    {
+      "step": "run: invalid key",
+      "ok": true,
+      "seconds": 2.0,
+      "detail": "rc=2: [issue-ebde4822] model request failed (authentication, attempt 1): invalid_request_error invalid_api_key Incorrect API key provided."
+    },
+    {
+      "step": "run: ISSUE=text REPO=path",
+      "ok": true,
+      "seconds": 9.0,
+      "detail": "judged: {\"artifact_valid\": true, \"solved\": true, \"p2p_failed\": [], \"empty_patch\": false, \"reason\": null}"
+    },
+    {
+      "step": "run: ISSUE=<github issue URL>",
+      "ok": true,
+      "seconds": 7.0,
+      "detail": "judged: {\"artifact_valid\": true, \"solved\": true, \"p2p_failed\": [], \"empty_patch\": false, \"reason\": null}"
+    },
+    {
+      "step": "no key material on disk",
+      "ok": false,
+      "seconds": 0.0,
+      "detail": "/tmp/ghee-clean.bCf0ho/gheerefill/scripts/rehearsal.py /tmp/ghee-clean.bCf0ho/gheerefill/scripts/clean_machine.sh "
+    },
+    {
+      "step": "clean",
+      "ok": true,
+      "seconds": 0.0,
+      "detail": "runs/ and workspace/ removed"
+    }
+  ]
+}
