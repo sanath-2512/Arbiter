@@ -70,6 +70,100 @@ def code_identifiers(issue: str) -> list[str]:
     return seen[:15]
 
 
+PY_FROM = re.compile(r"^[ \t]*from[ \t]+(\.*[\w.]*)[ \t]+import[ \t]+(\([^)]*\)|[\w \t,*]+)", re.M)
+PY_PLAIN = re.compile(r"^[ \t]*import[ \t]+([\w. \t,]+)", re.M)
+JS_IMPORT = re.compile(r"""(?:require\(\s*|from\s+|import\(\s*|import\s+)['"](\.{1,2}/[^'"]+)['"]""")
+GO_IMPORT = re.compile(r'"([\w.\-/]+)"')
+
+
+def _py_imports(path: str, text: str) -> set[str]:
+    pkg = path.split("/")[:-1]
+    out: set[str] = set()
+    for plain in PY_PLAIN.findall(text):
+        out |= {n.strip().split(" as ")[0].strip() for n in plain.split(",") if n.strip()}
+    for frm, names in PY_FROM.findall(text):
+        level = len(frm) - len(frm.lstrip("."))
+        base = frm.lstrip(".")
+        if level:
+            anchor = pkg[: len(pkg) - (level - 1)] if level - 1 <= len(pkg) else []
+            base = ".".join(anchor + ([base] if base else []))
+        out.add(base)
+        out |= {f"{base}.{n.strip().split(' as ')[0].strip()}" for n in names.strip("()").replace("\n", " ").split(",")
+                if n.strip() and not n.strip().startswith("#")}
+    return out
+
+
+def _py_module_names(path: str) -> set[str]:
+    parts = path[:-3].split("/") if path.endswith(".py") else []
+    package = bool(parts) and parts[-1] == "__init__"
+    if package:
+        parts = parts[:-1]
+    names = {".".join(parts[i:]) for i in range(len(parts)) if len(parts) - i >= 2}
+    if parts and (package or len(parts) == 1 or parts[-2] in ("src", "lib")):
+        names.add(parts[-1])  # a top-level package/module is imported by its bare name
+    return names
+
+
+def _js_resolve(importer: str, spec: str, fileset: set[str]) -> str | None:
+    base = str(Path(importer).parent / spec)
+    parts: list[str] = []
+    for p in base.split("/"):
+        if p == "..":
+            parts = parts[:-1]
+        elif p not in (".", ""):
+            parts.append(p)
+    b = "/".join(parts)
+    for cand in (b, *(b + e for e in (".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs")),
+                 *(b + "/index" + e for e in (".js", ".ts"))):
+        if cand in fileset:
+            return cand
+    return None
+
+
+def import_graph(targets: list[str], texts: dict[str, str], fileset: set[str], repo: Path) -> dict[str, dict]:
+    """For each target file: the files that import it, and which of those are tests (tests are often
+    not next to the code they cover)."""
+    from gheerefill.proof import is_test_path
+
+    out: dict[str, dict] = {}
+    py_index = {f: _py_imports(f, t) for f, t in texts.items() if f.endswith(".py")}
+    js_index = {f: {_js_resolve(f, m, fileset) for m in JS_IMPORT.findall(t)} for f, t in texts.items()
+                if f.endswith((".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"))}
+    go_module = ""
+    try:
+        m = re.search(r"^module\s+(\S+)", (repo / "go.mod").read_text(errors="replace"), re.M)
+        go_module = m.group(1) if m else ""
+    except OSError:
+        pass
+    for t in targets:
+        importers: list[str] = []
+        via_package: list[str] = []
+        if t.endswith(".py"):
+            names = _py_module_names(t)
+            importers = [f for f, imps in py_index.items() if f != t and imps & names]
+            for pkg_init in [f for f in importers if f.endswith("__init__.py")]:  # re-exported by its package
+                pnames = _py_module_names(pkg_init)
+                via_package += [f for f, imps in py_index.items() if f not in (t, pkg_init) and imps & pnames
+                                and f not in importers]
+        elif t in {x for s in js_index.values() for x in s if x}:
+            importers = [f for f, imps in js_index.items() if t in imps]
+        elif t.endswith(".go") and go_module:
+            pkg_dir = str(Path(t).parent)
+            path = go_module if pkg_dir == "." else f"{go_module}/{pkg_dir}"
+            importers = [f for f, txt in texts.items() if f.endswith(".go") and path in GO_IMPORT.findall(txt)]
+            importers += [f for f in texts if f.endswith("_test.go") and str(Path(f).parent) == pkg_dir and f != t]
+        importers = sorted(set(importers))
+        stem = Path(t).stem.lower().replace("__init__", Path(t).parent.name.lower())
+        # tests reaching the module only through its package: those named after the module first
+        indirect = sorted({f for f in via_package if is_test_path(f)},
+                          key=lambda f: (stem not in Path(f).stem.lower(), f))
+        if len(via_package) > 30:
+            indirect = [f for f in indirect if stem in Path(f).stem.lower()]
+        out[t] = {"imported_by": [f for f in importers if not is_test_path(f)][:8],
+                  "tests": ([f for f in importers if is_test_path(f)] + indirect)[:8]}
+    return out
+
+
 def localize(issue: str, repo: Path, files: list[str], *, time_budget_s: float = 3.0,
              byte_budget: int = 40 * 1024 * 1024, top: int = 6) -> dict[str, Any]:
     t0 = time.monotonic()
@@ -119,7 +213,16 @@ def localize(issue: str, repo: Path, files: list[str], *, time_budget_s: float =
                 m = pat.search(text)
                 if m:
                     out["definitions"].append({"name": name, "path": f, "line": text.count("\n", 0, m.start()) + 1})
-        out["definitions"] = sorted(out["definitions"], key=lambda d: (idents.index(d["name"]), d["path"]))[:12]
+        from gheerefill.proof import is_test_path
+
+        defs = sorted(out["definitions"], key=lambda d: (is_test_path(d["path"]), idents.index(d["name"]), d["path"]))
+        per: dict[str, int] = {}
+        kept = []
+        for d in defs:
+            per[d["name"]] = per.get(d["name"], 0) + 1
+            if per[d["name"]] <= 3:
+                kept.append(d)
+        out["definitions"] = kept[:12]
 
     # 2b. BM25 over the loaded documents
     q = Counter(terms(issue) + [t for i in idents for t in split_ident(i)])  # code identifiers count twice
@@ -141,6 +244,11 @@ def localize(issue: str, repo: Path, files: list[str], *, time_budget_s: float =
                 scores.append((s, f))
         scores.sort(key=lambda x: (-x[0], x[1]))
         out["ranked"] = [{"path": f, "score": round(s, 2)} for s, f in scores[:top]]
+    # 3. where the likely files sit in the import graph (callers; tests that import them)
+    targets = list(dict.fromkeys(out["files_named"] + [d["path"] for d in out["definitions"]]
+                                 + [r["path"] for r in out["ranked"][:2]]))[:4]
+    if targets and time.monotonic() - t0 < time_budget_s:
+        out["related"] = import_graph(targets, texts, fileset, repo)
     out["elapsed_s"] = round(time.monotonic() - t0, 3)
     out["files_indexed"] = len(docs)
     return out
@@ -156,6 +264,14 @@ def render(loc: dict[str, Any]) -> str:
     if loc.get("ranked"):
         lines.append("- Files whose content best matches the issue text (BM25): "
                      + ", ".join(r["path"] for r in loc["ranked"]))
+    for path, rel in (loc.get("related") or {}).items():
+        if rel.get("imported_by") or rel.get("tests"):
+            parts = []
+            if rel.get("imported_by"):
+                parts.append("imported by " + ", ".join(rel["imported_by"][:5]))
+            if rel.get("tests"):
+                parts.append("tests that import it: " + ", ".join(rel["tests"][:5]))
+            lines.append(f"- {path}: " + "; ".join(parts))
     if not lines:
         return ""
     return "\nHints from a deterministic search of the repository for the issue's terms (unverified; use them only " \

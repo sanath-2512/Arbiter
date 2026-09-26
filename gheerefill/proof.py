@@ -18,8 +18,11 @@ Levels, strongest first (deterministic; `assess`):
               existing tests were modified)
   passing     conclusive passes on the candidate, but nothing shown to fail without the fix
   unverified  no conclusive evidence
-  refuted     the evidence contradicts the candidate: a regression, or a confirmed
-              reproduction still failing on it
+  refuted     authoritative evidence contradicts it (a regression in existing tests), or it
+              fails a qualified generated check that another regression-free candidate passes
+Generated evidence (registered reproductions, tests the candidate added) is advisory unless qualified;
+see "authority" below. Exploration (another attempt) may be triggered by advisory evidence; discarding
+a candidate never is.
 Candidates are ranked by (level, fail→pass checks, agreement with other candidates, fewer
 failing checks, smaller patch, later attempt). Agreement follows CodeT's dual execution
 agreement (Chen et al., 2022): candidates passing the same set of checks form a consensus set,
@@ -109,6 +112,47 @@ def latest(records: list[VerificationRecord], check_key: str, tree: str) -> Veri
     return found
 
 
+# ------------------------------------------------------------------------------ authority
+# Evidence tiers. AUTHORITATIVE: tests that exist in the original repository and that the candidate did
+# not rewrite. GENERATED: registered reproductions and tests the candidate added. Generated evidence is
+# ADVISORY unless QUALIFIED: it fails on the original code for a behavioural reason (not a broken
+# environment), gives the same verdict twice, and does not assert on private internals. Only
+# authoritative evidence can refute a candidate on its own; a qualified generated check refutes a
+# candidate only comparatively, when another candidate without regressions passes it.
+ENV_ERROR = re.compile(r"ModuleNotFoundError|SyntaxError|IndentationError|TabError|command not found|"
+                       r"No such file or directory|can't open file|fixture '[^']+' not found|ERROR collecting|"
+                       r"Permission denied|ImportError while importing test module", re.I)
+MISSING_API = re.compile(r"ImportError|cannot import name|AttributeError|has no attribute|unexpected keyword argument|"
+                         r"NameError|is not defined|TypeError: .*argument", re.I)
+IMPL_SPECIFIC = re.compile(r"\._[a-z]\w*\b|\bmock\.patch(\.object)?\(|\bpatch\([\"'][\w.]+\._|monkeypatch\.setattr\(|"
+                           r"MagicMock\(", re.I)
+
+
+def test_name(test_id: str) -> str:
+    """The identifying name inside a runner's test id (pytest/unittest/go/cargo/rspec/jest)."""
+    t = re.sub(r"\[.*\]$", "", test_id.strip())
+    for sep in ("::", "."):
+        if sep in t and not t.startswith("./"):
+            t = t.split(sep)[-1]
+    return t.split("/")[0] if re.match(r"^Test\w+/", t) else t
+
+
+def qualify(orig_output: str, orig_outcome: str | None, *, task_kind: str, impl_specific: bool,
+            stable: bool | None) -> tuple[bool, str]:
+    """Is a generated check's failure on the original code trustworthy evidence?"""
+    if orig_outcome == "collection_error" and task_kind != "feature":
+        return False, "on the original code it could not even run (collection error)"
+    if ENV_ERROR.search(orig_output or ""):
+        return False, "on the original code it failed with an environment error, not the reported behaviour"
+    if MISSING_API.search(orig_output or "") and task_kind not in ("feature", "refactor"):
+        return False, "on the original code it failed on a missing name, not on the reported behaviour"
+    if impl_specific:
+        return False, "it asserts on private internals or mocks, so it may reject a correct alternative fix"
+    if stable is False:
+        return False, "it gave different verdicts on repeated runs of the original code"
+    return True, "fails on the original code for a behavioural reason"
+
+
 # ------------------------------------------------------------------------------ comparison
 @dataclass
 class Comparison:
@@ -124,6 +168,14 @@ class Comparison:
     counts_candidate: dict[str, int] = field(default_factory=dict)
     verdict: str = "incomplete"  # fail_to_pass | pass_to_fail | pass_to_pass | fail_to_fail | incomplete
     detail: str = ""
+    # authority split (see above)
+    authoritative_fail_to_pass: list[str] = field(default_factory=list)
+    generated_fail_to_pass: list[str] = field(default_factory=list)
+    authoritative_regressions: list[str] = field(default_factory=list)
+    advisory_regressions: list[str] = field(default_factory=list)
+    generated: bool = False  # the check itself is generated (a registered reproduction script, or only new tests)
+    qualified: bool | None = None  # for generated evidence
+    qualification: str = ""
 
     @property
     def shows_fix(self) -> bool:
@@ -131,18 +183,39 @@ class Comparison:
                                                   and not self.pass_to_fail)
 
     @property
+    def authoritative_fix(self) -> bool:
+        return self.shows_fix and bool(self.authoritative_fail_to_pass)
+
+    @property
+    def qualified_fix(self) -> bool:
+        return self.shows_fix and bool(self.generated_fail_to_pass) and bool(self.qualified)
+
+    @property
     def shows_regression(self) -> bool:
-        return self.verdict == "pass_to_fail" or bool(self.pass_to_fail)
+        return bool(self.authoritative_regressions)
+
+    @property
+    def advisory_failure(self) -> bool:
+        """Generated evidence that the candidate does not satisfy (it never refutes on its own)."""
+        return self.generated and self.original == "fail" and self.candidate == "fail"
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
-        d["shows_fix"], d["shows_regression"] = self.shows_fix, self.shows_regression
+        d.update(shows_fix=self.shows_fix, shows_regression=self.shows_regression,
+                 authoritative_fix=self.authoritative_fix, qualified_fix=self.qualified_fix,
+                 advisory_failure=self.advisory_failure)
         return d
 
 
 def compare(check_key: str, command: str, kind: str, orig: VerificationRecord | None,
-            cand: VerificationRecord | None) -> Comparison:
+            cand: VerificationRecord | None, *, is_generated_test=None, generated_check: bool | None = None,
+            orig_output: str = "", task_kind: str = "bug", impl_specific: bool = False,
+            stable: bool | None = None) -> Comparison:
+    """`is_generated_test(test_id)`: True for tests the candidate added or rewrote. `generated_check`:
+    the whole check is generated (registered reproduction script); default: reproductions are generated."""
+    is_gen = is_generated_test or (lambda _t: False)
     c = Comparison(check_key, command, kind, verdict(orig), verdict(cand))
+    c.generated = (kind == "reproduction") if generated_check is None else generated_check
     if orig is not None:
         c.counts_original = dict(orig.counts)
     if cand is not None:
@@ -178,6 +251,18 @@ def compare(check_key: str, command: str, kind: str, orig: VerificationRecord | 
             c.detail = f"fails before and after ({fo} -> {fc} failing; test names not available)"
             if fc > fo and kind == "check":
                 c.pass_to_fail = [f"{fc - fo} more failing test(s) than without the change"]
+
+    # --- authority split
+    fixes = c.fail_to_pass if c.fail_to_pass else (["(whole check)"] if c.verdict == "fail_to_pass" else [])
+    for t in fixes:
+        gen = c.generated or (t != "(whole check)" and is_gen(t)) or (t == "(whole check)" and bool(
+            generated_check))
+        (c.generated_fail_to_pass if gen else c.authoritative_fail_to_pass).append(t)
+    for t in c.pass_to_fail:
+        (c.advisory_regressions if c.generated or is_gen(t) else c.authoritative_regressions).append(t)
+    if c.generated_fail_to_pass or c.advisory_failure:
+        c.qualified, c.qualification = qualify(orig_output, orig.outcome if orig else None, task_kind=task_kind,
+                                               impl_specific=impl_specific, stable=stable)
     return c
 
 
@@ -193,62 +278,94 @@ class Assessment:
     diff_lines: int = 0
     pass_set: tuple[str, ...] = ()
     agreement: int = 0
+    advisory: list[str] = field(default_factory=list)
 
     @property
     def rank(self) -> tuple:
-        fixes = sum(1 for c in self.comparisons if c.shows_fix)
-        failing = sum(1 for c in self.comparisons if c.candidate == "fail")
-        return (LEVELS.index(self.level), fixes, self.agreement, -failing, -self.diff_lines, self.attempt)
+        auth = sum(1 for c in self.comparisons if c.authoritative_fix)
+        qual = sum(1 for c in self.comparisons if c.qualified_fix)
+        failing = sum(1 for c in self.comparisons if c.candidate == "fail" and not c.generated)
+        return (LEVELS.index(self.level), auth, qual, self.agreement, -failing, -self.diff_lines, self.attempt)
 
     def summary(self) -> str:
-        fixes = [c for c in self.comparisons if c.shows_fix]
+        auth = [c for c in self.comparisons if c.authoritative_fix]
+        qual = [c for c in self.comparisons if c.qualified_fix and not c.authoritative_fix]
+        adv = [c for c in self.comparisons if c.shows_fix and not c.authoritative_fix and not c.qualified_fix]
         regress = [c for c in self.comparisons if c.shows_regression]
         parts = []
-        if fixes:
-            parts.append(f"{len(fixes)} check(s) fail without the change and pass with it")
+        if auth:
+            parts.append(f"{len(auth)} existing check(s) fail without the change and pass with it")
+        if qual:
+            parts.append(f"{len(qual)} qualified generated check(s) fail without the change and pass with it")
+        if adv:
+            parts.append(f"{len(adv)} generated check(s) show the fix but are advisory only")
         if regress:
-            names = [n for c in regress for n in c.pass_to_fail][:5]
+            names = [n for c in regress for n in c.authoritative_regressions][:5]
             parts.append(f"regressions: {', '.join(names) or len(regress)}")
-        parts += self.reasons
+        parts += self.reasons + [f"advisory: {a}" for a in self.advisory]
         return "; ".join(parts) or "no conclusive check on this candidate"
 
     def to_dict(self) -> dict[str, Any]:
         return {"tree": self.tree, "level": self.level, "attempt": self.attempt, "summary": self.summary(),
                 "comparisons": [c.to_dict() for c in self.comparisons], "tests_modified": self.tests_modified,
-                "diff_lines": self.diff_lines, "agreement": self.agreement, "rank": list(self.rank)}
+                "diff_lines": self.diff_lines, "agreement": self.agreement, "rank": list(self.rank),
+                "advisory": self.advisory}
 
 
 def assess(tree: str, comparisons: list[Comparison], *, tests_modified: list[str], expected: int,
-           reproductions_failing: list[str] = ()) -> Assessment:
+           task_kind: str = "bug") -> Assessment:
     """`expected`: number of checks that should have been compared (for the `proven` level)."""
     reasons: list[str] = []
+    advisory = [f"`{c.command[:80]}` still fails ({c.qualification or 'generated check'})"
+                for c in comparisons if c.advisory_failure]
+    advisory += [f"`{c.command[:80]}`: {', '.join(c.advisory_regressions[:3])} newly failing in generated tests"
+                 for c in comparisons if c.advisory_regressions]
     regressions = [c for c in comparisons if c.shows_regression]
-    fixes = [c for c in comparisons if c.shows_fix]
+    strong = [c for c in comparisons if c.authoritative_fix or c.qualified_fix]
+    weak = [c for c in comparisons if c.shows_fix and c not in strong]
     complete = expected > 0 and sum(1 for c in comparisons if c.verdict != "incomplete") >= expected
-    if reproductions_failing:
-        reasons.append(f"confirmed reproduction(s) still failing: {', '.join(reproductions_failing)}")
-    if regressions or reproductions_failing:
+    if regressions:
         level = "refuted"
-    elif fixes and complete and not tests_modified:
+    elif strong and complete and not tests_modified:
         level = "proven"
-    elif fixes:
+    elif strong or weak:
         level = "fixed"
         if tests_modified:
-            reasons.append("existing test files were modified, so the evidence is not independent of the change")
+            reasons.append("existing tests were rewritten, so the evidence is not independent of the change"
+                           + (" (expected for this task)" if task_kind == "test_maintenance" else ""))
         if not complete:
             reasons.append("not every check could be compared")
+        if weak and not strong:
+            reasons.append("the fix is shown only by unqualified generated checks: "
+                           + "; ".join(c.qualification for c in weak if c.qualification)[:200])
     elif any(c.candidate == "pass" for c in comparisons):
         level = "passing"
-        reasons.append("no check was shown to fail without the change")
+        if task_kind != "refactor":
+            reasons.append("no check was shown to fail without the change")
     else:
         level = "unverified"
-    a = Assessment(tree, level, comparisons, list(tests_modified), reasons)
+    a = Assessment(tree, level, comparisons, list(tests_modified), reasons, advisory=advisory)
     a.pass_set = tuple(sorted(c.check_key for c in comparisons if c.candidate == "pass"))
     return a
 
 
 def rank_candidates(assessments: list[Assessment]) -> list[Assessment]:
-    """Best first. Sets CodeT-style agreement: size of the consensus set x checks passed."""
+    """Best first. Applies comparative refutation for qualified generated checks, then CodeT-style
+    agreement (size of the consensus set x checks passed)."""
+    by_key: dict[str, list[tuple[Assessment, Comparison]]] = {}
+    for a in assessments:
+        for c in a.comparisons:
+            by_key.setdefault(c.check_key, []).append((a, c))
+    for key, pairs in by_key.items():
+        gen = [(a, c) for a, c in pairs if c.generated and c.original == "fail" and c.qualified is not False]
+        passers = [a for a, c in gen if c.candidate == "pass" and a.level != "refuted"]
+        if not passers:
+            continue
+        for a, c in gen:
+            if c.candidate == "fail" and a.level != "refuted":
+                a.level = "refuted"
+                a.reasons.append(f"fails the qualified generated check `{c.command[:60]}` that attempt "
+                                 f"{passers[0].attempt} satisfies without regressions")
     for a in assessments:
         same = sum(1 for b in assessments if b.pass_set == a.pass_set)
         a.agreement = same * len(a.pass_set)

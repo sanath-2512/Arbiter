@@ -84,6 +84,8 @@ def tool_specs(cfg: ToolsConfig) -> list[ToolSpec]:
                 "path": {"type": "string"},
                 "start_line": {"type": "integer", "description": "1-based first line (default 1)."},
                 "end_line": {"type": "integer", "description": "1-based last line, inclusive."},
+                "outline": {"type": "boolean", "description": "List the file's classes/functions with line numbers "
+                                                              "instead of its text (useful for large files)."},
             },
             ["path"],
         ),
@@ -177,6 +179,52 @@ def validate_arguments(spec: ToolSpec, args: dict[str, Any]) -> dict[str, Any]:
                 raise ToolArgumentError(f"argument {k!r} must be true or false")
         out[k] = v
     return out
+
+
+OUTLINE_PATTERNS = [
+    re.compile(r"^\s*(export\s+)?(default\s+)?(async\s+)?function\s*\*?\s*\w+"),          # JS/TS
+    re.compile(r"^\s*(export\s+)?(default\s+)?(abstract\s+)?class\s+\w+"),                 # JS/TS/Java/…
+    re.compile(r"^\s*(export\s+)?(const|let|var)\s+\w+\s*=\s*(async\s*)?(\([^)]*\)|\w+)\s*=>"),
+    re.compile(r"^func\s+(\([^)]*\)\s*)?\w+"), re.compile(r"^type\s+\w+\s+(struct|interface)\b"),  # Go
+    re.compile(r"^\s*(pub(\([\w:]+\))?\s+)?(async\s+)?(fn|struct|enum|trait|impl|mod)\b"),        # Rust
+    re.compile(r"^\s*(def|class|module)\s+[\w:.]+"),                                            # Python/Ruby
+    re.compile(r"^\s*((public|private|protected|internal|static|final|abstract|override|virtual|async)\s+)+"
+               r"[\w<>\[\],.? ]+\s+\w+\s*\("),                                                  # Java/C#/Kotlin
+    re.compile(r"^\s*(public\s+|private\s+|protected\s+)?(interface|enum|record|trait|object)\s+\w+"),
+]
+
+
+def outline(path: Path, text: str, max_items: int = 400) -> list[str]:
+    """Definitions with line numbers: exact for Python (ast), pattern-based for other languages."""
+    items: list[str] = []
+    if path.suffix in (".py", ".pyi"):
+        import ast
+
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError):
+            tree = None
+        if tree is not None:
+            def visit(nodes, depth):
+                for n in nodes:
+                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                        if isinstance(n, ast.ClassDef):
+                            bases = ", ".join(ast.unparse(b) for b in n.bases)
+                            sig = f"class {n.name}({bases})" if bases else f"class {n.name}"
+                        else:
+                            sig = f"{'async ' if isinstance(n, ast.AsyncFunctionDef) else ''}def {n.name}" \
+                                  f"({ast.unparse(n.args)})"
+                        items.append(f"{n.lineno:>6}  {'    ' * depth}{sig[:160]}")
+                        if depth < 2:
+                            visit(n.body, depth + 1)
+            visit(tree.body, 0)
+            return items[:max_items]
+    for i, line in enumerate(text.split("\n"), 1):
+        if any(p.match(line) for p in OUTLINE_PATTERNS) and not re.match(r"^\s*(if|for|while|switch|catch|return)\b", line):
+            items.append(f"{i:>6}  {line.rstrip()[:160]}")
+            if len(items) >= max_items:
+                break
+    return items
 
 
 def closest_region(text: str, needle: str, max_lines: int = 20000) -> tuple[int, int, float] | None:
@@ -419,6 +467,15 @@ class ToolBox:
         if b"\x00" in data[:8192]:
             return ToolResult(f"Error: {shown} looks binary ({size} bytes); not displayed.", "error", {"error": "binary"})
         text = data.decode("utf-8", errors="replace")
+        if args.get("outline"):
+            items = outline(path, text)
+            total = text.count("\n") + (0 if text.endswith("\n") or not text else 1)
+            if not items:
+                return ToolResult(f"{shown} ({total} lines): no definitions recognised; read it with start_line/"
+                                  "end_line instead.", "ok", {})
+            body, _ = bounded_view("\n".join(items), self.cfg.max_observation_chars, None)
+            return ToolResult(f"Outline of {shown} ({total} lines, {len(items)} definitions; line numbers first):\n"
+                              f"{body}", "ok", {"outline": len(items)})
         start = args.get("start_line") or 1
         end = args.get("end_line")
         if start < 1:

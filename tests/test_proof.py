@@ -14,7 +14,7 @@ TEST = tc("bash", command=TEST_CMD)
 SUBMIT = tc("submit", summary="done")
 
 
-def rec(tree, outcome, failing=None, counts=None, key="k", kind="check"):
+def rec(tree, outcome, failing=None, counts=None, key="k", kind="check"):  # noqa: PLR0913
     return VerificationRecord(id="v", step=1, tree=tree, binding="exact", command=key, check_key=key, cwd="/",
                               exit_code=0 if outcome == "passed" else 1, timed_out=False, outcome=outcome, runner="pytest",
                               counts=counts or {}, detail="", output_id=None, source="agent", duration_s=0.1,
@@ -63,16 +63,20 @@ class ComparisonTest(TempDirCase):
         self.assertEqual(missing.verdict, "incomplete")
 
     def test_levels_and_ranking(self):
+        gen = lambda t: t == "t_new"  # noqa: E731 - "t_new" was added by the candidate
         fix = proof.compare("a", "a", "check", rec("H", "failed", ["t"]), rec("C", "passed", []))
         p2p = proof.compare("b", "b", "check", rec("H", "passed", []), rec("C", "passed", []))
         reg = proof.compare("b", "b", "check", rec("H", "passed", []), rec("C", "failed", ["x"]))
+        self.assertTrue(fix.authoritative_fix)  # an existing test that failed now passes
         self.assertEqual(proof.assess("C", [fix, p2p], tests_modified=[], expected=2).level, "proven")
         self.assertEqual(proof.assess("C", [fix, p2p], tests_modified=["tests/t.py"], expected=2).level, "fixed")
         self.assertEqual(proof.assess("C", [fix], tests_modified=[], expected=2).level, "fixed")
         self.assertEqual(proof.assess("C", [p2p], tests_modified=[], expected=1).level, "passing")
         self.assertEqual(proof.assess("C", [fix, reg], tests_modified=[], expected=2).level, "refuted")
-        self.assertEqual(proof.assess("C", [fix], tests_modified=[], expected=1, reproductions_failing=["R1"]).level,
-                         "refuted")
+        new_test = proof.compare("a", "a", "check", rec("H", "failed", ["t_new"]), rec("C", "passed", []),
+                                 is_generated_test=gen, orig_output="AssertionError: 3 != 3.5")
+        self.assertEqual((new_test.generated_fail_to_pass, new_test.qualified), (["t_new"], True))
+        self.assertEqual(proof.assess("C", [new_test, p2p], tests_modified=[], expected=2).level, "proven")
         a = proof.assess("A", [fix, p2p], tests_modified=[], expected=2)
         b = proof.assess("B", [p2p], tests_modified=[], expected=1)
         c = proof.assess("C", [fix, p2p], tests_modified=[], expected=2)
@@ -80,6 +84,41 @@ class ComparisonTest(TempDirCase):
         ranked = proof.rank_candidates([b, a, c])
         self.assertEqual([x.tree for x in ranked], ["C", "A", "B"])  # proven first; smaller patch breaks the tie
         self.assertEqual(ranked[0].agreement, 4)  # consensus set {A, C} x 2 checks passed (CodeT)
+
+    def test_generated_checks_are_advisory_unless_qualified(self):
+        def repro(orig_out, **kw):
+            return proof.compare("r", "python repro.py", "reproduction", rec("H", "failed", None, key="r", kind="reproduction"),
+                                 rec("C", "passed", None, key="r", kind="reproduction"), orig_output=orig_out, **kw)
+
+        self.assertTrue(repro("AssertionError: 3 != 3.5").qualified_fix)
+        self.assertFalse(repro("ModuleNotFoundError: No module named 'calc'").qualified_fix)  # broken environment
+        self.assertFalse(repro("AttributeError: module has no attribute 'split_path'").qualified_fix)
+        self.assertTrue(repro("AttributeError: module has no attribute 'split_path'", task_kind="feature").qualified_fix)
+        self.assertFalse(repro("AssertionError", impl_specific=True).qualified_fix)  # asserts on internals
+        self.assertFalse(repro("AssertionError", stable=False).qualified_fix)  # flaky on the original code
+        weak = repro("ModuleNotFoundError: x")
+        self.assertEqual(proof.assess("C", [weak], tests_modified=[], expected=1).level, "fixed")  # never "proven"
+
+    def test_a_failing_generated_check_never_discards_a_candidate_by_itself(self):
+        def comp(tree, cand_outcome, key="r"):
+            return proof.compare(key, "python repro.py", "reproduction", rec("H", "failed", None, key=key),
+                                 rec(tree, cand_outcome, None, key=key), orig_output="AssertionError")
+
+        p2p = proof.compare("b", "b", "check", rec("H", "passed", []), rec("A", "passed", []))
+        alone = proof.assess("A", [comp("A", "failed"), p2p], tests_modified=[], expected=2)
+        self.assertEqual(alone.level, "passing")  # advisory, not refuted
+        self.assertTrue(alone.advisory)
+        # ... but once another regression-free candidate satisfies the qualified check, it discriminates
+        other = proof.assess("B", [comp("B", "passed"), p2p], tests_modified=[], expected=2)
+        ranked = proof.rank_candidates([alone, other])
+        self.assertEqual([x.tree for x in ranked], ["B", "A"])
+        self.assertEqual(alone.level, "refuted")
+        # a satisfier that itself breaks existing tests does not count
+        reg = proof.compare("b", "b", "check", rec("H", "passed", []), rec("D", "failed", ["x"]))
+        breaker = proof.assess("D", [comp("D", "passed"), reg], tests_modified=[], expected=2)
+        fresh = proof.assess("A2", [comp("A2", "failed"), p2p], tests_modified=[], expected=2)
+        ranked = proof.rank_candidates([breaker, fresh])
+        self.assertEqual((ranked[0].tree, fresh.level, breaker.level), ("A2", "passing", "refuted"))
 
 
 class CounterfactualTreeTest(TempDirCase):

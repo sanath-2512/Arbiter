@@ -9,3 +9,7 @@ evals/
 baselines/pi/node_modules/
 workspace/
 .env
+rehearsal/repos/
+rehearsal/envs/
+rehearsal/work/
+rehearsal/results/runs/

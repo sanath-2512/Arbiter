@@ -122,6 +122,14 @@ class PolicyConfig:
     # Carry execution-verified facts (working test/install commands) to later runs on the same
     # repository (memory.py). Never code, patches or issue text.
     memory: bool = True
+    # Failure memory (progress.py): after repeated identical failures following edits to the same code,
+    # ask for a new hypothesis; if it continues, end the attempt so a fresh one can start.
+    failure_memory: bool = True
+    # Explore (another attempt) when a generated check still fails on a submitted, not-proven candidate.
+    # Generated checks never discard a candidate by themselves (proof.py authority tiers).
+    retry_on_advisory: bool = True
+    # One-line strategy hint for the detected task type (tasktype.py).
+    task_type_hints: bool = True
     # Adaptive attempts: another attempt (from the original code, with the harness's observations)
     # when a submitted candidate's evidence is below `retry_below` (default: only when the evidence
     # refutes it), or when an attempt used its time share without submitting a verified change;

@@ -34,7 +34,8 @@ from gheerefill.evidence import (
 from gheerefill.models.base import (AttemptRecord, ErrorClass, ModelClient, ModelError, ToolCall, call_with_retry,
                                     output_token_limit)
 from gheerefill.outputs import OutputArchive
-from gheerefill import attest, locate, memory, prompts, proof
+from gheerefill import attest, locate, memory, prompts, proof, tasktype
+from gheerefill.progress import FailureMemory
 from gheerefill.records import Redactor, append_jsonl, atomic_write_bytes, atomic_write_json
 from gheerefill.sandbox import Sandbox, confine_paths
 from gheerefill.shell import read_output_file, run_shell, tool_environment
@@ -118,6 +119,10 @@ class Agent:
         self.detour: str | None = None
         self.setup_commands: list[str] = []
         self.memory_root = memory_root if profile.policy.memory else None  # set by the CLI: <runs>/.memory
+        self.task_type: tasktype.TaskType | None = None
+        self.failure_memory = FailureMemory()
+        self.escalate_attempt = False
+        self.final_state_tree: str | None = None
 
     # ------------------------------------------------------------------ utils
     def log(self, msg: str) -> None:
@@ -319,6 +324,9 @@ class Agent:
         )
         self.specs = list(self.tools.specs.values())
         overview = prompts.repo_overview(self.tools.repo) if self.profile.policy.repo_overview else ""
+        self.task_type = tasktype.classify(self.task.issue)
+        if self.profile.policy.task_type_hints and tasktype.hint(self.task_type):
+            overview += "\n" + tasktype.hint(self.task_type)
         if self.memory_root is not None:
             overview += memory.render(memory.load(self.memory_root, self.ws.repo))
         if self.profile.policy.localize:
@@ -489,6 +497,9 @@ class Agent:
             format_errors = 0 if any_valid else format_errors + 1
             self._capture_state(f"after step {self.budget.steps}")
             self._checkpoint("solving")
+            if self.escalate_attempt and not submitted:
+                self.termination = "no_progress"
+                return
             if submitted:
                 self.termination = "model_submitted"
                 return
@@ -546,15 +557,35 @@ class Agent:
             )
             self.records.append(rec)
             append_jsonl(self.run_dir / "evidence.jsonl", rec.to_dict())
+            if self.profile.policy.failure_memory:
+                self._failure_memory(rec, text, cmd)
         if cmd and self.profile.policy.repetition_notice:
             stable = re.sub(r" · [0-9.]+s\]", "]", res.content)  # durations differ between identical runs
-            key = (normalize_command(cmd), hashlib.sha1(stable.encode()).hexdigest())
+            # same command, same output, same code: edits in between are the failure memory's business
+            key = (normalize_command(cmd), hashlib.sha1(stable.encode()).hexdigest(), self.last_tree or "")
             self.recent_actions = (self.recent_actions + [key])[-8:]
             n = self.recent_actions.count(key)
             if n >= 3 and key not in self.repetition_warned:
                 self.repetition_warned.add(key)
                 self._append({"role": "user", "content": prompts.REPETITION.format(n=n)})
         return res
+
+    def _failure_memory(self, rec: VerificationRecord, text: str, cmd: str) -> None:
+        assert self.ws is not None
+        prev = self.failure_memory.last_tree.get(rec.check_key)
+        changed = [f["path"] for f in self.ws.changed_files(prev, rec.tree)] if prev and prev != rec.tree else []
+        action = self.failure_memory.observe(rec.check_key, rec.tree, rec.outcome, rec.failing, rec.counts, text,
+                                             changed)
+        if action == "intervene":
+            self._append({"role": "user", "content": self.failure_memory.message(rec.check_key, cmd)})
+            self.log("failure memory: the same failure after repeated edits to the same code; asked for a new hypothesis")
+        elif action == "escalate":
+            if self.attempt < self.profile.policy.max_attempts:
+                self.escalate_attempt = True
+                self.log("failure memory: still no progress after the new-hypothesis request; ending this attempt")
+            else:
+                self._append({"role": "user", "content": self.failure_memory.message(rec.check_key, cmd)
+                              + " This is the last attempt: revert what did not help and try a different fix."})
 
     def _git_tamper(self) -> dict[str, Any] | None:
         """Compare the target's .git config/hooks with their state at the start of the run."""
@@ -693,26 +724,67 @@ class Agent:
         return self._harness_run(tree, command, key, kind, source,
                                  timeout_s=min(self.profile.tools.bash_timeout_s, available))
 
+    def _generated_tests(self, tree: str) -> tuple[str, set[str]]:
+        """Added lines of the candidate's test-file changes, and the test files it created."""
+        assert self.ws is not None and self.base_tree is not None
+        files = self.ws.changed_files(self.base_tree, tree)
+        paths = [f["path"] for f in files if f["status"] in "AMR" and proof.is_test_path(f["path"])]
+        if not paths:
+            return "", set()
+        diff = self.ws.git("diff", "--no-renames", "--no-ext-diff", "-U0", self.base_tree, tree, "--", *paths,
+                           check=False).stdout.decode("utf-8", "replace")
+        added = "\n".join(l[1:] for l in diff.splitlines() if l.startswith("+") and not l.startswith("+++"))
+        return added, {f["path"] for f in files if f["status"] == "A" and proof.is_test_path(f["path"])}
+
+    def _script_text(self, command: str) -> str:
+        """Contents of script files a reproduction command runs (for the private-internals check)."""
+        out = []
+        for tok in re.findall(r"[\w./~-]+\.(?:py|js|ts|sh|rb|go)\b", command)[:3]:
+            p = Path(tok).expanduser()
+            p = p if p.is_absolute() else self.tools.repo / p
+            try:
+                if p.is_file() and p.stat().st_size < 200_000:
+                    out.append(p.read_text(errors="replace"))
+            except OSError:
+                pass
+        return "\n".join(out)
+
     def _verify_candidate(self, tree: str, checks: list[tuple[str, str, str]] | None = None, *,
                           allow_runs: bool = True) -> proof.Assessment:
         """Compare each check on the counterfactual state and on the candidate (runs what is missing,
-        within the remaining work time) and assess the candidate."""
+        within the remaining work time) and assess the candidate with evidence authority tiers."""
         assert self.ws is not None and self.base_tree is not None
         checks = self._checks_for(tree) if checks is None else checks
         cf = self._counterfactual(tree)
+        added_text, added_files = self._generated_tests(tree)
+
+        def is_generated_test(test_id: str) -> bool:
+            if "::" in test_id and test_id.split("::", 1)[0] in added_files:
+                return True
+            name = proof.test_name(test_id)
+            return bool(name) and re.search(r"(?<![\w])" + re.escape(name) + r"(?![\w])", added_text) is not None
+
+        repro = {r["check_key"]: r for r in self.reproductions}
+        kind_of_task = self.task_type.kind if self.task_type else "bug"
         comparisons = []
         for key, command, kind in checks:
             orig = self._ensure_run(cf, key, command, kind, "harness_original", allow_runs)
             cand = self._ensure_run(tree, key, command, kind, "harness_candidate", allow_runs)
-            comparisons.append(proof.compare(key, command, kind, orig, cand))
+            orig_text = (self.archive.read_text(orig.output_id) or "")[-20000:] if orig and orig.output_id and \
+                hasattr(self, "archive") else ""
+            script = self._script_text(command) if kind == "reproduction" and hasattr(self, "tools") else ""
+            comparisons.append(proof.compare(
+                key, command, kind, orig, cand, is_generated_test=is_generated_test,
+                generated_check=(kind == "reproduction" and (orig is None or orig.failing is None)),
+                orig_output=orig_text, task_kind=kind_of_task,
+                impl_specific=bool(proof.IMPL_SPECIFIC.search(added_text + "\n" + script + "\n" + command)),
+                stable=(repro.get(key) or {}).get("stable")))
         files = self.ws.changed_files(self.base_tree, tree)
         tests_modified = [f["path"] for f in files if f["status"] in "MDR"
                           and proof.is_test_path(f.get("old_path") or f["path"])
                           and not (f["status"] == "M" and self.ws.lines_removed(self.base_tree, tree, f["path"]) == 0)]
-        failing_repros = [r["id"] for r in self.reproductions if r.get("confirmed")
-                          and proof.verdict(proof.latest(self.records, r["check_key"], tree)) == "fail"]
         a = proof.assess(tree, comparisons, tests_modified=tests_modified, expected=len(checks),
-                         reproductions_failing=failing_repros)
+                         task_kind=kind_of_task)
         a.attempt = self.attempt
         stat = self.ws.shortstat(self.base_tree, tree)
         a.diff_lines = sum(int(n) for n in re.findall(r"(\d+) (?:insertion|deletion)", stat))
@@ -751,6 +823,10 @@ class Agent:
 
         original = run(cf, "harness_original")
         entry["confirmed"] = None if original is None else proof.verdict(original[0]) == "fail"
+        entry["stable"] = None
+        if original is not None and original[0].duration_s < 10.0 and self.budget.work_remaining() > 30.0:
+            again = self._harness_run(cf, command, key, "reproduction", "harness_original", timeout)
+            entry["stable"] = proof.verdict(again) == proof.verdict(original[0])
         current = run(tree, "harness_candidate") if tree != cf else None
         self.budget.record_tool("register_reproduction", time.monotonic() - t0)
         self._tool_message(call, prompts.reproduction_report(entry, original, current), {"tool": "register_reproduction"})
@@ -791,7 +867,7 @@ class Agent:
             fatal = self.termination in ("cancelled", "crash") or self.cancel_requested
             a = self.assessments.get(candidate) if fatal else None
             a = a or self._verify_candidate(candidate, allow_runs=not fatal)
-            entry.update(level=a.level, summary=a.summary(),
+            entry.update(level=a.level, summary=a.summary(), advisory=a.advisory,
                          files=[f["path"] for f in self.ws.changed_files(self.base_tree, candidate)])
         else:
             entry.update(level="unverified", summary="no change", files=[])
@@ -810,7 +886,8 @@ class Agent:
             return False
         level = proof.LEVELS.index(last["level"])
         threshold = pol.retry_below if term == "model_submitted" else "fixed"  # stuck: retry unless verified
-        if level >= proof.LEVELS.index(threshold):
+        explore = pol.retry_on_advisory and bool(last.get("advisory")) and level < proof.LEVELS.index("proven")
+        if level >= proof.LEVELS.index(threshold) and not explore:
             return False
         need = max(pol.min_attempt_s, 0.5 * float(last["elapsed_s"]))
         if self.budget.work_remaining() < need or self.profile.limits.max_steps - self.budget.steps < 5:
@@ -832,6 +909,8 @@ class Agent:
         self.last_tree = self.base_tree
         self.attempt_trees = [self.base_tree]
         self.recent_actions, self.repetition_warned = [], set()
+        self.failure_memory.reset_attempt()
+        self.escalate_attempt = False
         self.transcript = []
         append_jsonl(self.run_dir / "transcript.jsonl", {"role": "harness", "event": "attempt_start",
                                                          "attempt": self.attempt})
@@ -909,6 +988,7 @@ class Agent:
         try:
             self._restore_after_detour()
             final_tree = self._capture_state("final")
+            self.final_state_tree = final_tree
             if pol.git_hygiene:
                 try:
                     fin_notes += self.ws.restore_target_git(self.target_git_initial)
@@ -984,6 +1064,7 @@ class Agent:
                 },
                 "selected_candidate": {"tree": selected, "reason": reason, "step": step_of.get(selected),
                                        "is_final_state": selected == final_tree},
+                "final_state_tree": final_tree,
                 "candidates_observed": len([t for t in self.history if t != self.base_tree]),
                 "integrity": {
                     "note": "observations for audit, not a verdict; the harness does not have OS-level isolation",
@@ -1046,6 +1127,8 @@ class Agent:
             "status": "infrastructure_error",
             "isolation": self.sandbox.status if self.sandbox else None,
             "termination": self.termination,
+            "task_type": self.task_type.to_dict() if self.task_type else None,
+            "progress": {**self.failure_memory.to_dict(), "repetition_notices": len(self.repetition_warned)},
             "submission_ready": False,
             "submit_summary": self.submit_summary,
             "error": self.error,

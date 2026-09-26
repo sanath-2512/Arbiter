@@ -109,20 +109,24 @@ def proof_lines(assessment) -> list[str]:
     out = []
     for c in assessment.comparisons:
         label = f"reproduction `{_cmd(c.command)}`" if c.kind == "reproduction" else f"`{_cmd(c.command)}`"
+        note = f" (generated check, advisory: {c.qualification})" if c.qualified is False else ""
         if c.shows_regression:
-            names = ", ".join(c.pass_to_fail[:6]) or "tests"
+            names = ", ".join(c.authoritative_regressions[:6]) or "tests"
             out.append(f"- {label}: REGRESSION: {names} pass on the original code but fail with your change.")
         elif c.verdict == "fail_to_pass":
-            out.append(f"- {label}: fails on the original code and passes with your change.")
+            out.append(f"- {label}: fails on the original code and passes with your change{note}.")
         elif c.verdict == "fail_to_fail":
             fixed = f"; fixed: {', '.join(c.fail_to_pass[:4])}" if c.fail_to_pass else ""
             still = f"; still failing: {', '.join(c.still_failing[:4])}" if c.still_failing else ""
-            out.append(f"- {label}: fails on the original code and still fails with your change{fixed}{still}.")
+            out.append(f"- {label}: fails on the original code and still fails with your change{fixed}{still}{note}.")
         elif c.verdict == "pass_to_pass":
             out.append(f"- {label}: passes with and without your change (no regression, but it does not show the fix).")
+        elif c.verdict == "pass_to_fail":
+            out.append(f"- {label}: passes on the original code but fails with your change, in tests you added "
+                       f"({', '.join(c.advisory_regressions[:4])}).")
         else:
             out.append(f"- {label}: not compared ({c.detail}).")
-    if not any(c.shows_fix for c in assessment.comparisons):
+    if not any(c.shows_fix for c in assessment.comparisons) and "refactor" not in assessment.reasons:
         out.append("- Nothing yet fails on the original code and passes with your change. If you can, register a "
                    "reproduction (register_reproduction) that fails on the original code.")
     return out
