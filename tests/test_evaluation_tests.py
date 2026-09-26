@@ -83,6 +83,22 @@ class EvaluationTestsTest(TempDirCase):
         self.assertNotIn("test_half", Path(result["deliverable"]["patch_path"]).read_text())
 
 
+class TamperedEvaluationTestsTest(TempDirCase):
+    def test_model_cannot_pass_by_editing_the_supplied_tests(self):
+        repo = make_repo(self.tmp / "repo", CALC)
+        meta = {"test_patch": TEST_PATCH, "FAIL_TO_PASS": '["tests/test_half.py::H::test_half"]'}
+        weaken = turn(tc("edit_file", path="tests/test_half.py", old_str="0.5", new_str="0"))
+        sed = turn(tc("bash", command="sed -i 's/0.5/0/' tests/test_half.py"))
+        result, agent = run_agent(repo, [weaken, sed, RUN, SUBMIT, FIX, RUN, SUBMIT, SUBMIT], self.tmp / "run",
+                                  metadata=meta)
+        tool = [m["content"] for m in agent.transcript if m["role"] == "tool"]
+        self.assertIn("one of the evaluation's test files", tool[0])  # edit_file refused
+        self.assertTrue(any("put the originals back" in t for t in tool), tool)  # the sed edit undone at submit
+        self.assertEqual((repo / "tests" / "test_half.py").exists(), False)  # not delivered, as before
+        self.assertEqual(result["proof"]["level"], "proven", result["proof"])  # proven against the real test
+        self.assertIn("return a / b", Path(result["deliverable"]["patch_path"]).read_text())
+
+
 class RunHintTest(TempDirCase):
     def test_runner_derived_from_test_name_format(self):
         from gheerefill import prompts

@@ -48,6 +48,7 @@ from gheerefill.workspace import Workspace, WorkspaceError
 RESULT_SCHEMA = "gheerefill.result/v1"
 HARNESS_ROOT = Path(__file__).resolve().parent.parent
 TEST_PATH_RE = proof.TEST_PATH_RE
+ISSUE_PROMPT_CHARS = 80_000  # ~25k tokens; longer issue text is truncated in the prompt, kept whole on disk
 MIN_ATTEMPT_STEPS = 5  # fewer steps than this cannot fund a fresh attempt from the original code
 MAX_CALLS_PER_TURN = 12  # a reply with dozens of calls is a malfunction; each executed call costs real time
 FATAL_TERMINATIONS = ("cancelled", "crash", "setup_failed", "deadline_reached", "token_budget", "cost_budget",
@@ -61,6 +62,26 @@ class Cancelled(Exception):
 def _short(s: str, n: int = 90) -> str:
     s = " ".join(str(s).split())
     return s if len(s) <= n else s[: n - 1] + "…"
+
+
+# Lock file -> the manifest it is generated from. A lock file added or changed while its manifest
+# is unchanged was written by a build or test command (cargo test, npm install, bundle), not the fix.
+LOCKFILES = {"Cargo.lock": "Cargo.toml", "package-lock.json": "package.json", "npm-shrinkwrap.json": "package.json",
+             "yarn.lock": "package.json", "pnpm-lock.yaml": "package.json", "bun.lockb": "package.json",
+             "bun.lock": "package.json", "Gemfile.lock": "Gemfile", "composer.lock": "composer.json",
+             "poetry.lock": "pyproject.toml", "uv.lock": "pyproject.toml", "pdm.lock": "pyproject.toml",
+             "Pipfile.lock": "Pipfile", "go.sum": "go.mod", "mix.lock": "mix.exs", "Package.resolved": "Package.swift"}
+
+
+def lockfile_byproducts(files: list[dict[str, str]]) -> list[str]:
+    changed = {f["path"] for f in files}
+    out = []
+    for f in files:
+        d, _, name = f["path"].rpartition("/")
+        manifest = LOCKFILES.get(name)
+        if manifest and f["status"] in ("A", "M") and (f"{d}/{manifest}" if d else manifest) not in changed:
+            out.append(f["path"])
+    return out
 
 
 class Agent:
@@ -362,7 +383,9 @@ class Agent:
             except Exception as e:  # noqa: BLE001 - hints are optional
                 self.notes.append(f"localisation hints skipped: {type(e).__name__}: {e}")
         issue = self.task.issue.strip()
-        issue_cap = int((self.profile.model.context_window - self.profile.model.max_output_tokens) * 0.4 * 3.2)
+        # every request resends the issue: a pasted log of megabytes stays in a file the model can read
+        issue_cap = min(ISSUE_PROMPT_CHARS,
+                        int((self.profile.model.context_window - self.profile.model.max_output_tokens) * 0.4 * 3.2))
         if len(issue) > issue_cap:
             full = self.tools.scratch / "ISSUE_FULL.md"
             full.write_text(issue, encoding="utf-8")
@@ -637,7 +660,7 @@ class Agent:
         is_check = isinstance(cmd, str) and call.parse_error is None and (is_repro or is_check_command(cmd))
         pre_tree = self._capture_state(f"before check at step {self.budget.steps}") if is_check else None
         self._audit_access(call)
-        res = self.tools.execute(call)
+        res = self._refuse_eval_edit(call) or self.tools.execute(call)
         if cmd and self.profile.policy.git_hygiene and self.ws is not None:
             try:
                 fixed = self.ws.repair_target_git(self.target_git_initial, thorough="git" in cmd)
@@ -740,6 +763,34 @@ class Agent:
             self.integrity["harness_repo_access"].append({"step": self.budget.steps, "tool": call.name,
                                                          "detail": _short(text, 200)})
 
+    def _refuse_eval_edit(self, call: ToolCall) -> ToolResult | None:
+        """The evaluation's own test files are read-only for the model: the evaluator uses its copy."""
+        path = (call.arguments or {}).get("path") if call.name in ("edit_file", "write_file") else None
+        if not self.eval_paths or not isinstance(path, str):
+            return None
+        p = Path(path)
+        try:
+            rel = (p if p.is_absolute() else self.tools.repo / p).resolve().relative_to(self.tools.repo).as_posix()
+        except (ValueError, OSError):
+            return None
+        if rel not in self.eval_paths:
+            return None
+        content = (f"Error: {rel} is one of the evaluation's test files. The evaluator runs its own copy, so edits "
+                   "to it are discarded and would only hide a failure. Nothing was changed. Fix the source code so "
+                   "these tests pass as written.")
+        return ToolResult(content, "error", {"error": "evaluation_test_file", "output_id": self.archive.store(content)})
+
+    def _restore_eval_tests(self, tree: str) -> list[str]:
+        """Evaluation test files changed (e.g. with sed) are put back as supplied; returns their paths."""
+        if not self.eval_paths or self.start_tree in (None, self.base_tree):
+            return []
+        touched = sorted({f["path"] for f in self.ws.changed_files(self.start_tree, tree)} & set(self.eval_paths))
+        if touched:
+            self.ws.restore(self.ws.overlay_tree(tree, self.start_tree, touched))
+            self._capture_state("evaluation tests restored")
+            self._quirk("evaluation test files changed by the model were restored")
+        return touched
+
     def _submit_gate(self, reviews_done: int) -> str | None:
         """Review a submission once; review it a second time only when the harness's own verification
         contradicts it (a regression, or a confirmed reproduction still failing)."""
@@ -754,6 +805,11 @@ class Agent:
             earlier = [t for t in dict.fromkeys(self.attempt_trees) if t not in (self.base_tree, self.start_tree)]
             files = [f["path"] for f in self.ws.changed_files(self.base_tree, earlier[-1])] if earlier else []
             return prompts.submit_empty(files)
+        touched = self._restore_eval_tests(tree)
+        if touched:
+            return (f"You changed the evaluation's test files ({', '.join(touched[:6])}). The evaluator uses its own "
+                    "copy, so the harness has put the originals back. Run those tests again now: they decide the "
+                    "result. Fix the source until they pass as written, then submit.")
         assessment = self._verify_candidate(tree) if pol.verify_at_submit else None
         if reviews_done == 1 and (assessment is None or assessment.level != "refuted"):
             return None
@@ -1169,6 +1225,14 @@ class Agent:
                         fin_notes.append(f"re-check evidence changed the selection to {again[:12]}; restored it")
                         selected, reason = again, why
             proof_tree = selected
+            byproducts = lockfile_byproducts(self.ws.changed_files(self.base_tree, selected))
+            if byproducts:
+                export = self.ws.overlay_tree(selected, self.base_tree, byproducts)
+                if export != selected:
+                    self.ws.restore(export)
+                    fin_notes.append(f"lock files changed by build/test commands without a manifest change kept out "
+                                     f"of the deliverable: {', '.join(byproducts[:6])}")
+                    selected = export
             if self.eval_paths:
                 export = self.ws.overlay_tree(selected, self.base_tree, self.eval_paths)
                 if export != selected:
@@ -1182,7 +1246,10 @@ class Agent:
             worktree_ok = self.ws.snapshot() == selected
             files = self.ws.changed_files(self.base_tree, selected)
             excluded = sorted(self.ws.ignored_paths() - self.base_ignored)
-            vstatus, vdetail = verification_status(self.records, selected)
+            # checks ran on proof_tree; the export differs only in files the evaluator owns or regenerates
+            vstatus, vdetail = verification_status(self.records, proof_tree)
+            if proof_tree != selected:
+                vdetail += " (on the checked tree; the export leaves out evaluation tests / lock-file byproducts)"
             best = (self.assessments.get(proof_tree) if proof_tree in self.assessments and not ranked else None) or (
                 self._verify_candidate(proof_tree, allow_runs=False) if proof_tree not in (self.base_tree, self.start_tree)
                 else None)

@@ -232,3 +232,35 @@ class ModelBehaviourAttackTest(TempDirCase):
         result, _ = run_agent(repo, [big, rm, FIX, RUN, SUBMIT], self.tmp / "run")
         self.assertTrue(result["submission_ready"])
         self.assertNotIn("big.txt", Path(result["deliverable"]["patch_path"]).read_text())
+
+
+class ByproductTest(TempDirCase):
+    def test_lock_files_follow_their_manifest(self):
+        from gheerefill.agent import lockfile_byproducts
+        files = [{"path": "Cargo.lock", "status": "A"}, {"path": "src/lib.rs", "status": "M"},
+                 {"path": "web/package-lock.json", "status": "M"}, {"path": "api/package-lock.json", "status": "M"},
+                 {"path": "api/package.json", "status": "M"}, {"path": "go.sum", "status": "D"}]
+        self.assertEqual(lockfile_byproducts(files), ["Cargo.lock", "web/package-lock.json"])
+
+    def test_npm_install_lock_file_is_not_delivered(self):
+        repo = make_repo(self.tmp / "repo", {**CALC, "package.json": '{"name": "x"}\n'})
+        install = turn(tc("bash", command="printf '{\"lockfileVersion\": 3}\\n' > package-lock.json"))
+        result, _ = run_agent(repo, [install, FIX, RUN, SUBMIT], self.tmp / "run")
+        self.assertEqual([f["path"] for f in result["deliverable"]["files"]], ["calc/ops.py"])
+        self.assertTrue(result["deliverable"]["reconstruction_verified"])
+
+
+class HugeIssueTest(TempDirCase):
+    def test_megabyte_issue_is_truncated_in_the_prompt_and_kept_whole(self):
+        from gheerefill.agent import ISSUE_PROMPT_CHARS
+        repo = make_repo(self.tmp / "repo", CALC)
+        log = "".join(f"2026-09-26 12:00:{i % 60:02d} ERROR worker {i}: ZeroDivisionError\n" for i in range(20000))
+        issue = "divide(7, 2) returns 3; it should be 3.5.\n\n```\n" + log + "```\nEND-OF-ISSUE"
+        result, agent = run_agent(repo, [FIX, RUN, SUBMIT], self.tmp / "run", issue=issue)
+        task_msg = agent.transcript[1]["content"]
+        self.assertLess(len(task_msg), ISSUE_PROMPT_CHARS + 20000)
+        self.assertIn("divide(7, 2) returns 3", task_msg)
+        self.assertIn("END-OF-ISSUE", task_msg)  # the tail is kept too
+        full = next(n for n in result["notes"] if "issue text truncated" in n).split("full text at ")[1]
+        self.assertEqual(Path(full).read_text(), issue.strip())
+        self.assertTrue(result["submission_ready"])
