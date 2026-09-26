@@ -299,21 +299,28 @@ class Agent:
                 self.in_model_call = True
                 if self.cancel_requested:
                     raise Cancelled()
-                turn = call_with_retry(
-                    self.client, view, self.specs,
-                    max_attempts=self.profile.retry.max_attempts,
-                    base_delay_s=self.profile.retry.base_delay_s,
-                    max_delay_s=self.profile.retry.max_delay_s,
-                    time_left=self.budget.work_remaining,
-                    request_timeout_s=self.profile.model.request_timeout_s,
-                    on_attempt=self._on_attempt,
-                    rng=self.rng,
-                    sleep=self._sleep,
-                )
+                t_call = time.monotonic()
+                try:
+                    turn = call_with_retry(
+                        self.client, view, self.specs,
+                        max_attempts=self.profile.retry.max_attempts,
+                        base_delay_s=self.profile.retry.base_delay_s,
+                        max_delay_s=self.profile.retry.max_delay_s,
+                        time_left=self.budget.work_remaining,
+                        request_timeout_s=self.profile.model.request_timeout_s,
+                        on_attempt=self._on_attempt,
+                        rng=self.rng,
+                        sleep=self._sleep,
+                    )
+                except Cancelled:
+                    self.in_model_call = False
+                    self._on_attempt(AttemptRecord(0, time.time(), time.monotonic() - t_call, ErrorClass.CANCELLED.value,
+                                                   None, None, True, "request interrupted by cancellation"))
+                    raise
             except ModelError as e:
                 if e.cls == ErrorClass.CONTEXT_OVERFLOW and overflow_retries < 3:
                     overflow_retries += 1
-                    self.ctx.force_reduce()
+                    self.ctx.force_reduce(self.ctx.estimate(view))
                     self.log(f"context overflow reported by provider; reducing context (level {self.ctx.pressure})")
                     continue
                 self.termination = "deadline_reached" if e.cls == ErrorClass.DEADLINE else f"model_error:{e.cls.value}"
@@ -325,6 +332,7 @@ class Agent:
                     inflight.unlink()
                 except FileNotFoundError:
                     pass
+            overflow_retries = 0
             self.budget.steps += 1
             self.ctx.observe(view, turn.usage)
             for n in turn.notes:
@@ -486,7 +494,16 @@ class Agent:
                 self.ws.restore(selected)
                 fin_notes.append(f"restored archived candidate {selected[:12]} into the working tree")
             if pol.final_recheck and hasattr(self, "tools"):
+                n_before = len(self.records)
                 fin_notes += self._final_recheck(selected)
+                if len(self.records) > n_before and pol.dominance_selection:
+                    # New exact evidence on the selected tree: apply the same dominance rule once more.
+                    again, why = select_candidate(selected, self.base_tree, self.history, self.records,
+                                                  dominance=True, recover_empty_final=False)
+                    if again != selected:
+                        self.ws.restore(again)
+                        fin_notes.append(f"re-check evidence changed the selection to {again[:12]}; restored it")
+                        selected, reason = again, why
             patch = self.ws.patch(self.base_tree, selected)
             patch_path = self.run_dir / "patch.diff"
             atomic_write_bytes(patch_path, patch)

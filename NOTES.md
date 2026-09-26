@@ -103,7 +103,7 @@ In result records, `model.live=true` only means requests went to a network endpo
 | `submit_review` | on, at most once | Flags an empty diff, new (possibly scratch) files, or no check since the last edit | no |
 | `recover_empty_final` | on (not after a confirmed model submit) | An empty patch cannot pass; the latest archived candidate can | no |
 | `dominance_selection` | on | Deterministic; only acts on conflicting evidence from the same check | no |
-| `final_recheck` | on | Re-runs the last agent check on the selected tree when evidence is stale; no model tokens | no |
+| `final_recheck` | on | Re-runs the last agent check on the selected tree when evidence is stale (no model tokens); if the new exact evidence shows an earlier candidate dominates, that candidate is restored | no |
 | `budget_notices` | on, once | Surfaces remaining steps/time near the end | no |
 | `repetition_notice` | on | Same command + same output ×3 | no |
 | `git_hygiene` | on | Undoes agent commits/branch/staging so the deliverable is uncommitted changes on the base | no |

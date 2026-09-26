@@ -72,6 +72,20 @@ class AgentTest(TempDirCase):
         self.assertEqual(result["termination"], "model_submitted")
         self.assertGreaterEqual(agent.ctx.pressure, 1)
 
+    def test_overstated_context_window_is_learned_from_overflow(self):
+        profile = test_profile()
+        profile.model.context_window = 1_000_000  # misconfigured: far larger than the "real" window
+
+        def gate(messages):
+            chars = sum(len(m.get("content") or "") for m in messages)
+            if chars > 12000:
+                return {"error": "context_overflow", "message": "maximum context length exceeded"}
+            return turn(tc("bash", command="seq 1 3000")) if len(messages) < 12 else turn(SUBMIT)
+
+        result, agent = run_agent(self.repo, [gate] * 14 + [turn(SUBMIT)], self.run_dir, profile=profile)
+        self.assertNotEqual(result["termination"], "model_error:context_overflow")
+        self.assertLess(agent.ctx.limit, 1_000_000)
+
     def test_permanent_api_failure_finalises(self):
         result, _ = run_agent(self.repo, [turn(FIX), {"error": "authentication", "message": "bad key"}], self.run_dir)
         self.assertEqual(result["termination"], "model_error:authentication")
@@ -121,6 +135,16 @@ class AgentTest(TempDirCase):
         self.assertEqual([r["source"] for r in recs], ["harness_recheck"])
         self.assertEqual(result["verification"]["status"], "checks_passed")
 
+    def test_recheck_evidence_can_restore_earlier_verified_candidate(self):
+        # verified fix, then an untested breaking edit, then submit (review), then submit again
+        turns = [turn(FIX), turn(TEST), turn(BREAK), turn(SUBMIT), turn(SUBMIT)]
+        result, _ = run_agent(self.repo, turns, self.run_dir)
+        self.assertEqual(result["termination"], "model_submitted")
+        self.assertTrue(any("changed the selection" in n for n in result["notes"]), result["notes"])
+        self.assertEqual((self.repo / "calc/ops.py").read_text(), "def divide(a, b):\n    return a / b\n")
+        self.assertEqual(result["verification"]["status"], "checks_passed")
+        self.assertIn("+    return a / b", self.patch())
+
     def test_cancellation_finalises(self):
         holder = {}
 
@@ -133,6 +157,7 @@ class AgentTest(TempDirCase):
         holder["agent"] = agent
         result = agent.run()
         self.assertEqual(result["termination"], "cancelled")
+        self.assertEqual(result["usage"]["requests_usage_unknown"], 1)  # interrupted request is counted, not dropped
         self.assertTrue(result["submission_ready"])
         self.assertIn("+    return a / b", self.patch())
 

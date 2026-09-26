@@ -61,8 +61,12 @@ class ContextManager:
                 out.append(m)
         return out
 
-    def force_reduce(self) -> None:
+    def force_reduce(self, rejected_tokens: int | None = None) -> None:
+        """The provider rejected a request as too long: lower the effective window to below the
+        rejected size (the profile's context_window may be wrong) and raise reduction pressure."""
         self.pressure += 1
+        if rejected_tokens and rejected_tokens > 0:
+            self.limit = min(self.limit, int(rejected_tokens * 0.9))
 
     def prepare(self, transcript: list[dict[str, Any]], protected: int = 2) -> list[dict[str, Any]]:
         """Return the request view. `protected` leading messages (system + issue) are never reduced."""
