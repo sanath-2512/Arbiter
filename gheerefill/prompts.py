@@ -202,6 +202,12 @@ REPETITION = (
     "Try a different approach."
 )
 
+def no_check_yet(has_register: bool) -> str:
+    return ("Note: about a quarter of the budget is used and nothing has been run yet to check behaviour. Decide now "
+            "how you will verify the fix: run the relevant tests or a small reproduction"
+            + (" (and register it with register_reproduction)." if has_register else "."))
+
+
 NO_TOOL_CALL = "Your reply contained no tool call. Every reply must call a tool. Call submit when you are finished."
 CUT_OFF = (
     "Your reply hit the output length limit before any complete tool call. Keep replies shorter: brief reasoning, "

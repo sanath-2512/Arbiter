@@ -194,3 +194,23 @@ class ReproductionFlowTest(TempDirCase):
         self.assertEqual(again["selected_candidate"]["tree"], result["selected_candidate"]["tree"])
         self.assertEqual(again["proof"]["level"], "proven")
         self.assertEqual((self.repo / "calc/ops.py").read_text(), "def divide(a, b):\n    return a / b\n")
+
+
+class MemoryTest(TempDirCase):
+    def test_second_run_on_the_same_repository_sees_verified_facts_only(self):
+        repo = make_repo(self.tmp / "repo", CALC)
+        git(repo, "remote", "add", "origin", "https://github.com/acme/calc.git")
+        mem = self.tmp / "runs" / ".memory"
+        install = tc("bash", command="pip install --help >/dev/null")  # stands in for an install command
+        run_agent(repo, [turn(install), turn(FIX), turn(TEST), turn(SUBMIT)], self.tmp / "runs" / "a", memory_root=mem)
+        (notes,) = [json.loads(p.read_text()) for p in mem.glob("*.json")]
+        self.assertEqual([c["command"] for c in notes["checks"]], [TEST_CMD])
+        self.assertEqual(notes["setup"], ["pip install --help >/dev/null"])
+        git(repo, "checkout", "--", ".")
+        other = make_repo(self.tmp / "clone2", CALC)  # another clone of the same repository
+        git(other, "remote", "add", "origin", "https://github.com/acme/calc")
+        _, agent = run_agent(other, [turn(SUBMIT), turn(SUBMIT)], self.tmp / "runs" / "b", memory_root=mem)
+        task_msg = [m for m in agent.transcript if m["role"] == "user"][0]["content"]
+        self.assertIn("From 1 earlier run(s) on this repository", task_msg)
+        self.assertIn(f"`{TEST_CMD}` ran (unittest", task_msg)
+        self.assertNotIn("a / b", task_msg)  # no code or patches are carried over

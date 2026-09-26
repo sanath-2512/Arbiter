@@ -34,7 +34,7 @@ from gheerefill.evidence import (
 from gheerefill.models.base import (AttemptRecord, ErrorClass, ModelClient, ModelError, ToolCall, call_with_retry,
                                     output_token_limit)
 from gheerefill.outputs import OutputArchive
-from gheerefill import prompts, proof
+from gheerefill import locate, memory, prompts, proof
 from gheerefill.records import Redactor, append_jsonl, atomic_write_bytes, atomic_write_json
 from gheerefill.sandbox import Sandbox, confine_paths
 from gheerefill.shell import read_output_file, run_shell, tool_environment
@@ -71,6 +71,7 @@ class Agent:
         log: Callable[[str], None] | None = None,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
+        memory_root: Path | None = None,
     ):
         self.task = task
         self.profile = profile
@@ -115,6 +116,8 @@ class Agent:
         self.reproductions: list[dict[str, Any]] = []
         self.assessments: dict[str, proof.Assessment] = {}
         self.detour: str | None = None
+        self.setup_commands: list[str] = []
+        self.memory_root = memory_root if profile.policy.memory else None  # set by the CLI: <runs>/.memory
 
     # ------------------------------------------------------------------ utils
     def log(self, msg: str) -> None:
@@ -226,6 +229,11 @@ class Agent:
         result["timing"]["total_s"] = round(self.budget.elapsed(), 3)
         result["usage"] = self.budget.summary()
         atomic_write_json(self.run_dir / "result.json", result)
+        if self.memory_root is not None and self.ws is not None:
+            try:
+                memory.update(self.memory_root, self.ws.repo, self.records, self.setup_commands, self.redactor.text)
+            except Exception as e:  # noqa: BLE001 - notes are optional
+                self.log(f"repository notes not saved: {e}")
         return result
 
     @classmethod
@@ -311,6 +319,17 @@ class Agent:
         )
         self.specs = list(self.tools.specs.values())
         overview = prompts.repo_overview(self.tools.repo) if self.profile.policy.repo_overview else ""
+        if self.memory_root is not None:
+            overview += memory.render(memory.load(self.memory_root, self.ws.repo))
+        if self.profile.policy.localize:
+            try:
+                listing = self.ws.git("ls-tree", "-r", "-z", "--name-only", self.base_tree).stdout
+                loc = locate.localize(self.task.issue, self.tools.repo,
+                                      [f for f in listing.decode("utf-8", "replace").split("\0") if f])
+                atomic_write_json(self.run_dir / "localization.json", loc)
+                overview += locate.render(loc)
+            except Exception as e:  # noqa: BLE001 - hints are optional
+                self.notes.append(f"localisation hints skipped: {type(e).__name__}: {e}")
         issue = self.task.issue.strip()
         issue_cap = int((self.profile.model.context_window - self.profile.model.max_output_tokens) * 0.4 * 3.2)
         if len(issue) > issue_cap:
@@ -349,7 +368,7 @@ class Agent:
         submit_reviews = 0
         overflow_retries = 0
         adaptations = 0
-        notice_sent = False
+        notice_sent = check_nudged = False
         while True:
             if self.cancel_requested:
                 raise Cancelled()
@@ -371,6 +390,12 @@ class Agent:
             ):
                 notice_sent = True
                 self._append({"role": "user", "content": prompts.budget_notice(steps_left, secs_left)})
+            used = max((self.budget.steps - self.attempt_start["step"]) / max(1, max_steps),
+                       (self.budget.elapsed() - self.attempt_start["elapsed"]) / max(1.0, span_s))
+            if pol.budget_notices and not check_nudged and used >= 0.25 and not self._checked_this_attempt():
+                check_nudged = True
+                self._append({"role": "user",
+                              "content": prompts.no_check_yet("register_reproduction" in self.tools.specs)})
             view = self.ctx.prepare(self.transcript)
             inflight = self.run_dir / "inflight.json"
             try:
@@ -471,6 +496,11 @@ class Agent:
                 self.termination = "repeated_format_errors"
                 return
 
+    def _checked_this_attempt(self) -> bool:
+        start = int(self.attempt_start["step"])
+        return any(r.source == "agent" and r.step > start for r in self.records) or any(
+            r.get("attempt") == self.attempt for r in self.reproductions)
+
     def _tool_message(self, call: ToolCall, content: str, meta: dict[str, Any]) -> None:
         self._append({
             "role": "tool", "tool_call_id": call.id, "name": call.name, "content": content,
@@ -491,6 +521,8 @@ class Agent:
             "step": self.budget.steps, "tool": call.name, "arguments": call.raw_arguments[:4000],
             "status": res.status, "meta": res.meta,
         }))
+        if cmd and res.status == "ok" and res.meta.get("exit_code") == 0 and memory.INSTALL_RE.match(cmd):
+            self.setup_commands.append(cmd)
         label = _short(cmd, 70) if cmd else _short(call.raw_arguments, 70)
         self.log(f"step {self.budget.steps} · {call.name} {label} → {res.status}"
                  + (f" exit={res.meta.get('exit_code')}" if call.name == "bash" else ""))

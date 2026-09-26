@@ -94,6 +94,9 @@ class ToolsConfig:
     read_max_lines: int = 400
     max_output_bytes: int = 64 * 1024 * 1024
     search_max_results: int = 200
+    # Refuse edits that would turn a parseable .py/.json file into an unparseable one (SWE-agent's
+    # edit-time linting finding); confirmed with the project's own python3 before refusing.
+    syntax_guard: bool = True
 
 
 @dataclass
@@ -114,6 +117,11 @@ class PolicyConfig:
     # Proof-carrying patches (proof.py): at submit the harness compares the agent's checks and
     # registered reproductions on the original code, the counterfactual and the candidate.
     verify_at_submit: bool = True
+    # Deterministic localisation hints in the first prompt (locate.py: issue anchors + BM25).
+    localize: bool = True
+    # Carry execution-verified facts (working test/install commands) to later runs on the same
+    # repository (memory.py). Never code, patches or issue text.
+    memory: bool = True
     # Adaptive attempts: another attempt (from the original code, with the harness's observations)
     # when a submitted candidate's evidence is below `retry_below` (default: only when the evidence
     # refutes it), or when an attempt used its time share without submitting a verified change;

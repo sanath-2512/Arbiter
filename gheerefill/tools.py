@@ -12,10 +12,12 @@ guessed or rewritten; errors are returned precisely so the model can correct its
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
 import shutil
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -177,6 +179,30 @@ def validate_arguments(spec: ToolSpec, args: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def closest_region(text: str, needle: str, max_lines: int = 20000) -> tuple[int, int, float] | None:
+    """(first_line, last_line, similarity) of the file region most similar to `needle` (1-based),
+    for the "did you mean" hint when an edit's old_str does not match exactly."""
+    import difflib
+
+    hay, pat = text.split("\n")[:max_lines], needle.strip("\n").split("\n")
+    n = len(pat)
+    if not pat or n > 200 or not hay:
+        return None
+    target = "\n".join(l.strip() for l in pat)
+    best = None
+    sm = difflib.SequenceMatcher(autojunk=False)
+    sm.set_seq2(target)
+    for i in range(0, max(1, len(hay) - n + 1)):
+        window = "\n".join(l.strip() for l in hay[i:i + n])
+        sm.set_seq1(window)
+        if sm.real_quick_ratio() < 0.5 or sm.quick_ratio() < 0.5:
+            continue
+        r = sm.ratio()
+        if best is None or r > best[2]:
+            best = (i + 1, min(len(hay), i + n), r)
+    return best if best and best[2] >= 0.6 else None
+
+
 class ToolBox:
     def __init__(
         self,
@@ -260,6 +286,59 @@ class ToolBox:
         available = self.time_budget()
         t = float(requested) if requested and requested > 0 else default
         return max(1.0, min(t, available))
+
+    def _syntax_error(self, path: Path, text: str) -> str | None:
+        """None if `text` parses as the file's language (or the language is not checked)."""
+        suffix = path.suffix.lower()
+        if suffix == ".json":
+            try:
+                json.loads(text)
+                return None
+            except ValueError as e:
+                return f"invalid JSON: {e}"
+        if suffix not in (".py", ".pyi"):
+            return None
+        try:
+            compile(text, str(path), "exec", dont_inherit=True)
+            return None
+        except SyntaxError as e:
+            err = f"line {e.lineno}: {e.msg}"
+        except (ValueError, TypeError):
+            return None
+        # The project's interpreter may accept newer syntax than the harness's own Python.
+        py = shutil.which("python3", path=self.env.get("PATH"))
+        if py:
+            argv = [py, "-c", "import ast, sys; ast.parse(sys.stdin.buffer.read())"]
+            try:
+                p = subprocess.run(self.wrap(argv) if self.wrap else argv, input=text.encode("utf-8"), env=self.env,
+                                   cwd=self.repo, capture_output=True, timeout=15)
+                if p.returncode == 0:
+                    return None
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+        return err
+
+    def _guard(self, path: Path, shown: str, old_text: str | None, new_text: str) -> ToolResult | None:
+        """Refuse a change that makes an existing, parseable file unparseable. None = allowed. New
+        files are never refused (invalid fixtures are legitimate), and repeating the exact same
+        change applies it anyway."""
+        if not self.cfg.syntax_guard or old_text is None:
+            return None
+        key = (str(path), hash(new_text))
+        if key == getattr(self, "_refused", None):
+            self._refused = None
+            return None
+        err = self._syntax_error(path, new_text)
+        if err is None or self._syntax_error(path, old_text) is not None:
+            return None
+        self._refused = key
+        m = re.search(r"line (\d+)", err)
+        line = int(m.group(1)) if m else 1
+        snippet, a, b, _ = numbered_range(new_text, max(1, line - 4), line + 4, 12, 2000)
+        return ToolResult(f"Error: this change would make {shown} unparseable ({err}). No changes made. The result "
+                          f"would have read (lines {a}-{b}):\n{snippet}\nFix the syntax (indentation, brackets, "
+                          "quotes) and try again. If the file is meant to be unparseable (e.g. a test fixture), "
+                          "repeat the same call to apply it anyway.", "error", {"error": "syntax"})
 
     # ------------------------------------------------------------------ tools
     def _tool_bash(self, args: dict[str, Any]) -> ToolResult:
@@ -448,12 +527,16 @@ class ToolBox:
         if count == 0:
             first = next((l.strip() for l in old.split("\n") if l.strip()), "")
             hits = [i + 1 for i, l in enumerate(text.split("\n")) if first and l.strip() == first]
-            hint = (
-                f" The first line of old_str appears (ignoring surrounding whitespace) at line(s) "
-                f"{', '.join(map(str, hits[:10]))}; re-read those lines and copy the text exactly."
-                if hits
-                else " Re-read the file and copy the text exactly (including indentation)."
-            )
+            region = closest_region(text, old)
+            if region is not None:
+                snippet, a, b, _ = numbered_range(text, region[0], region[1], 40, 3000)
+                hint = (f" The most similar text is at lines {a}-{b} ({region[2]:.0%} similar); it reads exactly:\n"
+                        f"{snippet}\nCopy old_str from it exactly (line numbers are not part of the text).")
+            elif hits:
+                hint = (f" The first line of old_str appears (ignoring surrounding whitespace) at line(s) "
+                        f"{', '.join(map(str, hits[:10]))}; re-read those lines and copy the text exactly.")
+            else:
+                hint = " Re-read the file and copy the text exactly (including indentation)."
             return ToolResult(f"Error: old_str not found in {shown}. No changes made.{hint}", "error", {"error": "no_match"})
         if count > 1 and not args.get("replace_all"):
             starts, pos = [], text.find(old)
@@ -468,6 +551,9 @@ class ToolBox:
             )
         first_pos = text.find(old)
         new_text = text.replace(old, new) if args.get("replace_all") else text.replace(old, new, 1)
+        refused = self._guard(path, shown, text, new_text)
+        if refused is not None:
+            return refused
         with open(path, "wb") as fh:
             fh.write(new_text.encode("utf-8"))
         start_line = new_text.count("\n", 0, first_pos) + 1
@@ -486,9 +572,13 @@ class ToolBox:
         if path.is_dir():
             return ToolResult(f"Error: {shown} is a directory.", "error", {})
         existed = path.exists()
-        before = path.read_bytes().count(b"\n") if existed else 0
-        path.parent.mkdir(parents=True, exist_ok=True)
+        old_bytes = path.read_bytes() if existed else b""
+        before = old_bytes.count(b"\n")
         content = args["content"]
+        refused = self._guard(path, shown, old_bytes.decode("utf-8", "replace") if existed else None, content)
+        if refused is not None:
+            return refused
+        path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "wb") as fh:
             fh.write(content.encode("utf-8"))
         lines = content.count("\n") + (0 if content.endswith("\n") or not content else 1)

@@ -309,7 +309,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             emit(_config_error_record(task.task_id, f"output directory {run_dir} is inside the target repository"))
             return 1
         client = make_client(tp_profile.model, env={tp_profile.model.api_key_env: key})
-        agent = Agent(task, tp_profile, client, run_dir, redactor=redactor)
+        agent = Agent(task, tp_profile, client, run_dir, redactor=redactor, memory_root=out_root / ".memory")
         current["agent"] = agent
         try:
             result = agent.run()

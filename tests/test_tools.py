@@ -1,3 +1,4 @@
+import json
 import os
 import time
 
@@ -55,7 +56,7 @@ class ToolsTest(TempDirCase):
         self.assertEqual(f.read_text(), "x = 1\ny = 5\nx = 1\n")
         r = self.box.execute(call("edit_file", path="a b ü.py", old_str="  y = 5", new_str="z"))
         self.assertEqual(r.status, "error")
-        self.assertIn("line(s) 2", r.content)  # whitespace-insensitive hint, but no guessing
+        self.assertIn("lines 2-2", r.content)  # whitespace-insensitive hint showing the exact text, but no guessing
         self.assertEqual(f.read_text(), "x = 1\ny = 5\nx = 1\n")
         r = self.box.execute(call("edit_file", path="a b ü.py", old_str="x = 1", new_str="x = 9", replace_all=True))
         self.assertEqual(f.read_text(), "x = 9\ny = 5\nx = 9\n")
@@ -228,3 +229,44 @@ class BoundedViewTest(TempDirCase):
         view, trunc = bounded_view("x" * 5000, 10000, "o1")
         self.assertTrue(trunc)
         self.assertIn('read_output(id="o1", start_line=1, end_line=1)', view)
+
+
+class EditSafetyTest(TempDirCase):
+    def setUp(self):
+        super().setUp()
+        from gheerefill.config import ToolsConfig
+        from gheerefill.outputs import OutputArchive
+        from gheerefill.records import Redactor
+        from gheerefill.tools import ToolBox
+
+        self.repo = self.tmp / "repo"
+        self.repo.mkdir()
+        (self.repo / "m.py").write_text("def f(x):\n    if x:\n        return 1\n    return 2\n")
+        (self.repo / "c.json").write_text('{"a": 1}\n')
+        self.tb = ToolBox(self.repo, self.tmp / "scratch", OutputArchive(self.tmp / "out", Redactor()), ToolsConfig(),
+                          dict(os.environ))
+
+    def call(self, name, **args):
+        from gheerefill.models.base import ToolCall
+
+        return self.tb.execute(ToolCall("c1", name, args, json.dumps(args)))
+
+    def test_edit_that_breaks_python_is_refused_then_applied_on_repeat(self):
+        r = self.call("edit_file", path="m.py", old_str="    if x:\n", new_str="    if x\n")
+        self.assertEqual((r.status, r.meta.get("error")), ("error", "syntax"))
+        self.assertIn("if x:", (self.repo / "m.py").read_text())  # unchanged
+        self.assertIn("line 2", r.content)
+        again = self.call("edit_file", path="m.py", old_str="    if x:\n", new_str="    if x\n")
+        self.assertEqual(again.status, "ok")  # deliberate: repeated call applies it
+
+    def test_valid_edits_new_files_and_json(self):
+        self.assertEqual(self.call("edit_file", path="m.py", old_str="return 2", new_str="return 3").status, "ok")
+        self.assertEqual(self.call("write_file", path="bad_fixture.py", content="def (:\n").status, "ok")  # new file
+        r = self.call("write_file", path="c.json", content='{"a": 1,}\n')
+        self.assertEqual(r.meta.get("error"), "syntax")
+
+    def test_near_miss_shows_the_exact_text(self):
+        r = self.call("edit_file", path="m.py", old_str="def f(x):\n  if x:\n      return 1", new_str="z")
+        self.assertEqual(r.meta.get("error"), "no_match")
+        self.assertIn("most similar text is at lines 1-3", r.content)
+        self.assertIn("        return 1", r.content)
