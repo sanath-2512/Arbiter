@@ -19,6 +19,11 @@ SCRIPT = {
         {"content": "verify", "tool_calls": [{"name": "bash", "arguments": {"command": "python3 -m unittest discover -s tests"}}]},
         {"content": "done", "tool_calls": [{"name": "submit", "arguments": {"summary": "true division"}}]},
     ],
+    "bash,edit,read,write": [
+        {"content": "fix", "tool_calls": [{"name": "edit", "arguments": {
+            "path": "calc/ops.py", "edits": [{"oldText": "return a // b", "newText": "return a / b"}]}}]},
+        {"content": "Fixed divide to use true division."},
+    ],
     "bash": [
         {"content": "fix", "tool_calls": [{"name": "bash", "arguments": {"command": "sed -i 's|a // b|a / b|' calc/ops.py"}}]},
         {"content": "done", "tool_calls": [{"name": "bash", "arguments": {"command": "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"}}]},
@@ -34,10 +39,12 @@ class EvalPipelineTest(TempDirCase):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertEqual(p.stdout.count("OK "), 4)
 
-    def test_ours_and_mini_through_real_transports(self):
+    def test_all_systems_through_real_transports(self):
         systems = ["ours"]
         if (ROOT / ".venv-baseline" / "bin" / "python").exists():
             systems.append("mini")
+        if (ROOT / "baselines" / "pi" / "node_modules" / ".bin" / "pi").exists():
+            systems.append("pi")
         with FakeOpenAIServer(SCRIPT) as srv:
             env = {**os.environ, "AI_API_KEY": "sk-fake-000000", "AI_MODEL": "scripted-model", "AI_BASE_URL": srv.base_url,
                    "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
@@ -56,5 +63,5 @@ class EvalPipelineTest(TempDirCase):
         self.assertIn("Paired comparison" if len(systems) > 1 else "Records", (self.tmp / "e" / "summary.md").read_text())
         models = {json.loads(json.dumps(r["model"]))["name"] for r in recs}
         self.assertEqual(models, {"scripted-model"})  # identical model settings for every system
-        if "mini" not in systems:
-            raise unittest.SkipTest("mini baseline not installed (make baseline-setup); ours verified only")
+        if len(systems) < 3:
+            raise unittest.SkipTest(f"only {systems} verified; install baselines with `make baseline-setup`")

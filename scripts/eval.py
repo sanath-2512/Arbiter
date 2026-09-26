@@ -6,7 +6,7 @@
     scripts/eval.py --partition dev --systems ours@profiles/bash-only.toml,ours --repeats 2
 
 Systems: `ours` (default profile), `ours@<profile.toml>` (profile variant / ablation), `mini`
-(pinned upstream mini-swe-agent via .venv-baseline). Every system gets a fresh copy of the task
+(pinned upstream mini-swe-agent via .venv-baseline), `pi` (pinned Pi via baselines/pi). Every system gets a fresh copy of the task
 repository, the same issue text, the same limits and the same model settings (from --profile).
 
 Judging applies each system's final patch to a *clean* copy of the base repository, then adds the
@@ -197,6 +197,39 @@ def run_mini(spec, repo, profile_path, out_dir, limits) -> dict[str, Any]:
     }
 
 
+def run_pi(spec, repo, profile_path, out_dir, limits) -> dict[str, Any]:
+    if not (ROOT / "baselines" / "pi" / "node_modules" / ".bin" / "pi").exists():
+        return {"status": "baseline_not_installed", "patch": b"", "trail": [], "live": True}
+    ws = Workspace(repo, out_dir / "capture")
+    base = ws.init()
+    cmd = [sys.executable, str(ROOT / "baselines" / "run_pi.py"), "--repo", str(repo), "--issue-file",
+           str(spec["dir"] / "issue.md"), "--profile", str(profile_path), "--out", str(out_dir / "pi"),
+           "--time-limit", str(limits["time_limit_s"]), "--max-steps", str(limits["max_steps"])]
+    t0 = time.monotonic()
+    try:
+        p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=limits["time_limit_s"] + 180)
+        (out_dir / "stderr.log").write_text(p.stderr[-20000:])
+        rec = json.loads(p.stdout.strip().splitlines()[-1]) if p.stdout.strip() else {"exit_status": f"exit {p.returncode}"}
+    except subprocess.TimeoutExpired:
+        rec = {"exit_status": "harness_timeout"}
+    wall = time.monotonic() - t0
+    final = ws.snapshot()
+    u = rec.get("usage") or {}
+    return {
+        "status": "completed" if not rec.get("error") else "error",
+        "termination": rec.get("exit_status"), "submission_ready": True, "verification": None, "live": True,
+        "model": rec.get("model"),
+        "usage": {"input_tokens": (u.get("prompt_tokens") or 0) - (u.get("cached_tokens") or 0),
+                  "output_tokens": u.get("completion_tokens"), "cache_read_tokens": u.get("cached_tokens"),
+                  "total_tokens": (u.get("prompt_tokens") or 0) + (u.get("completion_tokens") or 0),
+                  "requests": rec.get("api_calls"), "requests_usage_unknown": u.get("responses_without_usage"),
+                  "cost_usd": None},
+        "steps": rec.get("steps"), "tool_calls": rec.get("tool_calls"), "timing": {"total_s": rec.get("elapsed_s")},
+        "wall_s": round(wall, 2), "patch": ws.patch(base, final), "trail": [out_dir / "pi" / "events.jsonl"],
+        "run_dir": str(out_dir), "error": rec.get("error"),
+    }
+
+
 def binom_two_sided(k: int, n: int) -> float:
     if n == 0:
         return 1.0
@@ -293,6 +326,8 @@ def main() -> int:
                 started = time.time()
                 if system == "mini":
                     res = run_mini(spec, repo, Path(args.profile), d, limits)
+                elif system == "pi":
+                    res = run_pi(spec, repo, Path(args.profile), d, limits)
                 elif system.startswith("ours"):
                     prof = system.split("@", 1)[1] if "@" in system else args.profile
                     res = run_ours(spec, repo, Path(prof), d, limits)

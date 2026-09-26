@@ -48,12 +48,41 @@ class FakeOpenAIServer:
                         "choices": [{"index": 0, "message": msg, "finish_reason": "tool_calls" if calls else "stop"}],
                         "usage": {"prompt_tokens": 100 + 10 * idx, "completion_tokens": 20, "total_tokens": 120 + 10 * idx},
                     }, 200
+                if body.get("stream") and status == 200:
+                    self._stream(payload, body)
+                    return
                 data = json.dumps(payload).encode()
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
+
+            def _stream(self, payload, body):
+                """Server-sent events in the OpenAI chat.completion.chunk format."""
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.end_headers()
+                msg = payload["choices"][0]["message"]
+                base = {"id": payload["id"], "object": "chat.completion.chunk", "model": payload["model"]}
+
+                def send(obj):
+                    self.wfile.write(b"data: " + json.dumps(obj).encode() + b"\n\n")
+                    self.wfile.flush()
+
+                send({**base, "choices": [{"index": 0, "delta": {"role": "assistant", "content": msg.get("content") or ""},
+                                           "finish_reason": None}]})
+                for i, c in enumerate(msg.get("tool_calls", [])):
+                    send({**base, "choices": [{"index": 0, "delta": {"tool_calls": [
+                        {"index": i, "id": c["id"], "type": "function",
+                         "function": {"name": c["function"]["name"], "arguments": c["function"]["arguments"]}}]},
+                        "finish_reason": None}]})
+                send({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": payload["choices"][0]["finish_reason"]}]})
+                if (body.get("stream_options") or {}).get("include_usage"):
+                    send({**base, "choices": [], "usage": payload["usage"]})
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.base_url = f"http://127.0.0.1:{self.httpd.server_address[1]}/v1"

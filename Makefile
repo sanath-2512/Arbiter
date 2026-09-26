@@ -26,7 +26,7 @@ demo:                 ## offline scripted demo (fake model, clearly labelled non
 smoke:                ## LIVE: solve the example tasks with the configured model (uses AI_API_KEY)
 	@$(PY) scripts/make_example.py --work work > work/tasks.jsonl && $(PY) -m gheerefill run --task work/tasks.jsonl --out runs/smoke $(if $(PROFILE),--profile "$(PROFILE)",)
 
-baseline-setup:       ## dev only: install pinned upstream mini-swe-agent into .venv-baseline (network)
+baseline-setup:       ## dev only: install pinned mini-swe-agent (.venv-baseline) and Pi (baselines/pi) (network)
 	@bash baselines/setup_baselines.sh
 
 baseline:             ## dev only, LIVE: run upstream mini-swe-agent on TASK=file with the same model

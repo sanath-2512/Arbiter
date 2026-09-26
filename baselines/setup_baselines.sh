@@ -17,3 +17,8 @@ else
   .venv-baseline/bin/python -m pip install -q -r "$( [ -f baselines/requirements-mini.lock ] && echo baselines/requirements-mini.lock || echo baselines/requirements-mini.txt)"
 fi
 .venv-baseline/bin/python -c "import minisweagent, sys; print('mini-swe-agent', minisweagent.__version__)" 2>/dev/null | tail -1
+if command -v npm >/dev/null 2>&1; then
+  (cd baselines/pi && npm ci --silent --no-audit --no-fund) && echo "pi $(baselines/pi/node_modules/.bin/pi --version)"
+else
+  echo "npm not found: Pi baseline not installed"
+fi

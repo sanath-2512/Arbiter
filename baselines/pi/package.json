@@ -1,0 +1,8 @@
+{
+  "name": "gheerefill-pi-baseline",
+  "private": true,
+  "description": "Development-only pinned Pi baseline (never a runtime dependency of the submission).",
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "0.73.1"
+  }
+}
