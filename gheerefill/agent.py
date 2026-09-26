@@ -13,6 +13,7 @@ import json
 import os
 import random
 import re
+import subprocess
 import sys
 import time
 import traceback
@@ -40,7 +41,7 @@ from gheerefill.progress import FailureMemory
 from gheerefill.records import Redactor, append_jsonl, atomic_write_bytes, atomic_write_json
 from gheerefill.sandbox import Sandbox, confine_paths
 from gheerefill.shell import read_output_file, run_shell, tool_environment
-from gheerefill.task import Task
+from gheerefill.task import Task, evaluation_tests
 from gheerefill.tools import ToolBox, ToolResult
 from gheerefill.workspace import Workspace, WorkspaceError
 
@@ -96,6 +97,9 @@ class Agent:
         self.error: dict[str, Any] | None = None
         self.notes: list[str] = []
         self.model_quirks: dict[str, int] = {}  # how often each model-output repair was needed
+        self.eval_tests: dict[str, Any] = {}  # the evaluation's tests, when the task carries them
+        self.eval_paths: list[str] = []  # their files: in every attempt's start tree, never in the patch
+        self.start_tree: str | None = None
         self.ws: Workspace | None = None
         self.base_tree: str | None = None
         self.last_tree: str | None = None
@@ -180,6 +184,8 @@ class Agent:
                 "attempt": self.attempt,
                 "attempts": self.attempts,
                 "attempt_trees": self.attempt_trees,
+                "eval_paths": self.eval_paths,
+                "start_tree": self.start_tree,
                 "reproductions": self.reproductions,
                 "detour": self.detour,
                 "updated_at": time.time(),
@@ -280,6 +286,8 @@ class Agent:
         agent.attempt = int(state.get("attempt") or 1)
         agent.attempts = list(state.get("attempts") or [])
         agent.attempt_trees = list(state.get("attempt_trees") or [])
+        agent.eval_paths = list(state.get("eval_paths") or [])
+        agent.start_tree = state.get("start_tree") or state["base_tree"]
         agent.reproductions = list(state.get("reproductions") or [])
         if state.get("detour"):
             agent.notes.append("the run was interrupted while the harness ran a check on another state; the "
@@ -319,6 +327,11 @@ class Agent:
         self.candidate_meta = [{"tree": self.base_tree, "step": 0, "elapsed_s": 0.0, "why": "base", "is_base": True}]
         atomic_write_json(self.run_dir / "candidates.json", self.candidate_meta)
         self.base_ignored = self.ws.ignored_paths()
+        self.eval_tests = evaluation_tests(self.task.metadata)
+        self.eval_paths: list[str] = []
+        self.start_tree = self.base_tree
+        if self.eval_tests.get("test_patch"):
+            self._apply_evaluation_tests(self.eval_tests["test_patch"])
         tool_env = tool_environment(self.env, self.scratch, (self.profile.model.api_key_env,))
         self.tools = ToolBox(
             self.task.repo_path, self.scratch, self.archive, self.profile.tools, tool_env,
@@ -351,6 +364,8 @@ class Agent:
             self.notes.append(f"issue text truncated in the prompt ({len(self.task.issue)} chars); full text at {full}")
         hint = prompts.REPRODUCE_HINT if "register_reproduction" in self.tools.specs else ""
         self._system_msg = prompts.SYSTEM.format(repo=self.tools.repo, scratch=self.tools.scratch, reproduce=hint)
+        if self.eval_tests:
+            overview += prompts.evaluation_tests(self.eval_tests, self.eval_paths)
         self._task_msg = prompts.TASK.format(issue=issue, overview=overview)
         self._append({"role": "system", "content": self._system_msg})
         self._append({"role": "user", "content": self._task_msg})
@@ -358,6 +373,25 @@ class Agent:
         self._checkpoint("solving")
         self.log(f"base tree {self.base_tree[:12]} · repo {self.task.repo_path} · model {self.client.model_name} "
                  f"({self.client.provider}) · limits {self.profile.limits.time_limit_s:.0f}s/{self.profile.limits.max_steps} steps")
+
+    def _apply_evaluation_tests(self, patch: str) -> None:
+        """The task carries the tests the evaluation will run: put them in the working tree (every attempt
+        starts from here), and keep them out of the deliverable (the evaluator applies its own copy)."""
+        assert self.ws is not None
+        pf = self.scratch / "evaluation_tests.patch"
+        pf.write_text(patch if patch.endswith("\n") else patch + "\n", encoding="utf-8")
+        paths = sorted(set(re.findall(r"^diff --git a/(\S+) b/", patch, re.M)) |
+                       set(re.findall(r"^\+\+\+ b/(\S+)", patch, re.M)))
+        env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG", "TMPDIR")}
+        p = subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "apply", "--whitespace=nowarn", str(pf)],
+                           cwd=self.task.repo_path, capture_output=True, text=True, timeout=120,
+                           env={**env, "GIT_CONFIG_NOSYSTEM": "1"})
+        if p.returncode != 0:
+            self.notes.append(f"evaluation tests could not be applied ({p.stderr[-200:]}); left in {pf}")
+            return
+        self.eval_paths = paths
+        self.start_tree = self._capture_state("evaluation tests applied")
+        self.notes.append(f"evaluation tests applied to the working tree: {', '.join(paths)[:300]}")
 
     def _new_context(self) -> None:
         spec_tokens = estimate_tokens([{"content": json.dumps([s.parameters for s in self.specs])}])
@@ -753,7 +787,8 @@ class Agent:
         """Original code + this candidate's own test-file changes (new tests exist, the fix does not)."""
         assert self.ws is not None and self.base_tree is not None
         files = self.ws.changed_files(self.base_tree, tree)
-        paths = sorted({p for f in files for p in (f["path"], f.get("old_path")) if p and proof.is_test_path(p)})
+        paths = sorted({p for f in files for p in (f["path"], f.get("old_path")) if p and (proof.is_test_path(p)
+                                                                                           or p in self.eval_paths)})
         return self.ws.overlay_tree(self.base_tree, tree, paths)
 
     def _checks_for(self, tree: str) -> list[tuple[str, str, str]]:
@@ -973,14 +1008,14 @@ class Agent:
         """Start the next attempt from the original code with a fresh conversation that carries the
         harness's observations (not the previous transcript)."""
         assert self.ws is not None and self.base_tree is not None
-        self.ws.restore(self.base_tree)
+        self.ws.restore(self.start_tree or self.base_tree)
         if self.profile.policy.git_hygiene and self.target_git_initial is not None:
             self.ws.restore_target_git(self.target_git_initial)
         self.attempt += 1
         self.termination = None
         self.submit_summary = ""
-        self.last_tree = self.base_tree
-        self.attempt_trees = [self.base_tree]
+        self.last_tree = self.start_tree or self.base_tree
+        self.attempt_trees = [self.last_tree]
         self.recent_actions, self.repetition_warned = [], set()
         self.failure_memory.reset_attempt()
         self.escalate_attempt = False
@@ -1097,6 +1132,13 @@ class Agent:
                         self.ws.restore(again)
                         fin_notes.append(f"re-check evidence changed the selection to {again[:12]}; restored it")
                         selected, reason = again, why
+            proof_tree = selected
+            if self.eval_paths:
+                export = self.ws.overlay_tree(selected, self.base_tree, self.eval_paths)
+                if export != selected:
+                    self.ws.restore(export)
+                    fin_notes.append("evaluation tests kept out of the deliverable (the evaluator applies its own copy)")
+                    selected = export
             patch = self.ws.patch(self.base_tree, selected)
             patch_path = self.run_dir / "patch.diff"
             atomic_write_bytes(patch_path, patch)
@@ -1105,8 +1147,9 @@ class Agent:
             files = self.ws.changed_files(self.base_tree, selected)
             excluded = sorted(self.ws.ignored_paths() - self.base_ignored)
             vstatus, vdetail = verification_status(self.records, selected)
-            best = (self.assessments.get(selected) if selected in self.assessments and not ranked else None) or (
-                self._verify_candidate(selected, allow_runs=False) if selected != self.base_tree else None)
+            best = (self.assessments.get(proof_tree) if proof_tree in self.assessments and not ranked else None) or (
+                self._verify_candidate(proof_tree, allow_runs=False) if proof_tree not in (self.base_tree, self.start_tree)
+                else None)
             result["proof"] = {
                 "level": best.level if best else "unverified",
                 "summary": best.summary() if best else "no change",

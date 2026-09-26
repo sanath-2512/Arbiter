@@ -247,7 +247,8 @@ def prepare_repo(spec: str | None, *, owner: str | None, repo: str | None, numbe
             return found, [f"repository: {found} (existing checkout of {owner}/{repo}, used in place)"] + \
                 _base_ignored(base, log)
     url = spec or clone_url(owner or "", repo or "")
-    name = safe_name(f"{owner}__{repo}__{number}" if owner else Path(url.rstrip("/")).stem)
+    name = safe_name(f"{owner}__{repo}__{number}" if owner and number is not None else
+                     f"{owner}__{repo}" if owner else Path(url.rstrip("/")).stem)
     workspace.mkdir(parents=True, exist_ok=True)
     dest = workspace / name
     n = 1
@@ -289,7 +290,16 @@ def prepare_repo(spec: str | None, *, owner: str | None, repo: str | None, numbe
 def build_task(req: Request, *, repo_spec: str | None, base: str | None, workspace: Path, github_token: str | None,
                limits: dict[str, Any], log) -> Task:
     if req.task is not None:
-        return req.task
+        t = req.task
+        slug = t.metadata.get("remote_repo")
+        if slug:
+            owner, name = slug.split("/", 1)
+            base_commit = t.metadata.get("base_commit") or base
+            path, notes = prepare_repo(repo_spec, owner=owner, repo=name, number=None, workspace=workspace,
+                                       base=str(base_commit) if base_commit else None, issue_created_at=None, log=log)
+            t.repo_path = path
+            t.metadata["intake_notes"] = notes
+        return t
     if req.github:
         owner, repo, number = req.github
         meta = fetch_issue(owner, repo, number, github_token)

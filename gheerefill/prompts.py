@@ -217,3 +217,21 @@ CUT_OFF = (
     "Your reply hit the output length limit before any complete tool call. Keep replies shorter: brief reasoning, "
     "then one tool call."
 )
+
+
+def evaluation_tests(tests: dict, applied_paths: list[str]) -> str:
+    """The tests the evaluation will run, when the task names them (capped: they are paid for per request)."""
+    lines = ["", "## Tests the evaluation will run (they decide the result)"]
+    if applied_paths:
+        lines.append(f"They are already in the working tree ({', '.join(applied_paths[:6])}). Do not edit these files: "
+                     "the evaluator uses its own copy, so changes to them are discarded.")
+    f2p, p2p = tests.get("fail_to_pass") or [], tests.get("pass_to_pass") or []
+    if f2p:
+        lines.append(f"Must pass (currently failing): {', '.join(f2p[:15])}" + (f" ... ({len(f2p)} in all)" if len(f2p) > 15 else ""))
+    if p2p:
+        lines.append(f"Must keep passing: {len(p2p)} test(s), e.g. {', '.join(p2p[:8])}")
+    if tests.get("test_command"):
+        lines.append(f"Test command: `{tests['test_command']}`")
+    lines.append("Run them before and after your change. Make them pass by fixing the source, not the tests, and "
+                 "handle the general case they exercise, not only the listed inputs.")
+    return "\n".join(lines)

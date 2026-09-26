@@ -88,11 +88,11 @@ def test_profile(**limits: Any) -> Profile:
 
 def run_agent(repo: Path, turns: list, run_dir: Path, *, profile: Profile | None = None,
               issue: str = "Fix divide so that divide(7, 2) == 3.5.", env: dict[str, str] | None = None,
-              clock=None, **kw) -> tuple[dict[str, Any], Agent]:
+              clock=None, metadata: dict[str, Any] | None = None, **kw) -> tuple[dict[str, Any], Agent]:
     profile = profile or test_profile()
     client = FakeClient(turns)
     extra = {"clock": clock} if clock else {}
-    agent = Agent(Task("t1", repo, issue), profile, client, run_dir,
+    agent = Agent(Task("t1", repo, issue, metadata=dict(metadata or {})), profile, client, run_dir,
                   env=env if env is not None else dict(os.environ), log=lambda m: None, sleep=lambda s: None,
                   **extra, **kw)
     return agent.run(), agent

@@ -22,6 +22,7 @@ Replace this module when the official task protocol is published.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any, Iterator
@@ -92,8 +93,12 @@ def parse_task(obj: Any, base_dir: Path) -> Task:
     repo_path = Path(repo)
     if not repo_path.is_absolute():
         repo_path = (base_dir / repo_path).resolve()
+    remote = None
     if not repo_path.is_dir():
-        raise ValueError(f"repo_path does not exist or is not a directory: {repo_path}")
+        if SLUG.match(repo.strip()):  # SWE-bench instance format: "owner/name" + base_commit, cloned by intake
+            remote = repo.strip()
+        else:
+            raise ValueError(f"repo_path does not exist or is not a directory: {repo_path}")
     limits = obj.get("limits") or {}
     if not isinstance(limits, dict):
         raise ValueError("limits must be an object")
@@ -102,7 +107,41 @@ def parse_task(obj: Any, base_dir: Path) -> Task:
         raise ValueError(f"unknown limit key(s): {sorted(unknown)} (allowed: {sorted(_LIMIT_KEYS)})")
     known = {k for ks in _ALIASES.values() for k in ks} | {"limits"}
     metadata = {k: v for k, v in obj.items() if k not in known}
+    if remote:
+        metadata["remote_repo"] = remote
+        repo_path = Path()
     return Task(task_id=str(task_id), repo_path=repo_path, issue=issue, limits=dict(limits), metadata=metadata)
+
+
+SLUG = re.compile(r"^[A-Za-z0-9][\w.-]*/[\w.-]+$")
+TEST_FIELDS = {  # accepted spellings of the evaluation's test information
+    "fail_to_pass": ("FAIL_TO_PASS", "fail_to_pass", "tests_to_pass", "failing_tests"),
+    "pass_to_pass": ("PASS_TO_PASS", "pass_to_pass", "tests_to_keep_passing"),
+    "test_patch": ("test_patch", "tests_patch"),
+    "test_command": ("test_command", "test_cmd", "eval_command"),
+}
+
+
+def evaluation_tests(metadata: dict[str, Any]) -> dict[str, Any]:
+    """The evaluation's tests carried by a task (SWE-bench fields and plain spellings)."""
+    out: dict[str, Any] = {}
+    for canon, keys in TEST_FIELDS.items():
+        v = next((metadata[k] for k in keys if metadata.get(k) not in (None, "", [])), None)
+        if v is None:
+            continue
+        if canon in ("fail_to_pass", "pass_to_pass"):
+            if isinstance(v, str):
+                try:
+                    v = json.loads(v)
+                except json.JSONDecodeError:
+                    v = [t for t in re.split(r"[\n,]+", v) if t.strip()]
+            v = [str(t).strip() for t in v if str(t).strip()] if isinstance(v, list) else []
+            if not v:
+                continue
+        elif not isinstance(v, str):
+            continue
+        out[canon] = v
+    return out
 
 
 def _task_id_hint(obj: Any) -> str | None:
