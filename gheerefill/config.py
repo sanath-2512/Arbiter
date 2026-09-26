@@ -50,6 +50,10 @@ class ModelConfig:
     system_role: str = "system"
     anthropic_version: str = "2023-06-01"
     prompt_cache: bool = False
+    # Server-sent-event streaming (avoids gateway idle timeouts on slow responses; enforces the
+    # deadline mid-response). stream_usage requests usage in the final chunk (OpenAI-compatible).
+    stream: bool = False
+    stream_usage: bool = True
     # Passed verbatim into the request body (e.g. reasoning_effort, top_p, thinking).
     extra_body: dict[str, Any] = field(default_factory=dict)
     extra_headers: dict[str, str] = field(default_factory=dict)

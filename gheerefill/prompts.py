@@ -35,6 +35,40 @@ MANIFESTS = (
 )
 
 
+def test_command_hints(repo: Path) -> list[str]:
+    """Likely test commands derived from manifests only (hints; never executed by the harness)."""
+    import json
+    import re
+
+    hints: list[str] = []
+    pkg = repo / "package.json"
+    if pkg.is_file():
+        try:
+            test = (json.loads(pkg.read_text(errors="replace")).get("scripts") or {}).get("test")
+            if isinstance(test, str) and "no test specified" not in test:
+                hints.append(f"npm test  (runs: {test[:80]})")
+        except (json.JSONDecodeError, AttributeError):
+            pass
+    mk = repo / "Makefile"
+    if mk.is_file():
+        targets = re.findall(r"^(test|check|tests)\s*:", mk.read_text(errors="replace"), re.M)
+        hints += [f"make {t}" for t in dict.fromkeys(targets)]
+    if (repo / "tox.ini").is_file():
+        hints.append("tox (see tox.ini)")
+    if any((repo / f).is_file() for f in ("pytest.ini", "conftest.py")) or (
+        (repo / "pyproject.toml").is_file() and "[tool.pytest" in (repo / "pyproject.toml").read_text(errors="replace")
+    ) or ((repo / "setup.cfg").is_file() and "[tool:pytest]" in (repo / "setup.cfg").read_text(errors="replace")):
+        hints.append("pytest")
+    for f, cmd in (("go.mod", "go test ./..."), ("Cargo.toml", "cargo test"), ("pom.xml", "mvn -q test"),
+                   ("build.gradle", "./gradlew test"), ("build.gradle.kts", "./gradlew test"), ("mix.exs", "mix test"),
+                   ("Package.swift", "swift test")):
+        if (repo / f).is_file():
+            hints.append(cmd)
+    if (repo / "runtests.py").is_file() or (repo / "tests" / "runtests.py").is_file():
+        hints.append("python runtests.py (or tests/runtests.py)")
+    return hints
+
+
 def repo_overview(repo: Path, limit: int = 60) -> str:
     try:
         entries = sorted(os.listdir(repo))
@@ -47,6 +81,9 @@ def repo_overview(repo: Path, limit: int = 60) -> str:
     lines = [f"Repository top level: {' '.join(shown)}{more}"]
     if manifests:
         lines.append(f"Build/test manifests present: {', '.join(manifests)}")
+    hints = test_command_hints(repo)
+    if hints:
+        lines.append(f"Test commands suggested by these manifests (unverified): {'; '.join(hints)}")
     return "\n" + "\n".join(lines)
 
 

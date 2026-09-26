@@ -65,3 +65,30 @@ class EvalPipelineTest(TempDirCase):
         self.assertEqual(models, {"scripted-model"})  # identical model settings for every system
         if len(systems) < 3:
             raise unittest.SkipTest(f"only {systems} verified; install baselines with `make baseline-setup`")
+
+
+class StreamingEndToEndTest(TempDirCase):
+    def test_ours_streaming_solve_and_probe_through_scripted_server(self):
+        import shutil
+
+        repo = self.tmp / "repo"
+        shutil.copytree(ROOT / "evalsuite" / "tasks" / "calc-divide" / "repo", repo)
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        prof = self.tmp / "stream.toml"
+        prof.write_text('name = "stream"\n[model]\nprovider = "openai_chat"\nstream = true\n')
+        task = json.dumps({"task_id": "s1", "repo_path": str(repo), "issue": "divide truncates; use true division"})
+        with FakeOpenAIServer(SCRIPT) as srv:
+            env = {**os.environ, "AI_API_KEY": "sk-fake-000000", "AI_MODEL": "scripted-model", "AI_BASE_URL": srv.base_url,
+                   "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
+            p = subprocess.run([sys.executable, "-m", "gheerefill", "run", "--profile", str(prof), "--out",
+                                str(self.tmp / "out")], input=task + "\n", cwd=ROOT, capture_output=True, text=True,
+                               env=env, timeout=120)
+            probe = subprocess.run([sys.executable, "-m", "gheerefill", "probe", "--profile", str(prof)], cwd=ROOT,
+                                   capture_output=True, text=True, env=env, timeout=60)
+        rec = json.loads(p.stdout.strip().splitlines()[-1])
+        self.assertEqual(rec["termination"], "model_submitted", p.stderr[-2000:])
+        self.assertEqual(rec["verification"]["status"], "checks_passed")
+        self.assertTrue(all(r["body"].get("stream") for r in srv.requests[:4]))
+        report = json.loads(probe.stdout)
+        self.assertTrue(report["alternate_mode"]["tool_call_ok"])
+        self.assertNotIn("sk-fake-000000", probe.stdout)

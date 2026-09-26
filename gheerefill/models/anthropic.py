@@ -16,7 +16,7 @@ from typing import Any
 
 from gheerefill.config import ModelConfig
 from gheerefill.models.base import ErrorClass, ModelError, ModelTurn, ToolCall, ToolSpec, Usage
-from gheerefill.models.http import post_json
+from gheerefill.models.http import post_json, post_sse
 
 
 def normalize_anthropic_usage(usage: Any) -> Usage:
@@ -138,5 +138,52 @@ class AnthropicClient:
         base = self.cfg.base_url.rstrip("/")
         url = base + ("/messages" if base.endswith("/v1") else "/v1/messages")
         headers = {"x-api-key": self._api_key, "anthropic-version": self.cfg.anthropic_version, **self.cfg.extra_headers}
-        data = post_json(url, headers, self.build_body(messages, tools), timeout_s)
-        return self.parse_response(data)
+        body = self.build_body(messages, tools)
+        if not self.cfg.stream:
+            return self.parse_response(post_json(url, headers, body, timeout_s))
+        body["stream"] = True
+        return self.parse_response(accumulate_anthropic_stream(post_sse(url, headers, body, timeout_s)))
+
+
+def accumulate_anthropic_stream(events) -> dict[str, Any]:
+    """Rebuild a Messages API response (content blocks incl. thinking signatures) from SSE events."""
+    blocks: dict[int, dict[str, Any]] = {}
+    partial_json: dict[int, list[str]] = {}
+    usage: dict[str, Any] = {}
+    stop_reason = ""
+    for kind, obj in events:
+        if kind == "json":
+            return obj
+        t = obj.get("type")
+        if t == "message_start":
+            usage.update((obj.get("message") or {}).get("usage") or {})
+        elif t == "content_block_start":
+            blocks[obj["index"]] = dict(obj.get("content_block") or {})
+            if blocks[obj["index"]].get("type") == "tool_use":
+                partial_json[obj["index"]] = []
+        elif t == "content_block_delta":
+            b = blocks.setdefault(obj["index"], {"type": "text", "text": ""})
+            d = obj.get("delta") or {}
+            dt = d.get("type")
+            if dt == "text_delta":
+                b["text"] = b.get("text", "") + d.get("text", "")
+            elif dt == "input_json_delta":
+                partial_json.setdefault(obj["index"], []).append(d.get("partial_json", ""))
+            elif dt == "thinking_delta":
+                b["thinking"] = b.get("thinking", "") + d.get("thinking", "")
+            elif dt == "signature_delta":
+                b["signature"] = b.get("signature", "") + d.get("signature", "")
+        elif t == "message_delta":
+            stop_reason = (obj.get("delta") or {}).get("stop_reason") or stop_reason
+            usage.update(obj.get("usage") or {})
+    content = []
+    for i in sorted(blocks):
+        b = blocks[i]
+        if b.get("type") == "tool_use":
+            raw = "".join(partial_json.get(i, []))
+            try:
+                b["input"] = json.loads(raw) if raw.strip() else (b.get("input") or {})
+            except json.JSONDecodeError:
+                b["input"] = None  # surfaces as a parse error for this tool call
+        content.append(b)
+    return {"content": content, "stop_reason": stop_reason, "usage": usage}

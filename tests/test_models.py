@@ -61,6 +61,26 @@ class ScriptedServer:
                     self.wfile.flush()
                     self.close_connection = True
                     return
+                if isinstance(item, tuple) and item[0] == "sse":
+                    _, events, gap = item
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.end_headers()
+                    try:
+                        for ev in events:
+                            if ev == "CUT":
+                                self.close_connection = True
+                                return
+                            name, payload = ev if isinstance(ev, tuple) else (None, ev)
+                            if name:
+                                self.wfile.write(f"event: {name}\n".encode())
+                            data = payload if isinstance(payload, str) else json.dumps(payload)
+                            self.wfile.write(f"data: {data}\n\n".encode())
+                            self.wfile.flush()
+                            time.sleep(gap)
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
+                    return
                 if isinstance(item, tuple) and item[0] == "sleep":
                     time.sleep(item[1])
                     item = item[2]
@@ -303,3 +323,98 @@ class TransportTest(unittest.TestCase):
             with self.assertRaises(ModelError) as cm:
                 self.client(srv.url).complete(MSGS, [TOOL], timeout_s=5)
         self.assertEqual(cm.exception.cls, ErrorClass.CONTEXT_OVERFLOW)
+
+
+def oa_chunk(delta=None, finish=None, usage=None):
+    c = {"object": "chat.completion.chunk", "choices": [] if usage else [{"index": 0, "delta": delta or {}, "finish_reason": finish}]}
+    if usage:
+        c["usage"] = usage
+    return c
+
+
+OA_STREAM = [
+    oa_chunk({"role": "assistant", "content": "Let me "}),
+    oa_chunk({"content": "look."}),
+    oa_chunk({"tool_calls": [{"index": 0, "id": "c1", "type": "function", "function": {"name": "bash", "arguments": '{"comm'}}]}),
+    oa_chunk({"tool_calls": [{"index": 0, "function": {"arguments": 'and": "ls"}'}}]}),
+    oa_chunk({"tool_calls": [{"index": 1, "id": "c2", "type": "function", "function": {"name": "bash", "arguments": '{"command": "pwd"}'}}]}),
+    oa_chunk(finish="tool_calls"),
+    oa_chunk(usage={"prompt_tokens": 50, "completion_tokens": 9, "prompt_tokens_details": {"cached_tokens": 10}}),
+    "[DONE]",
+]
+
+AN_STREAM = [
+    ("message_start", {"type": "message_start", "message": {"usage": {"input_tokens": 12, "cache_read_input_tokens": 100, "output_tokens": 1}}}),
+    ("content_block_start", {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": ""}}),
+    ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "hmm"}}),
+    ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "SIG"}}),
+    ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+    ("content_block_start", {"type": "content_block_start", "index": 1, "content_block": {"type": "text", "text": ""}}),
+    ("content_block_delta", {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "Running."}}),
+    ("content_block_start", {"type": "content_block_start", "index": 2, "content_block": {"type": "tool_use", "id": "t1", "name": "bash", "input": {}}}),
+    ("content_block_delta", {"type": "content_block_delta", "index": 2, "delta": {"type": "input_json_delta", "partial_json": '{"command": '}}),
+    ("content_block_delta", {"type": "content_block_delta", "index": 2, "delta": {"type": "input_json_delta", "partial_json": '"ls -la"}'}}),
+    ("content_block_stop", {"type": "content_block_stop", "index": 2}),
+    ("message_delta", {"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 30}}),
+    ("message_stop", {"type": "message_stop"}),
+]
+
+
+@mock.patch.dict(os.environ, NO_PROXY_ENV)
+class StreamingTest(unittest.TestCase):
+    def cfg(self, url, provider="openai_chat"):
+        return ModelConfig(name="m", base_url=url + ("/v1" if provider == "openai_chat" else ""), provider=provider,
+                           stream=True)
+
+    def test_openai_stream_reassembles_tool_calls_and_usage(self):
+        with ScriptedServer([("sse", OA_STREAM, 0)]) as srv:
+            turn = OpenAIChatClient(self.cfg(srv.url), "k").complete(MSGS, [TOOL], timeout_s=5)
+        body = srv.requests[0]["body"]
+        self.assertTrue(body["stream"])
+        self.assertEqual(body["stream_options"], {"include_usage": True})
+        self.assertEqual(turn.text, "Let me look.")
+        self.assertEqual([(c.id, c.arguments) for c in turn.tool_calls], [("c1", {"command": "ls"}), ("c2", {"command": "pwd"})])
+        self.assertEqual((turn.usage.input_tokens, turn.usage.cache_read_tokens, turn.usage.output_tokens), (40, 10, 9))
+        self.assertEqual(turn.finish_reason, "tool_calls")
+
+    def test_openai_stream_without_done_but_finished_is_complete(self):
+        with ScriptedServer([("sse", OA_STREAM[:-1], 0)]) as srv:
+            turn = OpenAIChatClient(self.cfg(srv.url), "k").complete(MSGS, [TOOL], timeout_s=5)
+        self.assertEqual(len(turn.tool_calls), 2)
+
+    def test_openai_stream_cut_midway_is_uncertain_network_error(self):
+        with ScriptedServer([("sse", OA_STREAM[:3] + ["CUT"], 0)]) as srv:
+            with self.assertRaises(ModelError) as cm:
+                OpenAIChatClient(self.cfg(srv.url), "k").complete(MSGS, [TOOL], timeout_s=5)
+        self.assertEqual(cm.exception.cls, ErrorClass.NETWORK)
+        self.assertTrue(cm.exception.usage_uncertain)
+
+    def test_stream_total_deadline_enforced(self):
+        slow = [oa_chunk({"content": "x"})] * 20 + ["[DONE]"]
+        t0 = time.monotonic()
+        with ScriptedServer([("sse", slow, 0.2)]) as srv:
+            with self.assertRaises(ModelError) as cm:
+                OpenAIChatClient(self.cfg(srv.url), "k").complete(MSGS, [TOOL], timeout_s=1.0)
+        self.assertEqual(cm.exception.cls, ErrorClass.TIMEOUT)
+        self.assertLess(time.monotonic() - t0, 3.0)
+
+    def test_stream_error_event_classified(self):
+        ev = [("error", {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}})]
+        with ScriptedServer([("sse", ev, 0)]) as srv:
+            with self.assertRaises(ModelError) as cm:
+                AnthropicClient(self.cfg(srv.url, "anthropic_messages"), "k").complete(MSGS, [TOOL], timeout_s=5)
+        self.assertEqual(cm.exception.cls, ErrorClass.SERVER)
+
+    def test_anthropic_stream_keeps_thinking_signature_and_tool_input(self):
+        with ScriptedServer([("sse", AN_STREAM, 0)]) as srv:
+            turn = AnthropicClient(self.cfg(srv.url, "anthropic_messages"), "k").complete(MSGS, [TOOL], timeout_s=5)
+        self.assertTrue(srv.requests[0]["body"]["stream"])
+        self.assertEqual(turn.text, "Running.")
+        self.assertEqual(turn.tool_calls[0].arguments, {"command": "ls -la"})
+        self.assertEqual(turn.provider_raw[0], {"type": "thinking", "thinking": "hmm", "signature": "SIG"})
+        self.assertEqual((turn.usage.input_tokens, turn.usage.cache_read_tokens, turn.usage.output_tokens), (12, 100, 30))
+
+    def test_server_ignoring_stream_flag_returns_json(self):
+        with ScriptedServer([ok_openai()]) as srv:
+            turn = OpenAIChatClient(self.cfg(srv.url), "k").complete(MSGS, [TOOL], timeout_s=5)
+        self.assertEqual(turn.tool_calls[0].name, "bash")

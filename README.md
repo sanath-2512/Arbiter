@@ -77,7 +77,7 @@ Input can be one JSON object, a JSON array, or JSON Lines, from a file (`TASK=`)
 Profiles are TOML files in `profiles/`, strictly validated so unknown keys are errors. They pin the
 provider (`openai_chat` or `anthropic_messages`), the model and endpoint, and the tool protocol:
 `native` function calling, or an explicitly chosen `text` protocol. They also pin generation
-settings, limits and policy flags. `AI_MODEL`, `AI_BASE_URL` and `AI_PROVIDER` override the profile,
+settings, limits and policy flags. `model.stream = true` enables SSE streaming. `AI_MODEL`, `AI_BASE_URL` and `AI_PROVIDER` override the profile,
 and the result records which values came from overrides. Per-task `limits` from the evaluator take
 precedence.
 

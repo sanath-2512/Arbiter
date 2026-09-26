@@ -228,6 +228,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
         {"role": "user", "content": "Call the bash tool with the command `echo probe-ok`. Do nothing else."},
     ]
     report: dict[str, Any] = {"provider": profile.model.provider, "model": profile.model.name,
+                              "base_url": profile.model.base_url, "stream": profile.model.stream,
                               "tool_protocol": profile.model.tool_protocol, "live": profile.model.provider != "fake"}
     try:
         t0 = time.monotonic()
@@ -248,6 +249,19 @@ def cmd_probe(args: argparse.Namespace) -> int:
         report["usage_reported"] = turn.usage.known
     except ModelError as e:
         report["error"] = {"class": e.cls.value, "status": e.status, "message": e.message[:500]}
+    # The other transport mode, one request only, so the profile's `stream` choice is evidence-based.
+    import copy
+
+    alt = copy.deepcopy(profile.model)
+    alt.stream = not profile.model.stream
+    try:
+        t0 = time.monotonic()
+        alt_turn = make_client(alt).complete(msgs[:2], [tool], timeout_s=profile.model.request_timeout_s)
+        report["alternate_mode"] = {"stream": alt.stream, "latency_s": round(time.monotonic() - t0, 2),
+                                    "tool_call_ok": bool(alt_turn.tool_calls) and alt_turn.tool_calls[0].name == "bash",
+                                    "usage_reported": alt_turn.usage.known}
+    except ModelError as e:
+        report["alternate_mode"] = {"stream": alt.stream, "error": {"class": e.cls.value, "message": e.message[:300]}}
     print(json.dumps(redactor.obj(report), indent=2, default=str))
     return 0 if report.get("tool_call_ok") and report.get("tool_result_turn_ok") else 1
 

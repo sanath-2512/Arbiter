@@ -54,7 +54,7 @@ implementation brief.
 | Claim | Implemented | Deterministically tested | Live-tested | Benchmark-supported |
 |---|---|---|---|---|
 | End-to-end solve path (issue → model → tools → edit → check → export → record) | yes | yes: scripted model, and a scripted HTTP server through the real transport | **no** | no |
-| Endpoint compatibility (OpenAI/Anthropic, tool calls, usage) | yes | yes: local server, request shape, error classes | **no** | — |
+| Endpoint compatibility (OpenAI/Anthropic, tool calls, usage, streaming and non-streaming) | yes | yes: local server, request shape, error classes, SSE reassembly | **no** | — |
 | Candidate preservation and dominance restoration | yes | yes | no | no |
 | Artifact fidelity (add/delete/rename/mode/symlink/CRLF/binary/unicode paths) and clean reconstruction | yes | yes, including `git apply` in a fresh clone | no | — |
 | Failure handling (timeouts, descendants, runaway output, cancel, SIGTERM, SIGKILL + recovery, crash, budget exhaustion, context overflow, auth/quota/rate-limit/5xx) | yes | yes | no | — |
@@ -91,15 +91,19 @@ In result records, `model.live=true` only means requests went to a network endpo
    Pressure escalates on provider-reported overflow. No summariser model.
 6. **One solver session.** No reviewer model, no generated tests, no multi-candidate search. These
    stay conditional until paired evaluation shows they add correct submissions under the same budget.
-7. **Non-streaming HTTP via urllib.** Simplest failure semantics. A read timeout bounds a
-   non-streaming call. Revisit if the prescribed endpoint requires streaming.
+7. **HTTP via urllib; streaming is opt-in (`model.stream`).**
+   - Non-streaming is the default: it has the simplest failure semantics.
+   - Streaming (SSE) exists for endpoints that are slow enough to hit gateway idle timeouts, and it
+     enforces the total deadline mid-response. It is implemented for both providers and tested on
+     reassembly, cut streams, deadlines and error events.
+   - `make probe` measures both modes, so the choice rests on evidence.
 8. **Tests use `unittest`**, so `make test` has zero dependencies and works offline on the evaluator.
 
 ## 4. Runtime policies (defaults; each is a profile flag — unmeasured until live runs)
 
 | Policy | Default | Rationale | Measured? |
 |---|---|---|---|
-| `repo_overview` | on | Top-level listing + manifests in the first message saves 1–2 steps | no |
+| `repo_overview` | on | Top-level listing, manifests and manifest-derived test-command hints (marked unverified) in the first message save 1–2 steps | no |
 | `submit_review` | on, at most once | Flags an empty diff, new (possibly scratch) files, or no check since the last edit | no |
 | `recover_empty_final` | on (not after a confirmed model submit) | An empty patch cannot pass; the latest archived candidate can | no |
 | `dominance_selection` | on | Deterministic; only acts on conflicting evidence from the same check | no |
@@ -125,8 +129,8 @@ In result records, `model.live=true` only means requests went to a network endpo
     checkpoint, but only if someone runs it.
   - The in-place working tree at kill time may be mid-edit.
   - Conversation resumption is not supported; only finalisation is.
-- **Requests.** HTTP is non-streaming. A provider requiring streaming, or answering slower than
-  `request_timeout_s`, will fail with a classified timeout.
+- **Requests.** Non-streaming by default. Enable `model.stream` if the endpoint needs streaming or
+  is slow. A response slower than `request_timeout_s` fails with a classified timeout.
 - **Test-output parsing.** Heuristic; unrecognised output is `inconclusive`, never a pass.
 - **Process groups.** Processes that call `setsid()` escape process-group cleanup.
 - **Upstream quirks.** Pi sends `store` and `max_completion_tokens` (its upstream behaviour). Some
@@ -154,6 +158,9 @@ benchmark-specific hacks. The following conditional mechanisms wait for evidence
 | Research references (ExecCritic, SoL-Pi, BootstrapAgent, GEPA, HarnessOpt-Bench, Meerkat) | — | — | Not used in code. Their reported results are not our evidence. |
 
 ## 8. Current milestone and next actions
+
+Fixed request prefix: system prompt ~0.3k tokens + tool schemas ~0.9k (full set) or ~0.26k
+(bash-only).
 
 **Validated milestone.** A and B, deterministic only:
 - the full solve/export path;

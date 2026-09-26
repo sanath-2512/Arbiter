@@ -16,7 +16,7 @@ from typing import Any
 
 from gheerefill.config import ModelConfig
 from gheerefill.models.base import ErrorClass, ModelError, ModelTurn, ToolCall, ToolSpec, Usage
-from gheerefill.models.http import post_json
+from gheerefill.models.http import post_json, post_sse
 
 
 def normalize_openai_usage(usage: Any) -> Usage:
@@ -143,5 +143,50 @@ class OpenAIChatClient:
     def complete(self, messages: list[dict[str, Any]], tools: list[ToolSpec], *, timeout_s: float) -> ModelTurn:
         url = self.cfg.base_url.rstrip("/") + "/chat/completions"
         headers = {"Authorization": f"Bearer {self._api_key}", **self.cfg.extra_headers}
-        data = post_json(url, headers, self.build_body(messages, tools), timeout_s)
-        return self.parse_response(data)
+        body = self.build_body(messages, tools)
+        if not self.cfg.stream:
+            return self.parse_response(post_json(url, headers, body, timeout_s))
+        body["stream"] = True
+        if self.cfg.stream_usage:
+            body["stream_options"] = {"include_usage": True}
+        return self.parse_response(accumulate_openai_stream(post_sse(url, headers, body, timeout_s)))
+
+
+def accumulate_openai_stream(events) -> dict[str, Any]:
+    """Rebuild a non-streaming chat.completion dict from chat.completion.chunk events."""
+    content: list[str] = []
+    calls: dict[int, dict[str, Any]] = {}
+    finish = ""
+    usage = None
+    for kind, obj in events:
+        if kind == "json":
+            return obj
+        if kind == "done":
+            break
+        if obj.get("usage"):
+            usage = obj["usage"]
+        for ch in obj.get("choices") or []:
+            delta = ch.get("delta") or {}
+            if isinstance(delta.get("content"), str):
+                content.append(delta["content"])
+            for tc in delta.get("tool_calls") or []:
+                slot = calls.setdefault(int(tc.get("index", len(calls))), {"id": None, "name": "", "arguments": ""})
+                if tc.get("id"):
+                    slot["id"] = tc["id"]
+                fn = tc.get("function") or {}
+                if fn.get("name"):
+                    slot["name"] += fn["name"]
+                if fn.get("arguments"):
+                    slot["arguments"] += fn["arguments"]
+            if ch.get("finish_reason"):
+                finish = ch["finish_reason"]
+    message: dict[str, Any] = {"role": "assistant", "content": "".join(content)}
+    if calls:
+        message["tool_calls"] = [
+            {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"]}}
+            for _, c in sorted(calls.items())
+        ]
+    out: dict[str, Any] = {"choices": [{"message": message, "finish_reason": finish}]}
+    if usage is not None:
+        out["usage"] = usage
+    return out
