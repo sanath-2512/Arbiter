@@ -41,6 +41,8 @@ Setup" (received 2026-09-26).
 | Artifact fidelity (add/delete/rename/mode/symlink/CRLF/binary/unicode paths) and clean reconstruction | yes | yes, including `git apply` in a fresh clone | no | — |
 | Failure handling (timeouts, descendants, runaway output, cancel, SIGTERM, SIGKILL + recovery, crash, budget exhaustion, context overflow, auth/quota/rate-limit/5xx) | yes | yes | no | — |
 | Integrity observations (controller-state / harness-repo access, edits to existing tests) in every result; eval trajectory audit | yes | yes (incl. a simulated `evalsuite/hidden` peek during an eval run) | no | — |
+| Official procedure (`export AI_API_KEY; make setup; make run`; issue supplied as URL / text / file / JSON) | yes | yes (fake GitHub API + local remote, pty session, fresh-clone rehearsal) | no | — |
+| Credential isolation from model commands and target-repo git (Landlock + capability drop; self-verified) | yes | yes (real process chain, control run with sandbox off, fsmonitor exploit reproduction) | no | — |
 | Better than mini-swe-agent / Pi | — | — | — | **no data** |
 
 The eval pipeline has been exercised end to end for ours, mini-swe-agent and Pi against a
@@ -155,18 +157,30 @@ Fixed request prefix: system prompt ~0.3k tokens + tool schemas ~0.9k (full set)
 - 100+ unittest cases passing (`make test`);
 - a clean-checkout rehearsal (see §9).
 
-**Next concrete actions, in order:**
-1. When the organisers publish model, endpoint and protocol:
-   - pin them in `profiles/default.toml`;
-   - replace or extend `task.py` with the official adapter;
-   - run `make probe`, then `make smoke`.
-2. Run `scripts/eval.py --partition dev --systems ours,mini,pi --repeats 2` live and classify every
-   failure using the taxonomy below.
-3. Fix the largest observed failure class, then re-run the dev and selection partitions. Only then
-   run `final` once.
-4. Ablate the policies in §4, starting with `submit_review`, `final_recheck` and `repo_overview`,
-   against the default under matched budgets.
-5. Rehearse the live demo: `python3 scripts/demo_live.py`.
+**Next concrete actions, in order** (from the 2026-09-26 red-team review, which is published
+separately as the gheerefill Red-Team Review artifact):
+1. Build, no credentials needed:
+   - B4 syntax guard on edits;
+   - B1 execution-state ledger (exact staleness from tree ids);
+   - B2 counterfactual fail-before/pass-after checks of the model's own tests (hybrid base+tests tree);
+   - B3 differential regression guard (selected tests, base vs candidate, newly-failing only);
+   - B5 in-toto attestation with receipts, plus `verify` and `replay`;
+   - B6 seeded chaos testing of the controller, run last so it covers the new paths.
+2. With a real key:
+   - `make probe`, then `scripts/eval.py --partition dev --systems ours,mini,pi --repeats 2`;
+   - classify every failure.
+3. Decision rule, fixed in advance:
+   - keep a mechanism only if dev+selection loses no task the default solves and it saves ≥10% tokens,
+     or it solves ≥1 more task at ≤1.2× cost; otherwise remove it;
+   - run the final partition once, at the end.
+4. Prototypes gated on data:
+   - P1 environment preflight/bootstrap;
+   - P2 localisation hints;
+   - P3 confine-by-default plus egress allow-list;
+   - P4 pass^3 reporting;
+   - P5 real-repository dev partition;
+   - P6 early reproduction nudge.
+5. When a model is prescribed: pin it in `[model]`; add B7 (model-native edit dialect).
 
 **Failure taxonomy for live runs:** investigation failure · wrong interpretation · correct
 diagnosis/wrong patch · incomplete patch · verification failure · false-positive verification ·
