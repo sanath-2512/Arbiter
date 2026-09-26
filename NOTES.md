@@ -23,7 +23,7 @@ Setup" (received 2026-09-26).
 
 | Item | Current handling |
 |---|---|
-| Which model/provider is prescribed | Auto-resolution from the key format. Pin it in `profiles/default.toml` once announced. |
+| Which model/provider is prescribed | Organisers indicated Qwen and DeepSeek models. The `sk-` + 32-hex rule tries DeepSeek, then DashScope regions and QwenCloud (moving on only on 401); `sk-sp-` keys use the Coding Plan. Pin the exact model in `profiles/default.toml` once announced. |
 | How the issue is "supplied to the running harness" | Every plausible channel is supported (TTY URL/paste, `ISSUE=`, stdin, file, JSON). |
 | Whether the repository is pre-provisioned | `REPO=` for a provided checkout. A checkout of the issue's repository in the `make` directory, or at `/testbed`, is used in place; its `.git/config` is read as text. Otherwise the repository is cloned. |
 | Time/token limits, scoring | Defaults are 1800 s / 150 steps. Per-task limits are accepted; `TIME_LIMIT`/`MAX_STEPS` override both. |
@@ -45,6 +45,11 @@ Setup" (received 2026-09-26).
 | Artifact fidelity and clean reconstruction | yes | yes, including `git apply` in a fresh clone | no | — |
 | Credential isolation from model commands and target-repo git | yes | yes (real process chain with a control run) | no | — |
 | Official procedure (`export AI_API_KEY; make setup; make run` + URL/text/file/JSON; pty session) | yes | yes (fake GitHub API + local remote; bracketed paste and Ctrl-C through a pty) | no | — |
+| DeepSeek/Qwen wire behaviour (reasoning passback, null content next to calls, leaked DSML/XML/Hermes calls, `<think>`, moderation 400, stream-only, cache-hit fields, key resolution across vendors) | yes | yes: `scripts/provider_emulator.py` enforces each family's documented request rules and injects its documented output quirks at seeded rates; 8/8 seeds solved with 0 rule violations (`tests/test_provider_emulation.py`) | **no** (endpoints unreachable here) | no |
+| Attack catalogue: make metacharacters, POSIX locale, unreachable endpoint, empty input, no commits, detached HEAD + merge, awkward names, `rm -rf .git`, `git init`, `git stash`, dirty start, file-system refusals, 6000 files, 40-call flood, terminal noise, chatty model, 3 MB write, 1 MB issue, lock-file byproducts | yes | yes (`tests/test_attacks.py`); each break it found is fixed at the cause (§10) | — | — |
+| Real toolchains: Go, Rust, Node (`node --test`), Ruby (minitest) repositories solved end to end behind the emulators; runner output read as failed → passed | yes | yes (`tests/test_languages_e2e.py`) | no | — |
+| Task rows of the SWE-bench family; supplied tests applied, named, read-only to the model, kept out of the patch; reference solutions dropped on input | yes | yes (`tests/test_task_formats.py`, `tests/test_evaluation_tests.py`) | no | — |
+| Mechanism rehearsals on real pinned repositories (scripted policies: stuck loop, late regression, wrong generated test, stale edit, API faults, bad/missing key, SIGTERM/SIGKILL, budget exhaustion, hostile tools) | yes | expectations met 25/25 plain, 22/22 behind the DeepSeek emulator, 22/22 behind the Qwen emulator (`rehearsal/results/mechanisms*`) | — | not solve-rate evidence: the policy knows the fix |
 | Better than mini-swe-agent / Pi | — | — | — | **no data** |
 
 The eval pipeline has been exercised end to end for ours, mini-swe-agent and Pi against a
@@ -106,6 +111,18 @@ to the judge.
    Anthropic prompt caching is enabled. No summariser model.
 8. **HTTP via urllib.** Streaming is opt-in.
 9. **Tests use `unittest`**, so `make test` has zero dependencies and runs offline.
+10. **The target's `.git` is copied at start** (objects hard-linked, control files copied; up to
+    1 GB copied when hard links cross devices). A model command that removes or replaces it is
+    undone immediately and at finalisation, so an evaluator's `git diff` still works.
+11. **Two timeouts per model request.** `request_timeout_s` bounds each wait for data; the whole
+    response may take up to 4× that within the task deadline. Thinking models stream (or keep the
+    connection alive) for minutes; a single total cap had them killed and retried.
+12. **Reasoning passed back is shortened in steps of 8 turns**, not on a sliding window. A sliding
+    cut-off changes one old message per request and voids the provider's prefix cache for every
+    turn after it; stepped, the cached prefix changes once per step (`tests/test_context.py`).
+13. **Lenient edits only when exactly one region fits.** A read_file line-number gutter copied into
+    `old_str`, or indentation written differently (tabs vs spaces, a uniform offset), is matched and
+    `new_str` re-indented the same way; anything ambiguous is still refused with the nearest text.
 
 ## 5. Runtime policies (profile flags; unmeasured until live runs)
 
@@ -124,7 +141,17 @@ to the judge.
 ## 6. Known limitations
 
 - **No live validation yet.** Prompt quality, tool-use reliability, solve rate and the calibration
-  of the proof levels are unknown until the prescribed model is available.
+  of the proof levels are unknown until the prescribed model is available. This environment's
+  network policy blocked api.deepseek.com, dashscope*.aliyuncs.com, huggingface.co and ollama.com,
+  so neither the hosted APIs nor open weights could be exercised.
+- **The emulators are built from documentation and public issue reports** (§11), not from captured
+  traffic. A real deployment can differ; the adaptive paths (passback learned from the error text,
+  stream-only switch, parameter rejections) exist for that, but are verified only against the
+  emulated error messages.
+- **DashScope explicit cache markers are not sent.** Only implicit (automatic) prefix caching is
+  relied on; adding `cache_control` content parts risks a 400 on untested deployments.
+- **Two runs on the same local checkout at once are not protected** (clones in `workspace/` are).
+- **Token figures in the rehearsal results are estimates** (the emulators count characters / 4).
 - **Proof scope.**
   - A `proven` level covers only the checks that were run.
   - A wrong reproduction can make a wrong fix look proven. Cross-checking across attempts reduces
@@ -197,6 +224,28 @@ artifact/export failure · regression introduced · selector failure.
 
 ## 10. Rehearsal log
 
+### 2026-09-26 — attack catalogue, DeepSeek/Qwen emulation, real toolchains (commits 274d530 and later)
+- **Breaks found and fixed** (each has a regression test):
+  - `make run ISSUE='... $(shell cmd) ...'` ran `cmd` through make and mangled `$$`/`$(X)`: inputs
+    are now taken literally.
+  - `rm -rf .git` / `git init` by the model left the target without its history: restored.
+  - `git stash` then submit delivered an empty patch although the fix had passed its checks: the
+    latest passing candidate is delivered, and the notice names the vanished edits.
+  - A full SWE-bench row would have stored the gold `patch` in `task.json`, readable by the model:
+    reference-solution fields are dropped on input.
+  - `repo` + `repo_path`, or `id` + `task_id`, in one row rejected the whole task: priority order.
+  - Two parallel tasks of one repository could share a clone: per-clone lock.
+  - A Latin-1 source file crashed the edit tool's output path: non-UTF-8 text round-trips; OS and
+    Unicode errors become tool errors.
+  - A long streamed thinking answer was cut at 300 s total and retried: gap and total are separate.
+  - `cargo test` put `Cargo.lock` into the patch: lock-file byproducts are left out.
+  - An empty `ISSUE="   "` is treated as no issue (exit 0, "no task supplied", no model call).
+- **Mechanism matrices** (scripted policies on real repositories, harness 084e5d6+dirty): 25/25
+  expectations met plain; 22/22 behind the DeepSeek emulator; 22/22 behind the Qwen emulator.
+- **Suite:** 282 tests pass; `make chaos N=40`: 0 invariant violations.
+- **Clean machine** (`scripts/clean_machine.sh`, Python 3.9): results in
+  `rehearsal/results/clean_machine-python3.9.23.json`.
+
 ### 2026-09-26 — rehearsal on commit 3823c1a
 - Procedure: fresh `git clone`, AI_* variables unset.
 - `make setup`: ok, offline, 0.2 s.
@@ -219,3 +268,15 @@ artifact/export failure · regression introduced · selector failure.
     the one bug it found (a non-`ModelError` client exception went uncounted).
   - `make demo` shows `PROVEN`: the reproduction and the unittest suite both fail on the original
     code and pass on the patch. `gheerefill verify --rerun` reproduces both verdicts.
+
+## 11. DeepSeek and Qwen: behaviours handled, and sources
+
+| Behaviour | Source | Handling |
+|---|---|---|
+| Thinking mode on by default; `reasoning_content` must be passed back on assistant turns with tool calls, else 400 | [DeepSeek thinking mode](https://api-docs.deepseek.com/guides/thinking_mode/); agent reports [opencode#24566](https://github.com/anomalyco/opencode/issues/24566), [opencode#24722](https://github.com/anomalyco/opencode/issues/24722), [opencode#24114](https://github.com/anomalyco/opencode/issues/24114) | `reasoning_passback = "auto"`; learned from the error text when a deployment wants all turns or none |
+| DSML tool-call format (V4: `<｜DSML｜tool_calls>`; V4.1: spaced tags) leaking into `content` | [V4-Pro encoding](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/blob/main/encoding/README.md), [V4.1-Flash encoding](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/main/encoding/README.md), [DeepSeek-V3#1244](https://github.com/deepseek-ai/DeepSeek-V3/issues/1244), [V4-Pro discussion 209](https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/discussions/209) | Recovered as tool calls (offered tools only) |
+| DeepSeek usage `prompt_cache_hit_tokens`/`prompt_cache_miss_tokens`; 402 Insufficient Balance; keep-alive lines | [DeepSeek API docs](https://api-docs.deepseek.com/) | Cache reads counted; quota exits 3; keep-alive tolerated |
+| DashScope OpenAI-compatible endpoints per region; `enable_thinking`; thinking models stream-only | [OpenAI compatibility](https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope), [deep thinking](https://www.alibabacloud.com/help/en/model-studio/deep-thinking), [API keys and regions](https://www.alibabacloud.com/help/en/model-studio/get-api-key) | Region candidates; switch to streaming on the stream-only error |
+| Qwen function calling; Qwen3-Coder trained on XML `<function=...>` and `str_replace_editor` | [Qwen function calling](https://www.alibabacloud.com/help/en/model-studio/qwen-function-calling), [Qwen Code](https://www.alibabacloud.com/help/en/model-studio/qwen-code) | XML/Hermes recovery; `str_replace_editor` and Qwen Code tool names translated |
+| Error codes: `data_inspection_failed` (moderation), "Range of input length should be [1, N]" (overflow), Arrearage | [Model Studio error codes](https://www.alibabacloud.com/help/en/model-studio/error-code) | Content-filter retry with recent output withheld; overflow reduces context; quota exits 3 |
+| Coding Plan keys (`sk-sp-`) and endpoints | [Coding Plan FAQ](https://www.alibabacloud.com/help/en/model-studio/coding-plan-faq) | Separate rule |

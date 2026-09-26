@@ -11,9 +11,11 @@ running code, that:
 Then it exports a patch that is verified byte-for-byte, with an attestation anyone can re-check
 offline.
 
-> **Status:** implemented and deterministically tested: 177 tests, plus 200 fault-injection seeds
-> with 0 invariant violations. **Not yet live-validated.** The organisers have not yet supplied the
-> prescribed model and a key, so no result here comes from a real model call. See
+> **Status:** implemented and deterministically tested: 282 tests (including an attack catalogue,
+> DeepSeek- and Qwen-like endpoint emulators, and real Go/Rust/Node/Ruby toolchains), 200
+> fault-injection seeds with 0 invariant violations, and scripted rehearsals on 22 real pinned
+> repository tasks. **Not yet live-validated.** No result here comes from a real model call: this
+> environment could not reach DeepSeek or Alibaba Cloud endpoints and no key was used. See
 > [NOTES.md](NOTES.md) for every claim and its evidence.
 
 ```text
@@ -47,6 +49,7 @@ make run ISSUE=https://github.com/OWNER/REPO/issues/123        # clone + fetch i
 make run ISSUE="text of the issue" REPO=/path/to/repo         # local repository
 make run TASK=tasks.jsonl TIME_LIMIT=900 MAX_STEPS=80         # JSON tasks, explicit limits
 make run ISSUE=... BASE=before-issue                          # historical base for a closed issue
+make run TASK=swe_instances.jsonl                             # SWE-bench-style rows (see below)
 ```
 
 - `make run` never prompts without a terminal, and exits 0 when no input is given.
@@ -83,7 +86,9 @@ make run ISSUE=... BASE=before-issue                          # historical base 
      does not;
    - on the patched code.
 
-   Failing test names are compared (pytest, unittest, go, cargo, jest, rspec, junit). The result is
+   Failing test names are compared (pytest, unittest, go, cargo, jest/vitest, mocha, TAP/node
+   --test, minitest, rspec, junit/maven, gradle, phpunit, dotnet, ctest, ExUnit, XCTest, deno). The
+   result is
    the **fail→pass** set (the fix is demonstrated) and the **pass→fail** set (regressions, reported
    to the model by name).
 5. **Decide by evidence.** Each candidate gets a deterministic level:
@@ -114,6 +119,38 @@ Why this design: see [NOTES.md](NOTES.md#why-this-design) for the evidence behin
 (LangChain's harness-only gains, Agentless, TestPrune, CodeT, SWE-Replay, the 2026 harness-design
 study).
 
+## Tasks that carry tests (SWE-bench family)
+
+`TASK=` accepts JSON / JSON Lines rows as the benchmarks publish them: SWE-bench (and Verified,
+Lite, Gym, smith, rebench), SWE-bench Pro (`requirements` and `interface` are added to the issue),
+Multi-SWE-bench (`org`, `resolved_issues`, `base.sha`, `f2p_tests`) and SWE-PolyBench (`F2P`,
+`P2P`, `test_command`). A `repo` slug is cloned at `base_commit`; a local checkout (`repo_path`)
+wins over the slug and is moved to `base_commit` when clean.
+
+- **Supplied tests** (`test_patch`, `FAIL_TO_PASS`, `PASS_TO_PASS`, `test_command`) are applied to
+  the working tree before the first step and named in the prompt, with a runnable command where
+  the name format tells the runner (pytest ids, Django labels, Go names). The model cannot pass by
+  weakening them: `edit_file`/`write_file` refuse those files, and shell edits to them are undone
+  at submit. They stay out of the patch, because the evaluator applies its own copy.
+- **Reference solutions** in a row (`patch`, `fix_patch`, `canonical_solution`, ...) are dropped
+  on input. They are never stored, never shown to the model, and only their field names are
+  recorded.
+
+## Qwen and DeepSeek
+
+DeepSeek and Alibaba Cloud (DashScope, QwenCloud) both issue `sk-` + 32-hex keys. The one rule for
+that format tries DeepSeek, then the DashScope regions and QwenCloud, and moves on only when an
+endpoint answers 401. `sk-sp-` keys go to the Coding Plan endpoints. `AI_BASE_URL` alone points at
+a self-hosted vLLM/SGLang/Ollama server, and a Qwen or DeepSeek coder is chosen from its model list.
+
+| Behaviour of these models and APIs | What the harness does |
+|---|---|
+| Thinking mode: `reasoning_content` must be sent back on tool-call turns (400 otherwise) | Sent back, learned from the error if a deployment wants more or none; old reasoning is shortened in 8-turn steps so the provider's prompt cache survives |
+| Tool calls written into the text (DeepSeek DSML and `<｜tool▁call▁begin｜>`, Qwen3-Coder XML, Hermes `<tool_call>` JSON) | Recovered for offered tools only; recorded in `model_quirks` |
+| `<think>` blocks in the content, Python-literal or double-encoded arguments, trailing commas | Split out or repaired |
+| Other agents' tool vocabularies (`str_replace_editor`, `run_shell_command`, `python`, `Glob`, `Read` offset/limit, Codex argv, Cline SEARCH/REPLACE) | Translated to the offered tools |
+| Stream-only models, moderation rejections (`data_inspection_failed`), `Insufficient Balance`, long thinking answers | Switch to streaming; withhold recent tool output and retry; exit 3; a 300 s idle-gap timeout with the whole answer allowed up to 20 minutes within the task deadline |
+
 ## Robustness and safety
 
 | Mechanism | What it guarantees |
@@ -123,6 +160,9 @@ study).
 | **Credential isolation** | Model commands, and the harness's git calls into the target, run in a Linux Landlock domain with the ptrace-type capabilities dropped. They cannot read the environment of the harness, `make` or the evaluator's shell. This needs no root, container or packages, and is verified by a self-test at startup. The harness also scrubs the key from its own memory image, and the key is only ever sent to the one endpoint its format maps to. |
 | **Bounded, honest accounting** | A monotonic deadline and a finalisation reserve. Every request attempt is counted. Interrupted or failed requests are recorded as usage-unknown, never zero. |
 | **Provider tolerance** | Errors are classified and retried within bounds, deadline-aware and honouring Retry-After. The harness adapts to parameter rejections: an output-token cap, `max_tokens` vs `max_completion_tokens`, temperature. Restricted keys that cannot list models still work. Anthropic prompt caching is on. Streaming is optional. |
+| **Repository damage by the model** | `rm -rf .git`, `git init`, commits, branch switches, staging and `git stash` are undone: the target's `.git` is copied at start (objects hard-linked) and put back, HEAD and index are restored, a stash entry created during the run is removed, and a verified fix that was stashed away is still delivered. |
+| **Hostile inputs** | `$(shell ...)`, quotes and `$$` in `ISSUE=` are passed literally. Issues of megabytes are capped in the prompt and kept whole in a file. Tool-call floods are capped at 12 per reply. Terminal control sequences are cleaned. File-system refusals become tool errors. Lock files written by `cargo test` or `npm install` stay out of the patch. See `tests/test_attacks.py`. |
+| **Parallel runs** | Concurrent runs never share a workspace clone (per-clone lock), and each has its own run directory. |
 | **Safe repository memory** | Later runs on the same repository see facts the harness *observed by execution*: test commands that ran, and installs that succeeded. Never code, patches or issue text. |
 
 ## Configuration
@@ -171,7 +211,9 @@ gheerefill/   runtime (stdlib only)
   _vendor/tomli (MIT; only on Python 3.9/3.10)
 profiles/     run profiles (default.toml is the submission profile)
 tests/        deterministic unittest suite (no network, no credentials)
-scripts/      setup, py.sh, chaos (fault injection), eval, examples, live demo
+scripts/      setup, py.sh, chaos (fault injection), eval, examples, live demo, provider_emulator
+              (DeepSeek-/Qwen-like endpoints), rehearsal (Judge Rehearsal Lab), clean_machine.sh
+rehearsal/    Judge Rehearsal Lab: 22 validated real pinned tasks, manifests, results
 evalsuite/    dev evaluation tasks: evaluation boundary, never read by the runtime
 baselines/    pinned upstream baselines (dev only)
 docs/         proof-v1.md (attestation predicate)
