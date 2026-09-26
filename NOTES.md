@@ -184,3 +184,16 @@ regression introduced · selector failure.
 
 See the entry appended below by the rehearsal procedure (fresh `git clone` → `make setup` →
 `make test` → `make run` with the scripted demo profile).
+
+### 2026-09-26 — rehearsal on commit 3823c1a (+ fixes in the following commit)
+Procedure: `git clone -b claude/modest-dirac-h7ees8` into an empty directory, with AI_* variables unset.
+- `make setup`: ok, offline, 0.2 s. It picked `/usr/bin/python3.13`.
+- `make test`: 100 tests OK (1 skipped: baselines are not installed in a fresh clone).
+- `make run TASK=… </dev/null` without credentials: exit 2. Each task gets a `configuration_error`
+  record ("model.name is not configured … never substitutes a default model"). The repo is untouched.
+- `make demo` (scripted model): `completed / model_submitted / submission_ready=true / checks_passed`,
+  labelled `live=false`.
+- Found and fixed: one *test* file used a Python 3.12-only f-string, so `make test` failed on 3.11.
+  The runtime itself compiled on 3.11. Added `tests/test_compat.py`. All tests now pass on 3.11,
+  3.12 and 3.13.
+- Not rehearsed: anything live (no credentials or model), and the official task protocol (not published).

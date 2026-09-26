@@ -16,7 +16,8 @@ class TaskAdapterTest(TempDirCase):
 
     def test_jsonl_with_blank_lines_and_malformed_line(self):
         good = json.dumps({"task_id": "a", "repo_path": str(self.repo), "issue": "x"})
-        items = self.read(f"\n{good}\n{{not json\n\n{good.replace('\"a\"', '\"b\"')}\n")
+        other = good.replace('"a"', '"b"')
+        items = self.read(f"\n{good}\n{{not json\n\n{other}\n")
         self.assertEqual([type(i).__name__ for i in items], ["Task", "TaskInputError", "Task"])
         self.assertIn(":3", items[1].location)
         self.assertEqual(items[2].task_id, "b")
