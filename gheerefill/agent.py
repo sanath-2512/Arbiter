@@ -35,6 +35,7 @@ from gheerefill.models.base import AttemptRecord, ErrorClass, ModelClient, Model
 from gheerefill.outputs import OutputArchive
 from gheerefill import prompts
 from gheerefill.records import Redactor, append_jsonl, atomic_write_bytes, atomic_write_json
+from gheerefill.sandbox import Sandbox, confine_paths
 from gheerefill.shell import read_output_file, run_shell, tool_environment
 from gheerefill.task import Task
 from gheerefill.tools import ToolBox, ToolResult
@@ -97,6 +98,8 @@ class Agent:
         self.recent_actions: list[tuple[str, str]] = []
         self.repetition_warned: set[tuple[str, str]] = set()
         self.target_git_initial = None
+        self.target_git_fp_initial = None
+        self.sandbox: Sandbox | None = None
         self.base_ignored: set[str] = set()
         self.submit_summary = ""
         self.integrity: dict[str, list[dict[str, Any]]] = {"controller_state_access": [], "harness_repo_access": []}
@@ -147,6 +150,7 @@ class Agent:
                 "step": self.budget.steps,
                 "termination": self.termination,
                 "target_git_initial": self.target_git_initial.to_dict() if self.target_git_initial else None,
+                "target_git_fingerprint": self.target_git_fp_initial,
                 "base_ignored": sorted(self.base_ignored),
                 "updated_at": time.time(),
             },
@@ -209,6 +213,9 @@ class Agent:
 
         agent = cls(task, profile, _NoModel(), Path(run_dir), env=env, log=log)
         agent.ws = Workspace(task.repo_path, Path(run_dir))
+        agent.sandbox = Sandbox(profile.policy.sandbox if profile.policy.sandbox != "confine" else "key").probe()
+        if agent.sandbox.active:
+            agent.ws.wrap = agent.sandbox.wrap
         agent.ws.attach(state["base_tree"])
         agent.base_tree = state["base_tree"]
         agent.history = list(state.get("history") or [state["base_tree"]])
@@ -218,6 +225,7 @@ class Agent:
         agent.records = [VerificationRecord(**d) for d in read_jsonl(Path(run_dir) / "evidence.jsonl")]
         tg = state.get("target_git_initial")
         agent.target_git_initial = TargetGitState(**tg) if tg else None
+        agent.target_git_fp_initial = state.get("target_git_fingerprint")
         agent.base_ignored = set(state.get("base_ignored") or [])
         agent.budget.steps = int(state.get("step") or 0)
         for d in read_jsonl(Path(run_dir) / "requests.jsonl"):
@@ -237,8 +245,16 @@ class Agent:
         atomic_write_json(self.run_dir / "task.json", self.task.to_dict())
         atomic_write_json(self.run_dir / "profile.json", self.redactor.obj(self.profile.to_dict()))
         self.scratch = self.run_dir / "scratch"
+        self.scratch.mkdir(parents=True, exist_ok=True)
         self.archive = OutputArchive(self.run_dir / "outputs", self.redactor)
         self.ws = Workspace(self.task.repo_path, self.run_dir)
+        mode = self.profile.policy.sandbox
+        self.sandbox = Sandbox(mode, confine_paths(self.ws.repo, self.scratch.resolve()) if mode == "confine" else []).probe()
+        if self.sandbox.active:
+            self.ws.wrap = self.sandbox.wrap
+        self.log("sandbox: " + ("active — " + self.sandbox.status["verified"] if self.sandbox.active
+                                else f"inactive ({self.sandbox.status.get('reason')})"))
+        self.target_git_fp_initial = self.ws.target_git_fingerprint()
         self.target_git_initial = self.ws.target_git_state()
         self.base_tree = self.ws.init()
         self.last_tree = self.base_tree
@@ -250,6 +266,7 @@ class Agent:
         self.tools = ToolBox(
             self.task.repo_path, self.scratch, self.archive, self.profile.tools, tool_env,
             time_budget=self.budget.work_remaining, should_cancel=lambda: self.cancel_requested,
+            wrap=self.sandbox.wrap if self.sandbox.active else None,
         )
         self.specs = list(self.tools.specs.values())
         overview = prompts.repo_overview(self.tools.repo) if self.profile.policy.repo_overview else ""
@@ -430,6 +447,15 @@ class Agent:
                 self._append({"role": "user", "content": prompts.REPETITION.format(n=n)})
         return res
 
+    def _git_tamper(self) -> dict[str, Any] | None:
+        """Compare the target's .git config/hooks with their state at the start of the run."""
+        if self.ws is None or self.target_git_fp_initial is None:
+            return None
+        now = self.ws.target_git_fingerprint()
+        if now == self.target_git_fp_initial:
+            return None
+        return {"before": self.target_git_fp_initial, "after": now}
+
     def _audit_access(self, call: ToolCall) -> None:
         """Record (not block) references to controller-owned state or the harness repository.
         Observations for audit only: without OS isolation these cannot be enforced."""
@@ -483,7 +509,8 @@ class Agent:
         oid, out_path = self.archive.allocate()
         r = run_shell(last.command, cwd=self.tools.repo, env=self.tools.env,
                       timeout_s=min(self.profile.tools.bash_timeout_s, available), output_path=out_path,
-                      max_output_bytes=self.profile.tools.max_output_bytes, should_cancel=lambda: self.cancel_requested)
+                      max_output_bytes=self.profile.tools.max_output_bytes, should_cancel=lambda: self.cancel_requested,
+                      wrap=self.tools.wrap)
         self.archive.redact_file(out_path)
         text = read_output_file(out_path)
         post = self.ws.snapshot()
@@ -570,6 +597,7 @@ class Agent:
                     "modified_existing_test_files": [f["path"] for f in files if f["status"] in "MDR"
                                                      and TEST_PATH_RE.search(f.get("old_path") or f["path"])],
                     "added_test_files": [f["path"] for f in files if f["status"] == "A" and TEST_PATH_RE.search(f["path"])],
+                    "target_git_control_files_changed": self._git_tamper(),
                     **{k: v[:20] for k, v in self.integrity.items()},
                 },
                 "verification": {
@@ -609,6 +637,7 @@ class Agent:
                 "overrides": self.profile.overrides,
             },
             "status": "infrastructure_error",
+            "isolation": self.sandbox.status if self.sandbox else None,
             "termination": self.termination,
             "submission_ready": False,
             "submit_summary": self.submit_summary,

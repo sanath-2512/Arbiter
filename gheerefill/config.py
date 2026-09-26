@@ -101,6 +101,9 @@ class PolicyConfig:
     budget_notices: bool = True
     repetition_notice: bool = True
     git_hygiene: bool = True
+    # Model commands and target-repo git calls run in a Landlock domain: "key" isolates the
+    # credential (no file-system restriction), "confine" also limits writes, "off" disables.
+    sandbox: str = "key"
     context_reduce_at: float = 0.65
     keep_recent_messages: int = 10
 
@@ -213,6 +216,8 @@ def validate(profile: Profile, *, require_model: bool = True) -> None:
         raise ConfigError("limits.time_limit_s and limits.max_steps must be positive")
     if lim.finalize_reserve_s < 0 or lim.finalize_reserve_s >= lim.time_limit_s:
         raise ConfigError("limits.finalize_reserve_s must be >= 0 and < time_limit_s")
+    if profile.policy.sandbox not in ("off", "key", "confine"):
+        raise ConfigError("policy.sandbox must be 'off', 'key' or 'confine'")
     if not 0.1 <= profile.policy.context_reduce_at <= 0.95:
         raise ConfigError("policy.context_reduce_at must be within [0.1, 0.95]")
     if m.max_output_tokens <= 0 or m.context_window <= m.max_output_tokens:

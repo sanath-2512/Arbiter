@@ -96,10 +96,13 @@ def run_shell(
     output_path: Path,
     max_output_bytes: int,
     should_cancel: Callable[[], bool] | None = None,
+    wrap: Callable[[list[str]], list[str]] | None = None,
 ) -> ShellResult:
     """Run a command in its own process group; stream merged stdout/stderr through a pipe into
     `output_path`, stopping (and killing the group) once `max_output_bytes` is reached."""
     argv = ["bash", "-c", command] if isinstance(command, str) else list(command)
+    if wrap is not None:
+        argv = wrap(argv)
     t0 = time.monotonic()
     timed_out = cancelled = False
     state = {"bytes": 0, "limit_hit": False}

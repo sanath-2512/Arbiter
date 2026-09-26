@@ -173,6 +173,7 @@ class ToolBox:
         *,
         time_budget: Callable[[], float] = lambda: 1e9,
         should_cancel: Callable[[], bool] | None = None,
+        wrap: Callable[[list[str]], list[str]] | None = None,
     ):
         self.repo = Path(os.path.realpath(repo))
         self.scratch = Path(os.path.realpath(scratch))
@@ -182,6 +183,7 @@ class ToolBox:
         self.env = env
         self.time_budget = time_budget
         self.should_cancel = should_cancel
+        self.wrap = wrap
         self.specs = {s.name: s for s in tool_specs(cfg)}
         self._rg = shutil.which("rg")
 
@@ -261,6 +263,7 @@ class ToolBox:
             output_path=out_path,
             max_output_bytes=self.cfg.max_output_bytes,
             should_cancel=self.should_cancel,
+            wrap=self.wrap,
         )
         self.archive.redact_file(out_path)
         text = self.archive.redactor.text(read_output_file(out_path, LARGE_OUTPUT_BYTES))
@@ -384,6 +387,7 @@ class ToolBox:
             output_path=out_path,
             max_output_bytes=self.cfg.max_output_bytes,
             should_cancel=self.should_cancel,
+            wrap=self.wrap,
         )
         text = read_output_file(out_path, LARGE_OUTPUT_BYTES)
         if r.timed_out:

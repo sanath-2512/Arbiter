@@ -73,6 +73,17 @@ class WorkspaceError(RuntimeError):
     pass
 
 
+# Config keys that make git execute programs; forced off for every call into the target repo.
+TARGET_GIT_HARDENING = [
+    "-c", "core.fsmonitor=false",
+    "-c", "core.hooksPath=/dev/null",
+    "-c", "core.pager=cat",
+    "-c", "core.untrackedCache=false",
+    "-c", "credential.helper=",
+    "-c", "protocol.allow=never",
+]
+
+
 def _clean_env() -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env["GIT_CONFIG_NOSYSTEM"] = "1"
@@ -114,6 +125,7 @@ class Workspace:
         self.gitdir = self.state_dir / "shadow.git"
         self.index = self.gitdir / "gheerefill-index"
         self.base_tree: str | None = None
+        self.wrap = None  # optional argv wrapper (sandbox) for target-repo git calls
 
     # -------------------------------------------------------------- plumbing
     def _env(self, work_tree: Path | None = None, index: Path | None = None) -> dict[str, str]:
@@ -130,17 +142,37 @@ class Workspace:
     def target_is_git(self) -> bool:
         if not (self.repo / ".git").exists():
             return False
-        p = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=self.repo, capture_output=True,
-                           env={k: v for k, v in os.environ.items() if not k.startswith("GIT_")})
-        return p.returncode == 0
+        return self._target_git("rev-parse", "--is-inside-work-tree").returncode == 0
 
     def _target_git(self, *args: str, check: bool = False) -> subprocess.CompletedProcess:
-        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-        env["GIT_TERMINAL_PROMPT"] = "0"
-        p = subprocess.run(["git", *args], cwd=self.repo, capture_output=True, env=env, timeout=300)
+        """Run git against the TARGET repository's own .git. The model can edit that repository's
+        config (e.g. core.fsmonitor, hooks, filters), which git would execute. Defences: overrides for
+        the executing keys, a minimal environment with no credentials, and (when available) the same
+        Landlock domain as model commands, so anything that still runs cannot read the key."""
+        env = {k: os.environ[k] for k in ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "USER") if k in os.environ}
+        env.update(GIT_TERMINAL_PROMPT="0", GIT_CONFIG_NOSYSTEM="1")
+        argv = ["git", *TARGET_GIT_HARDENING, "-c", f"safe.directory={self.repo}", *args]
+        if self.wrap is not None:
+            argv = self.wrap(argv)
+        p = subprocess.run(argv, cwd=self.repo, capture_output=True, env=env, timeout=300)
         if check and p.returncode != 0:
             raise WorkspaceError(f"target git {' '.join(args)} failed: {p.stderr.decode(errors='replace')[:500]}")
         return p
+
+    def target_git_fingerprint(self) -> dict[str, Any] | None:
+        """Tamper evidence for the target's git control files (config, hooks, info/attributes)."""
+        gd = self.repo / ".git"
+        if not gd.is_dir():
+            return None
+        import hashlib
+
+        def digest(p: Path) -> str | None:
+            return hashlib.sha256(p.read_bytes()).hexdigest()[:16] if p.is_file() else None
+
+        hooks = gd / "hooks"
+        active = sorted(h.name for h in hooks.iterdir() if h.is_file() and not h.name.endswith(".sample")) \
+            if hooks.is_dir() else []
+        return {"config": digest(gd / "config"), "hooks": active, "info_attributes": digest(gd / "info" / "attributes")}
 
     # -------------------------------------------------------------- lifecycle
     def init(self) -> str:
