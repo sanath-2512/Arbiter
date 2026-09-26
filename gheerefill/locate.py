@@ -12,6 +12,7 @@ localization.json. The harness never acts on it.
 
 from __future__ import annotations
 
+import fnmatch
 import math
 import re
 import time
@@ -40,6 +41,42 @@ FRAME = re.compile(r'File "([^"]+)", line (\d+)')
 BACKTICK = re.compile(r"`([^`\n]{2,80})`")
 DEFINITION = r"(?:def|class|function|func|fn|interface|struct|type|enum|trait|module|record)\s+{name}\b|" \
              r"\b{name}\s*(?:=|:)\s*(?:function\b|\(|lambda\b|async\b)"
+
+
+# Trees that rarely hold the fix and can be huge: read last (GitHub linguist's vendor/generated conventions)
+PERIPHERAL_DIR = re.compile(r"^(vendor(ed)?|third[_-]?party|3rd[_-]?party|externals?|extern|node_modules|"
+                            r"bower_components|site-packages|dist|build|gen|_{0,2}generated_{0,2})([_.-].*)?$", re.I)
+MINIFIED = re.compile(r"[.-]min\.(js|mjs|css)$|\.bundle\.(js|mjs)$", re.I)
+DOTTED = re.compile(r"(?<![\w.])([A-Za-z_]\w*(?:\.[A-Za-z_]\w*){2,})(?![\w.])")
+
+
+def linguist_patterns(repo: Path) -> list[str]:
+    """Paths `.gitattributes` marks linguist-generated or linguist-vendored."""
+    out = []
+    try:
+        lines = (repo / ".gitattributes").read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        parts = line.split()
+        if len(parts) >= 2 and not parts[0].startswith("#") and any(
+                a.split("=")[0] in ("linguist-generated", "linguist-vendored") and not a.endswith("=false")
+                for a in parts[1:]):
+            out.append(parts[0].lstrip("/"))
+    return out
+
+
+def peripheral(path: str, linguist: list[str] = ()) -> bool:
+    parts = path.split("/")
+    if any(PERIPHERAL_DIR.match(d) for d in parts[:-1]) or MINIFIED.search(parts[-1]):
+        return True
+    for pat in linguist:
+        if "/" in pat.rstrip("/"):
+            if fnmatch.fnmatch(path, pat) or fnmatch.fnmatch(path, pat.rstrip("/*") + "/*"):
+                return True
+        elif fnmatch.fnmatch(parts[-1], pat) or pat.rstrip("/") in parts[:-1]:
+            return True
+    return False
 
 
 def split_ident(tok: str) -> list[str]:
@@ -166,24 +203,47 @@ def import_graph(targets: list[str], texts: dict[str, str], fileset: set[str], r
 
 def localize(issue: str, repo: Path, files: list[str], *, time_budget_s: float = 3.0,
              byte_budget: int = 40 * 1024 * 1024, top: int = 6) -> dict[str, Any]:
+    from gheerefill.proof import is_test_path
+
     t0 = time.monotonic()
     src = [f for f in files if Path(f).suffix.lower() in SOURCE_EXT]
     fileset = set(files)
+    linguist = linguist_patterns(repo)
     out: dict[str, Any] = {"files_named": [], "definitions": [], "ranked": [], "complete": True}
 
-    # 1a. paths and stack frames named in the issue
+    # 1a. paths and stack frames named in the issue, and dotted module references (pkg.module.Name)
     named = [m[0] for m in PATH_IN_TEXT.findall(issue)] + [m[0] for m in FRAME.findall(issue)]
     for p in dict.fromkeys(named):
         p = p.lstrip("./")
         hits = [p] if p in fileset else [f for f in src if f.endswith("/" + p) or p.endswith("/" + f)]
         if 0 < len(hits) <= 3:
             out["files_named"] += [h for h in hits if h not in out["files_named"]]
+    for ref in dict.fromkeys(DOTTED.findall(issue)):
+        parts = ref.split(".")
+        if "." + parts[-1].lower() in SOURCE_EXT:
+            continue  # a file name, handled above
+        for k in (len(parts), len(parts) - 1):  # the module itself, or the module holding an attribute
+            mod = "/".join(parts[:k])
+            hits = [f for f in src if any(f == c or f.endswith("/" + c) for c in (mod + ".py", mod + "/__init__.py"))]
+            hits = [h for h in hits if not peripheral(h, linguist)] or hits
+            if 0 < len(hits) <= 3:
+                out["files_named"] += [h for h in hits if h not in out["files_named"]]
+                break
 
-    # 2. read sources (bounded) for definitions and BM25
+    # 2. read sources (bounded) for definitions and BM25. Order matters when the budget runs out on a
+    # large repository: code before tests, vendored/generated trees last, and paths that share words
+    # with the issue first within each group (depth-first order would spend it all on shallow tests).
+    issue_terms = set(terms(issue))
+
+    def read_order(f: str) -> tuple:
+        p = Path(f)
+        near = set(split_ident(p.stem)) | {t for d in p.parent.parts for t in split_ident(d)}
+        return peripheral(f, linguist), is_test_path(f), -min(len(near & issue_terms), 2), f.count("/"), f
+
     docs: dict[str, Counter] = {}
     texts: dict[str, str] = {}
     used = 0
-    for f in sorted(src, key=lambda f: (f.count("/"), f)):
+    for f in sorted(src, key=read_order):
         if time.monotonic() - t0 > time_budget_s * 0.6 or used > byte_budget:
             out["complete"] = False
             break
@@ -213,9 +273,8 @@ def localize(issue: str, repo: Path, files: list[str], *, time_budget_s: float =
                 m = pat.search(text)
                 if m:
                     out["definitions"].append({"name": name, "path": f, "line": text.count("\n", 0, m.start()) + 1})
-        from gheerefill.proof import is_test_path
-
-        defs = sorted(out["definitions"], key=lambda d: (is_test_path(d["path"]), idents.index(d["name"]), d["path"]))
+        defs = sorted(out["definitions"], key=lambda d: (peripheral(d["path"], linguist), is_test_path(d["path"]),
+                                                         idents.index(d["name"]), d["path"]))
         per: dict[str, int] = {}
         kept = []
         for d in defs:
@@ -242,7 +301,7 @@ def localize(issue: str, repo: Path, files: list[str], *, time_budget_s: float =
                     s += qtf * idf * tf * (k1 + 1) / (tf + k1 * (1 - b + b * length / avg))
             if s > 0:
                 scores.append((s, f))
-        scores.sort(key=lambda x: (-x[0], x[1]))
+        scores.sort(key=lambda x: (peripheral(x[1], linguist), -x[0], x[1]))  # vendored copies after the real code
         out["ranked"] = [{"path": f, "score": round(s, 2)} for s, f in scores[:top]]
     # 3. where the likely files sit in the import graph (callers; tests that import them)
     targets = list(dict.fromkeys(out["files_named"] + [d["path"] for d in out["definitions"]]

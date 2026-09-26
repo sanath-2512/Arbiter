@@ -2,6 +2,7 @@
 reproductions and adaptive attempts (scripted model; deterministic)."""
 
 import json
+from unittest import mock
 
 from gheerefill import proof
 from gheerefill.evidence import VerificationRecord
@@ -210,6 +211,31 @@ class ReproductionFlowTest(TempDirCase):
         self.assertEqual(attempts[0]["termination"], "attempt_budget")
         self.assertEqual(result["proof"]["level"], "proven")
         self.assertEqual((self.repo / "calc/ops.py").read_text(), "def divide(a, b):\n    return a / b\n")
+
+    def test_small_budget_is_not_split_into_attempts_it_cannot_fund(self):
+        """4 steps with up to 3 attempts: capping attempt 1 at 60% would end the run after 2 steps with
+        nothing, since no fresh attempt fits in the 2 left. The only attempt keeps the whole budget."""
+        profile = test_profile(max_steps=4)
+        profile.policy.max_attempts, profile.policy.min_attempt_s = 3, 0.0
+        idle = turn(tc("bash", command="echo looking"))
+        result, _ = run_agent(self.repo, [idle, turn(FIX), turn(TEST), turn(SUBMIT)], self.run_dir, profile=profile)
+        attempts = result["proof"]["attempts"]
+        self.assertEqual(len(attempts), 1)
+        self.assertNotEqual(attempts[0]["termination"], "attempt_budget")
+        self.assertEqual((self.repo / "calc/ops.py").read_text(), "def divide(a, b):\n    return a / b\n")
+
+    def test_attempt_cap_is_lifted_when_no_room_for_another_attempt(self):
+        """Caps set at the start can become unaffordable (time spent in long commands): at the cap, the
+        attempt continues instead of ending into an attempt that cannot run."""
+        profile = test_profile(max_steps=12)
+        profile.policy.max_attempts, profile.policy.min_attempt_s, profile.policy.first_attempt_share = 2, 0.0, 0.5
+        idle = turn(tc("bash", command="echo looking"))
+        turns = [idle] * 6 + [turn(FIX), turn(TEST), turn(SUBMIT)]
+        with mock.patch("gheerefill.agent.Agent._room_for_another_attempt", return_value=False):
+            result, _ = run_agent(self.repo, turns, self.run_dir, profile=profile)
+        attempts = result["proof"]["attempts"]
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(result["proof"]["level"], "proven")
 
     def test_no_retry_when_the_first_attempt_is_verified(self):
         profile = test_profile()

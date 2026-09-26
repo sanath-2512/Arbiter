@@ -46,6 +46,7 @@ from gheerefill.workspace import Workspace, WorkspaceError
 RESULT_SCHEMA = "gheerefill.result/v1"
 HARNESS_ROOT = Path(__file__).resolve().parent.parent
 TEST_PATH_RE = proof.TEST_PATH_RE
+MIN_ATTEMPT_STEPS = 5  # fewer steps than this cannot fund a fresh attempt from the original code
 FATAL_TERMINATIONS = ("cancelled", "crash", "setup_failed", "deadline_reached", "token_budget", "cost_budget",
                       "step_limit", "repeated_format_errors")
 
@@ -386,8 +387,12 @@ class Agent:
                 return
             caps = self.attempt_caps
             if caps and (self.budget.elapsed() >= caps[0] or self.budget.steps >= caps[1]):
-                self.termination = "attempt_budget"
-                return
+                if self._room_for_another_attempt():
+                    self.termination = "attempt_budget"
+                    return
+                # a fresh attempt could not run on what is left: this attempt keeps the rest of the budget
+                self.attempt_caps = caps = None
+                self.log("attempt share used, but too little budget is left for another attempt; continuing")
             steps_left = (caps[1] if caps else lim.max_steps) - self.budget.steps
             secs_left = min(self.budget.work_remaining(), caps[0] - self.budget.elapsed()) if caps \
                 else self.budget.work_remaining()
@@ -846,9 +851,21 @@ class Agent:
             self.attempt_caps = None
             return
         share = pol.first_attempt_share if self.attempt == 1 else 1.0 / attempts_left
-        secs = max(0.0, self.budget.work_remaining()) * share
-        steps = max(1, int((lim.max_steps - self.budget.steps) * share))
+        secs_total = max(0.0, self.budget.work_remaining())
+        steps_total = lim.max_steps - self.budget.steps
+        secs, steps = secs_total * share, max(1, int(steps_total * share))
+        if steps_total - steps < MIN_ATTEMPT_STEPS or secs_total - secs < pol.min_attempt_s:
+            self.attempt_caps = None  # the budget cannot fund another attempt: this one may use all of it
+            return
         self.attempt_caps = (self.budget.elapsed() + secs, self.budget.steps + steps)
+
+    def _room_for_another_attempt(self) -> bool:
+        """Enough budget left for a fresh attempt from the original code (same bar as `_next_attempt_worthwhile`)."""
+        pol = self.profile.policy
+        spent = self.budget.elapsed() - float(self.attempt_start.get("elapsed", 0.0))
+        need = max(pol.min_attempt_s, 0.5 * spent)
+        return (self.attempt < pol.max_attempts and self.budget.work_remaining() >= need
+                and self.profile.limits.max_steps - self.budget.steps >= MIN_ATTEMPT_STEPS)
 
     def _end_attempt(self) -> None:
         if self.ws is None or self.base_tree is None:
@@ -891,7 +908,7 @@ class Agent:
         if level >= proof.LEVELS.index(threshold) and not explore:
             return False
         need = max(pol.min_attempt_s, 0.5 * float(last["elapsed_s"]))
-        if self.budget.work_remaining() < need or self.profile.limits.max_steps - self.budget.steps < 5:
+        if self.budget.work_remaining() < need or self.profile.limits.max_steps - self.budget.steps < MIN_ATTEMPT_STEPS:
             self.notes.append(f"no further attempt: evidence {last['level']}, but only "
                               f"{max(0.0, self.budget.work_remaining()):.0f}s of work time left (needs ~{need:.0f}s)")
             return False

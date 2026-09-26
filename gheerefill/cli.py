@@ -334,6 +334,13 @@ def cmd_run(args: argparse.Namespace) -> int:
             _emit(result)
         if agent.cancel_requested:
             current["stop"] = True
+        term = str(result.get("termination") or "")
+        if term in ("model_error:authentication", "model_error:quota_exhausted"):
+            # a credential/account problem is not a finished run, whatever was exported before it
+            what = "rejected AI_API_KEY" if term.endswith("authentication") else "reports the key's quota is exhausted"
+            detail = str((result.get("error") or {}).get("message") or "")[:200]
+            _err(f"error: the model endpoint {what}; the run stopped ({detail})")
+            return 2 if term.endswith("authentication") else 3
         return 0 if result.get("status") == "completed" else 1
 
     old = {s: signal.signal(s, on_signal) for s in (signal.SIGTERM, signal.SIGINT)}

@@ -58,3 +58,47 @@ class ImportGraphTest(TempDirCase):
                                                    "tests": ["web/test/service.test.js"]})
         self.assertEqual(g["internal/calc/calc.go"], {"imported_by": ["cmd/main.go"],
                                                       "tests": ["internal/calc/calc_test.go"]})
+
+
+class ReadOrderTest(TempDirCase):
+    """When the budget cannot cover a large repository, what gets read first decides the hints."""
+
+    def test_code_before_tests_and_vendored_last_under_a_tight_budget(self):
+        files = {f"tests/t{i:04d}/test_mod.py": "def test_x():\n    assert 1\n" for i in range(300)}
+        files["pkg/db/models/lookups.py"] = "class In:\n    def get_prep_lookup(self):\n        return list(self.rhs)\n"
+        files["third_party/django_old/db/models/lookups.py"] = files["pkg/db/models/lookups.py"]
+        repo = make_repo(self.tmp / "r", files)
+        order = sorted(files, key=lambda f: (locate.peripheral(f), "tests/" in f, f))
+        self.assertEqual(order[0], "pkg/db/models/lookups.py")
+        loc = locate.localize("`__in` lookups break when given an iterator; see `get_prep_lookup`", repo,
+                              sorted(files), time_budget_s=3.0)
+        self.assertEqual(loc["definitions"][0]["path"], "pkg/db/models/lookups.py")  # the real one, not the copy
+        self.assertEqual(loc["ranked"][0]["path"], "pkg/db/models/lookups.py")
+
+    def test_peripheral_trees(self):
+        for p in ("vendor/x.py", "a/third_party/b.py", "extra/vendored_pytest_8/src/m.py", "node_modules/l/i.js",
+                  "bench/generated/pkg001/gen_1.py", "static/app.min.js", "web/dist/app.js"):
+            self.assertTrue(locate.peripheral(p), p)
+        for p in ("src/vendorize.py", "pkg/generator.py", "lib/builder.py", "src/app.js", "gen.py"):
+            self.assertFalse(locate.peripheral(p), p)
+        repo = make_repo(self.tmp / "g", {".gitattributes": "proto/*.pb.go linguist-generated=true\n"
+                                                            "assets/** linguist-vendored\nkeep/** linguist-vendored=false\n",
+                                          "x.py": ""})
+        pats = locate.linguist_patterns(repo)
+        self.assertTrue(locate.peripheral("proto/api.pb.go", pats))
+        self.assertTrue(locate.peripheral("assets/js/lib.js", pats))
+        self.assertFalse(locate.peripheral("keep/a.py", pats))
+        self.assertFalse(locate.peripheral("proto/api.go", pats))
+
+    def test_dotted_module_references_name_files(self):
+        files = {"src/_pytest/config/findpaths.py": "class IniValue:\n    pass\n",
+                 "src/_pytest/config/__init__.py": "", "src/_pytest/__init__.py": "",
+                 "extra/vendored_pytest_8/src/_pytest/config/findpaths.py": "class IniValue:\n    pass\n"}
+        repo = make_repo(self.tmp / "d", files)
+        loc = locate.localize("Rename `_pytest.config.findpaths.IniValue` (see also www.example.com and 3.1.2)",
+                              repo, sorted(files))
+        self.assertEqual(loc["files_named"], ["src/_pytest/config/findpaths.py"])
+        loc = locate.localize("`_pytest.config.Config` is created twice", repo, sorted(files))  # package + attribute
+        self.assertEqual(loc["files_named"], ["src/_pytest/config/__init__.py"])
+        loc = locate.localize("`app.run` and `os.path` are attribute access, not module paths", repo, sorted(files))
+        self.assertEqual(loc["files_named"], [])

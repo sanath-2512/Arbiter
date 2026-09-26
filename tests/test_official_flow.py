@@ -360,6 +360,44 @@ class ParameterAdaptationTest(TempDirCase):
         self.assertTrue(any("max_completion_tokens" in n for n in rec["notes"]))
 
 
+class CredentialFailureTest(TempDirCase):
+    def test_rejected_key_mid_run_exits_nonzero_after_one_request(self):
+        """With an explicit endpoint there is no model listing up front: the first request is where a
+        wrong key shows. The run must stop there (no retries) and exit non-zero with a clear message."""
+        from tests.test_eval_pipeline import SCRIPT
+
+        repo = make_repo(self.tmp / "repo", CALC)
+        prof = self.tmp / "p.toml"
+        prof.write_text('[model]\nprovider = "openai_chat"\nname = "m"\nbase_url = "http://127.0.0.1:1/v1"\n')
+        with FakeOpenAIServer(SCRIPT) as srv:
+            state = {"n": 0}
+
+            def reject(handler):
+                handler.rfile.read(int(handler.headers.get("Content-Length", 0)))
+                data = json.dumps({"error": {"message": "Incorrect API key provided.", "type": "invalid_request_error",
+                                             "code": "invalid_api_key"}}).encode()
+                handler.send_response(401)
+                handler.send_header("Content-Length", str(len(data)))
+                handler.end_headers()
+                handler.wfile.write(data)
+                state["n"] += 1
+
+            srv.httpd.RequestHandlerClass.do_POST = reject
+            env = {**os.environ, "AI_API_KEY": "sk-wrong-0000000000", "AI_BASE_URL": srv.base_url,
+                   "no_proxy": "127.0.0.1", "NO_PROXY": "127.0.0.1"}
+            p = subprocess.run([sys.executable, "-m", "gheerefill", "run", "--profile", str(prof), "--no-discover",
+                                "--out", str(self.tmp / "out")],
+                               input=json.dumps({"task_id": "a", "repo_path": str(repo), "issue": "fix divide"}) + "\n",
+                               cwd=ROOT, env=env, capture_output=True, text=True, timeout=120)
+        rec = json.loads(p.stdout.strip().splitlines()[-1])
+        self.assertEqual(p.returncode, 2, p.stderr[-2000:])
+        self.assertEqual(rec["termination"], "model_error:authentication")
+        self.assertEqual(state["n"], 1)
+        self.assertIn("rejected AI_API_KEY", p.stderr)
+        self.assertNotIn("sk-wrong-0000000000", p.stdout + p.stderr)
+        self.assertEqual(git(repo, "status", "--porcelain").strip(), "")
+
+
 class DotenvTest(TempDirCase):
     def test_environment_wins_over_dotenv(self):
         from gheerefill.cli import load_dotenv
