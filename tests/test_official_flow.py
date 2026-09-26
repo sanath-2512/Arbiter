@@ -360,6 +360,39 @@ class ParameterAdaptationTest(TempDirCase):
         self.assertTrue(any("max_completion_tokens" in n for n in rec["notes"]))
 
 
+class CloneTest(TempDirCase):
+    def test_partial_clone_only_when_the_server_honours_filters(self):
+        """A server that ignores --filter (here: a shallow source) must get a full clone; a blob-less
+        clone of it fetches objects one at a time and never finishes."""
+        from gheerefill.intake import prepare_repo, supports_partial_clone
+        from tests.helpers import GIT_ENV
+
+        src = make_repo(self.tmp / "src", CALC)
+        for i in range(3):
+            (src / f"f{i}.txt").write_text(str(i))
+            git(src, "add", "-A")
+            git(src, "commit", "-qm", f"c{i}")
+        shallow = self.tmp / "shallow"
+        subprocess.run(["git", "clone", "-q", "--depth=2", f"file://{src}", str(shallow)], check=True, env=GIT_ENV)
+        bare = self.tmp / "bare.git"
+        subprocess.run(["git", "clone", "-q", "--bare", str(src), str(bare)], check=True, env=GIT_ENV)
+        git(bare, "config", "uploadpack.allowFilter", "true")
+        self.assertFalse(supports_partial_clone(f"file://{shallow}"))
+        self.assertTrue(supports_partial_clone(f"file://{bare}"))
+        t0 = time.monotonic()
+        path, notes = prepare_repo(f"file://{shallow}", owner=None, repo=None, number=None, workspace=self.tmp / "ws",
+                                   base=None, issue_created_at=None, log=lambda m: None)
+        self.assertLess(time.monotonic() - t0, 30)
+        self.assertTrue((path / "calc" / "ops.py").exists())
+        promisor = subprocess.run(["git", "config", "--get", "remote.origin.promisor"], cwd=path,
+                                  capture_output=True, text=True)
+        self.assertEqual(promisor.stdout.strip(), "")
+        path2, _ = prepare_repo(f"file://{bare}", owner=None, repo=None, number=None, workspace=self.tmp / "ws2",
+                                base=None, issue_created_at=None, log=lambda m: None)
+        self.assertEqual(git(path2, "config", "--get", "remote.origin.promisor").strip(), "true")
+        self.assertTrue((path2 / "calc" / "ops.py").exists())
+
+
 class CredentialFailureTest(TempDirCase):
     def test_rejected_key_mid_run_exits_nonzero_after_one_request(self):
         """With an explicit endpoint there is no model listing up front: the first request is where a

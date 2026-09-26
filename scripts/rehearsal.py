@@ -645,6 +645,14 @@ def transcript(run_dir: Path) -> list[dict]:
     return out
 
 
+def lab_error_record(task: dict, config: str, e: Exception) -> dict[str, Any]:
+    """A run the lab itself could not complete (setup, environment): recorded, never counted as a result."""
+    return {"schema": "gheerefill.rehearsal/v1", "task_id": task["task_id"], "repo": task["repo"],
+            "base_commit": task["base_commit"], "type": task["type"], "size_class": task["size_class"],
+            "config": config, "repeat": 0, "model_kind": "n/a", "harness_version": harness_commit(), "result": None,
+            "failure_class": "lab_error", "lab_error": f"{type(e).__name__}: {e}"[:1000]}
+
+
 def scenario_checks(sc: dict, rec: dict) -> dict[str, Any]:
     """Observable facts about one scripted run, compared against the scenario's expectations."""
     prog = (rec.get("result") or {}).get("progress") or {}
@@ -689,9 +697,13 @@ def mechanisms(manifest: dict, only: list[str] | None, configs: list[str] | None
         if only and sc["id"] not in only:
             continue
         for cfg in configs or sc["configs"]:
-            rec = run_one(load_task(TASKS / sc["task"]), cfg, policy=sc["policy"], faults=sc.get("faults"),
-                          sig=parse_signal(sc.get("signal")), limits_override=sc.get("limits"),
-                          key_mode=sc.get("key_mode"), injection=sc["id"], log=log)
+            task = load_task(TASKS / sc["task"])
+            try:
+                rec = run_one(task, cfg, policy=sc["policy"], faults=sc.get("faults"),
+                              sig=parse_signal(sc.get("signal")), limits_override=sc.get("limits"),
+                              key_mode=sc.get("key_mode"), injection=sc["id"], log=log)
+            except Exception as e:  # noqa: BLE001 - one broken run must not end the matrix
+                rec = lab_error_record(task, cfg, e)
             rec["scenario"] = sc["id"]
             rec["checks"] = scenario_checks(sc, rec)
             rec["expectation_met"], rec["expectation_misses"] = expectation(sc, cfg, rec["checks"])
@@ -998,10 +1010,14 @@ def main() -> int:
     else:
         for r_ in runs:
             inj = r_.get("injection") or {}
-            recs.append(run_one(load_task(TASKS / r_["task"]), r_["config"], repeat=r_["repeat"],
-                                policy=inj.get("policy"), faults=inj.get("faults"), sig=parse_signal(inj.get("signal")),
-                                limits_override=inj.get("limits"), upstream=args.upstream,
-                                injection=inj.get("id"), profile=profile))
+            task = load_task(TASKS / r_["task"])
+            try:
+                recs.append(run_one(task, r_["config"], repeat=r_["repeat"], policy=inj.get("policy"),
+                                    faults=inj.get("faults"), sig=parse_signal(inj.get("signal")),
+                                    limits_override=inj.get("limits"), upstream=args.upstream,
+                                    injection=inj.get("id"), profile=profile))
+            except Exception as e:  # noqa: BLE001
+                recs.append(lab_error_record(task, r_["config"], e))
             with open(out / "results.jsonl", "a") as fh:
                 fh.write(json.dumps(recs[-1], default=str) + "\n")
     text = report(recs)

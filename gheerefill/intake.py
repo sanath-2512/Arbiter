@@ -22,6 +22,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import urllib.error
 import urllib.request
@@ -167,12 +168,25 @@ def compose_issue_text(meta: dict[str, Any]) -> str:
 
 # ------------------------------------------------------------------------------------ repositories
 
-def _git(args: list[str], cwd: Path | None = None, timeout: float = 900) -> subprocess.CompletedProcess:
+def _git(args: list[str], cwd: Path | None = None, timeout: float = 900,
+         extra_env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
     env = {k: os.environ[k] for k in ("PATH", "HOME", "LANG", "TMPDIR", "USER", "HTTPS_PROXY", "https_proxy",
                                       "NO_PROXY", "no_proxy", "SSL_CERT_FILE", "GIT_SSL_CAINFO") if k in os.environ}
-    env.update(GIT_TERMINAL_PROMPT="0", GIT_CONFIG_NOSYSTEM="1")
+    env.update(GIT_TERMINAL_PROMPT="0", GIT_CONFIG_NOSYSTEM="1", **(extra_env or {}))
     return subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", *args], cwd=cwd,
                           capture_output=True, text=True, env=env, timeout=timeout)
+
+
+def supports_partial_clone(url: str) -> bool:
+    """Whether the server advertises partial-clone filters (protocol v2 `fetch=... filter`). A server
+    that ignores `--filter` (older git servers, some mirrors, a shallow local source) turns a blob-less
+    clone into one fetch per object: thousands of round trips, observed as a clone that never ends."""
+    try:
+        p = _git(["-c", "protocol.version=2", "ls-remote", "--heads", url], timeout=120,
+                 extra_env={"GIT_TRACE_PACKET": "1"})
+    except subprocess.TimeoutExpired:
+        return False
+    return p.returncode == 0 and any(re.search(r"upload-pack> fetch=.*\bfilter\b", l) for l in p.stderr.splitlines())
 
 
 def clone_url(owner: str, repo: str) -> str:
@@ -245,10 +259,12 @@ def prepare_repo(spec: str | None, *, owner: str | None, repo: str | None, numbe
         n += 1
         dest = workspace / f"{name}-{n}"
     if not dest.exists():
-        log(f"cloning {url} -> {dest}")
-        p = _git(["clone", "--quiet", "--filter=blob:none", url, str(dest)])
-        if p.returncode != 0:
-            p = _git(["clone", "--quiet", url, str(dest)])  # servers without partial-clone support
+        partial = supports_partial_clone(url)
+        log(f"cloning {url} -> {dest}" + (" (blob-less partial clone)" if partial else ""))
+        p = _git(["clone", "--quiet", *(["--filter=blob:none"] if partial else []), url, str(dest)])
+        if p.returncode != 0 and partial:
+            shutil.rmtree(dest, ignore_errors=True)
+            p = _git(["clone", "--quiet", url, str(dest)])
         if p.returncode != 0:
             raise IntakeError(f"git clone {url} failed: {p.stderr.strip()[:400]}")
         notes.append(f"repository: cloned {url} into {dest} (default branch)")
