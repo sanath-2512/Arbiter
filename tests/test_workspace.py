@@ -111,6 +111,29 @@ class WorkspaceTest(TempDirCase):
         self.assertEqual(set(diff.split()), {"a.py", "b.py"})  # both visible as unstaged changes vs base
         self.assertEqual(git(repo, "diff", "--cached", "--name-only").strip(), "")
 
+    def test_untracked_environments_and_build_outputs_excluded_but_tracked_kept(self):
+        repo = make_repo(self.tmp / "r", {"src/app.py": "x = 1\n", "vendor/prebuilt.so": b"\x7fELF-tracked",
+                                          "Cargo.toml": "[package]\n"})
+        (repo / "venv" / "lib").mkdir(parents=True)
+        (repo / "venv" / "pyvenv.cfg").write_text("home = /usr/bin\n")
+        (repo / "tools" / "env").mkdir(parents=True)
+        (repo / "tools" / "env" / "conda-meta").mkdir()
+        ws = Workspace(repo, self.tmp / "state")
+        self.assertEqual(ws.environment_dirs(), ["tools/env", "venv"])
+        base = ws.init()
+        (repo / "venv" / "lib" / "installed.py").write_text("pip installed this\n")
+        (repo / "tools" / "env" / "pkg.py").write_text("conda\n")
+        (repo / "src" / "app.o").write_bytes(b"\x00obj")
+        (repo / "target" / "debug").mkdir(parents=True)
+        (repo / "target" / "debug" / "bin").write_bytes(b"\x00")
+        (repo / "vendor" / "prebuilt.so").write_bytes(b"\x7fELF-changed")
+        (repo / "src" / "app.py").write_text("x = 2\n")
+        paths = {f["path"] for f in ws.changed_files(base, ws.snapshot())}
+        self.assertEqual(paths, {"src/app.py", "vendor/prebuilt.so"})
+        ignored = ws.ignored_paths()
+        for p in ("venv/", "tools/env/", "src/app.o", "target/"):
+            self.assertIn(p, ignored)
+
     def test_shadow_store_never_writes_into_target_git(self):
         repo = make_repo(self.tmp / "r", {"a.py": "1\n"})
         before = sorted(p for p in (repo / ".git").rglob("*"))

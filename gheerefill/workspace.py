@@ -44,6 +44,14 @@ CACHE_EXCLUDES = [
     ".DS_Store",
     ".gradle/",
     ".ipynb_checkpoints/",
+    # untracked compiled outputs (tracked files are force-added at base, so they are never excluded)
+    "*.o",
+    "*.obj",
+    "*.class",
+    "*.so",
+    "*.dylib",
+    "*.dll",
+    "*.pyd",
 ]
 
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
@@ -144,7 +152,9 @@ class Workspace:
         info = self.gitdir / "info"
         info.mkdir(exist_ok=True)
         (info / "attributes").write_text("* -text -filter -ident -working-tree-encoding\n")
-        excludes = list(CACHE_EXCLUDES)
+        excludes = list(CACHE_EXCLUDES) + [f"/{d}/" for d in self.environment_dirs()]
+        if (self.repo / "Cargo.toml").is_file():
+            excludes.append("/target/")
         target_exclude = self.repo / ".git" / "info" / "exclude"
         if target_exclude.is_file():
             excludes.append(target_exclude.read_text(errors="replace"))
@@ -155,6 +165,24 @@ class Workspace:
                 self.git("add", "-f", "--pathspec-from-file=-", "--pathspec-file-nul", input=tracked)
         self.base_tree = self.snapshot()
         return self.base_tree
+
+    def environment_dirs(self, max_depth: int = 2) -> list[str]:
+        """Untracked virtualenv/conda directories inside the repository (relative paths)."""
+        found: list[str] = []
+
+        def walk(d: Path, depth: int) -> None:
+            try:
+                entries = [e for e in d.iterdir() if e.is_dir() and not e.is_symlink() and e.name != ".git"]
+            except OSError:
+                return
+            for e in entries:
+                if (e / "pyvenv.cfg").is_file() or (e / "conda-meta").is_dir():
+                    found.append(str(e.relative_to(self.repo)))
+                elif depth < max_depth and e.name not in ("node_modules", ".tox", ".nox"):
+                    walk(e, depth + 1)
+
+        walk(self.repo, 1)
+        return sorted(found)
 
     def attach(self, base_tree: str) -> None:
         """Re-open an existing shadow store (recovery)."""

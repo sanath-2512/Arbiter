@@ -346,7 +346,7 @@ class Agent:
                 if submitted:
                     self._tool_message(call, "Not executed: submit was already called earlier in this reply.", {})
                     continue
-                if call.name == "submit" and call.parse_error is None:
+                if call.name == "submit":  # all submit arguments are optional; malformed ones are ignored
                     any_valid = True
                     review = self._submit_gate(submit_reviews)
                     if review is None:

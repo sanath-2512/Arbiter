@@ -95,6 +95,11 @@ class AgentTest(TempDirCase):
         self.assertNotIn("repro.py", self.patch())
         self.assertEqual(result["termination"], "model_submitted")
 
+    def test_submit_with_malformed_arguments_is_still_a_submit(self):
+        bad_submit = {"text": "", "tool_calls": [{"name": "submit", "raw_arguments": "{summary: oops"}]}
+        result, agent = run_agent(self.repo, [turn(FIX), turn(TEST), bad_submit], self.run_dir)
+        self.assertEqual(result["termination"], "model_submitted")
+
     def test_empty_submission_warned_then_respected(self):
         result, agent = run_agent(self.repo, [turn(SUBMIT), turn(SUBMIT)], self.run_dir)
         self.assertIn("no changes", [m for m in agent.transcript if m["role"] == "tool"][0]["content"])
