@@ -1,0 +1,18 @@
+{
+  "task_id": "click_sentinel_copy",
+  "repo": "click",
+  "base_commit": "420c8fb44eeadb537cae69d2fee3796e808558dd",
+  "type": "regression",
+  "size_class": "medium",
+  "issue": "Pickling click parameters without an explicit default fails\n\nWe send click commands to worker processes with multiprocessing, which pickles them. Since upgrading click\nthis fails for every option or argument that has no explicit `default`:\n\n```python\nimport pickle\nimport click\n\nopt = click.Option([\"--name\"])\npickle.loads(pickle.dumps(opt))\n# ValueError: <object object at 0x7f...> is not a valid Sentinel\n```\n\n`copy.copy` and `copy.deepcopy` of the same option work. Pickling should work too, and the unpickled\nparameter should still mean \"no default was given\".",
+  "limits": {
+    "time_limit_s": 1200,
+    "max_steps": 100
+  },
+  "history_depth": 200,
+  "source": {
+    "kind": "historical-fix",
+    "fix_commit": "f58ca3e81424",
+    "note": "issue text written by hand from the fix's observable symptoms"
+  }
+}

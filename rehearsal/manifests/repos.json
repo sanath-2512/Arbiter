@@ -1,0 +1,6 @@
+{
+  "click": {"url": "https://github.com/pallets/click", "mirror": "pallets__click.git", "language": "python", "size_class": "medium",
+            "env": {"python": "python3.11", "pip": ["pytest"], "install": ["pip install -q -e . --no-deps"]}},
+  "django": {"url": "https://github.com/django/django", "mirror": "django__django.git", "language": "python", "size_class": "very_large",
+             "env": {"python": "python3.12", "pip": ["asgiref>=3.8", "sqlparse>=0.5"], "install": ["pip install -q -e . --no-deps"]}}
+}

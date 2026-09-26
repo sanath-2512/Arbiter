@@ -1,0 +1,109 @@
+{
+  "_comment": "Ablation configurations for the Judge Rehearsal Lab. Each is the submission profile (profiles/default.toml) with these overrides. Held constant in every config: model, limits, tools (except register_reproduction, part of verification), sandbox, localisation and task-type hints, syntax guard. Cross-run repository memory is off everywhere so runs are independent.",
+  "A": {
+    "description": "baseline: the core loop, tools and verified export; none of the four differentiators",
+    "overrides": {
+      "policy": {
+        "verify_at_submit": false,
+        "max_attempts": 1,
+        "retry_on_advisory": false,
+        "dominance_selection": false,
+        "recover_empty_final": false,
+        "final_recheck": false,
+        "failure_memory": false,
+        "repetition_notice": false,
+        "memory": false
+      },
+      "tools": {
+        "reproduction_tool": false
+      }
+    }
+  },
+  "B": {
+    "description": "A + failure memory (no-progress detection, new-hypothesis intervention, escalation)",
+    "overrides": {
+      "policy": {
+        "verify_at_submit": false,
+        "max_attempts": 1,
+        "retry_on_advisory": false,
+        "dominance_selection": false,
+        "recover_empty_final": false,
+        "final_recheck": false,
+        "failure_memory": true,
+        "repetition_notice": true,
+        "memory": false
+      },
+      "tools": {
+        "reproduction_tool": false
+      }
+    }
+  },
+  "C": {
+    "description": "A + adaptive policy (retry attempts from the original code when stuck or refuted)",
+    "overrides": {
+      "policy": {
+        "verify_at_submit": false,
+        "max_attempts": 3,
+        "retry_on_advisory": true,
+        "dominance_selection": false,
+        "recover_empty_final": false,
+        "final_recheck": false,
+        "failure_memory": false,
+        "repetition_notice": false,
+        "memory": false
+      },
+      "tools": {
+        "reproduction_tool": false
+      }
+    }
+  },
+  "D": {
+    "description": "A + qualified verification (harness-confirmed reproductions, counterfactual checks, authority tiers)",
+    "overrides": {
+      "policy": {
+        "verify_at_submit": true,
+        "max_attempts": 1,
+        "retry_on_advisory": false,
+        "dominance_selection": false,
+        "recover_empty_final": false,
+        "final_recheck": false,
+        "failure_memory": false,
+        "repetition_notice": false,
+        "memory": false
+      },
+      "tools": {
+        "reproduction_tool": true
+      }
+    }
+  },
+  "E": {
+    "description": "A + candidate preservation (dominance selection, empty-final recovery, final re-check)",
+    "overrides": {
+      "policy": {
+        "verify_at_submit": false,
+        "max_attempts": 1,
+        "retry_on_advisory": false,
+        "dominance_selection": true,
+        "recover_empty_final": true,
+        "final_recheck": true,
+        "failure_memory": false,
+        "repetition_notice": false,
+        "memory": false
+      },
+      "tools": {
+        "reproduction_tool": false
+      }
+    }
+  },
+  "F": {
+    "description": "everything: the submission profile (repository memory off for run independence)",
+    "overrides": {
+      "policy": {
+        "memory": false
+      },
+      "tools": {
+        "reproduction_tool": true
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+[
+  {
+    "task_id": "click_sentinel_copy",
+    "ok": true,
+    "f2p_fail_on_base": true,
+    "p2p_pass_on_base": true,
+    "reference_solves": true,
+    "reference_applies": true,
+    "f2p": 3,
+    "p2p": 7
+  }
+]

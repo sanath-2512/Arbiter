@@ -866,7 +866,8 @@ class Agent:
         if candidate != self.base_tree:
             fatal = self.termination in ("cancelled", "crash") or self.cancel_requested
             a = self.assessments.get(candidate) if fatal else None
-            a = a or self._verify_candidate(candidate, allow_runs=not fatal)
+            # without harness verification (ablation), assess from the agent's own records only
+            a = a or self._verify_candidate(candidate, allow_runs=not fatal and pol.verify_at_submit)
             entry.update(level=a.level, summary=a.summary(), advisory=a.advisory,
                          files=[f["path"] for f in self.ws.changed_files(self.base_tree, candidate)])
         else:
@@ -932,7 +933,8 @@ class Agent:
             for c in self._checks_for(t):
                 if c[0] not in {u[0] for u in union}:
                     union.append(c)
-        allow = self.termination not in ("cancelled", "crash") and not self.cancel_requested
+        allow = self.termination not in ("cancelled", "crash") and not self.cancel_requested \
+            and self.profile.policy.verify_at_submit
         ranked_in = []
         for t in finalists:
             a = self._verify_candidate(t, union, allow_runs=allow)

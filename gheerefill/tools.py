@@ -131,7 +131,7 @@ def tool_specs(cfg: ToolsConfig) -> list[ToolSpec]:
             },
             ["id"],
         ),
-        reproduction,
+        *([reproduction] if cfg.reproduction_tool else []),
         submit,
     ]
 

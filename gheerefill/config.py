@@ -97,6 +97,8 @@ class ToolsConfig:
     # Refuse edits that would turn a parseable .py/.json file into an unparseable one (SWE-agent's
     # edit-time linting finding); confirmed with the project's own python3 before refusing.
     syntax_guard: bool = True
+    # register_reproduction tool (harness-confirmed reproductions); off only for ablations.
+    reproduction_tool: bool = True
 
 
 @dataclass
