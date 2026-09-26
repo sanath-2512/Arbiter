@@ -59,6 +59,7 @@ provider = "anthropic_messages"
 base_url = "https://api.anthropic.com"
 models = ["claude-sonnet-5", "claude-opus-5-5", "claude-sonnet-4-5", "claude-sonnet-4"]
 context_window = 200000
+prompt_cache = true                 # cached prefix: ~10x cheaper input; cache reads do not count toward ITPM limits
 
 [[auto]]
 label = "OpenRouter"
@@ -74,6 +75,7 @@ provider = "openai_chat"
 base_url = "https://api.openai.com/v1"
 models = ["gpt-5.1", "gpt-5", "gpt-4.1", "gpt-4o"]
 max_tokens_field = "max_completion_tokens"
+max_output_tokens = 32768           # reasoning tokens count against this budget; lowered automatically if capped
 
 [[auto]]
 label = "DeepSeek"
@@ -89,6 +91,7 @@ provider = "openai_chat"
 base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
 models = ["gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"]
 context_window = 1000000
+max_output_tokens = 32768           # thinking tokens count against this budget
 
 [[auto]]
 label = "Groq"
@@ -103,6 +106,7 @@ match = "prefix:xai-"
 provider = "openai_chat"
 base_url = "https://api.x.ai/v1"
 models = ["grok-code-fast-1", "grok-4"]
+max_output_tokens = 32768           # reasoning models
 
 [[auto]]
 label = "Hugging Face router"

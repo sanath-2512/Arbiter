@@ -29,6 +29,10 @@ from gheerefill.config import AUTO, ConfigError, ModelConfig, Profile
 from gheerefill.models.base import ErrorClass, ModelError, classify_http_error
 from gheerefill.models.http import _ssl_context
 
+# Messages that mean the key itself is wrong (as opposed to lacking a permission for /models).
+INVALID_KEY = re.compile(r"invalid.{0,20}(api.?key|x-api-key|token|credential)|incorrect api key|api key not valid|"
+                         r"no api key|unauthenticated|authentication (failed|error)|invalid authentication|"
+                         r"expired|revoked|not a valid key", re.I)
 DATE_SUFFIX = re.compile(r"^(?P<base>.+?)(-\d{8}|-\d{4}-\d{2}-\d{2}|-latest)$")
 
 
@@ -117,7 +121,7 @@ def resolve(profile: Profile, key: str, *, discover: bool = True,
                 )
             m.provider = rule["provider"]
             m.base_url = m.base_url or rule["base_url"]
-            for k in ("max_tokens_field", "context_window", "max_output_tokens"):
+            for k in ("max_tokens_field", "context_window", "max_output_tokens", "prompt_cache"):
                 if k in rule:
                     setattr(m, k, rule[k])
             source = f"auto rule '{rule.get('label', rule['match'])}' (key format {rule['match']})"
@@ -131,10 +135,12 @@ def resolve(profile: Profile, key: str, *, discover: bool = True,
             available = lister(m, key)
             discovery = f"{len(available)} models listed by the provider"
         except ModelError as e:
-            if e.cls in (ErrorClass.AUTH, ErrorClass.QUOTA):
+            if e.cls == ErrorClass.QUOTA or (e.cls == ErrorClass.AUTH and INVALID_KEY.search(e.message)):
                 raise ConfigError(f"the provider rejected AI_API_KEY ({e.cls.value}): {e.message[:200]}") from None
+            # Restricted keys may be allowed to call the model but not to list models (401/403 with a
+            # permission/scope message): continue, and let the first real request decide.
             available = None
-            discovery = f"model list unavailable ({e.cls.value}); choice unverified until the first request"
+            discovery = f"model list unavailable ({e.cls.value}: {e.message[:80]}); choice unverified until the first request"
     else:
         available = None
     if m.name:

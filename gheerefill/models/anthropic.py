@@ -15,7 +15,7 @@ import json
 from typing import Any
 
 from gheerefill.config import ModelConfig
-from gheerefill.models.base import ErrorClass, ModelError, ModelTurn, ToolCall, ToolSpec, Usage
+from gheerefill.models.base import ErrorClass, ModelError, ModelTurn, ToolCall, ToolSpec, Usage, output_token_limit
 from gheerefill.models.http import post_json, post_sse
 
 
@@ -135,6 +135,10 @@ class AnthropicClient:
         )
 
     def adapt(self, error: ModelError) -> str | None:
+        limit = output_token_limit(error.message, self.cfg.max_output_tokens)
+        if limit:
+            self.cfg.max_output_tokens = limit
+            return f"provider caps output at {limit} tokens; max_output_tokens lowered to {limit}"
         if "temperature" in error.message.lower() and self.cfg.temperature is not None:
             self.cfg.temperature = None
             return "provider rejected 'temperature'; now using the provider default"

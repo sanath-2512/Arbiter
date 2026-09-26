@@ -375,3 +375,45 @@ class DotenvTest(TempDirCase):
             self.assertEqual(os.environ.get("OTHER_X"), "q")
             self.assertEqual(loaded, ["OTHER_X"])
             os.environ.pop("OTHER_X", None)
+
+
+class ProviderLimitTest(TempDirCase):
+    def test_output_cap_is_parsed_from_provider_errors(self):
+        from gheerefill.models.base import output_token_limit
+
+        cases = [
+            ("max_tokens is too large: 32768. This model supports at most 16384 completion tokens, whereas you "
+             "provided 32768.", 16384),
+            ("max_tokens: 64000 > 32000, which is the maximum allowed number of output tokens for claude-x", 32000),
+            ("Invalid max_tokens value, the valid range of max_tokens is [1, 8192]", 8192),
+            ("`max_tokens` must be less than or equal to `8192`, the maximum value for `max_tokens` is less than the "
+             "`context_window` for this model", 8192),
+        ]
+        for msg, want in cases:
+            self.assertEqual(output_token_limit(msg, 65536), want, msg)
+        self.assertIsNone(output_token_limit("This model's maximum context length is 128000 tokens", 8192))
+        self.assertIsNone(output_token_limit("max_tokens: 9000 > 8192, which is the maximum", 8192))  # not lower
+
+    def test_client_adapts_output_cap_without_changing_model(self):
+        from gheerefill.config import ModelConfig
+        from gheerefill.models.openai_chat import OpenAIChatClient
+
+        cfg = ModelConfig(provider="openai_chat", name="m", base_url="https://x/v1", max_output_tokens=32768)
+        client = OpenAIChatClient(cfg, "k")
+        err = ModelError(ErrorClass.MALFORMED_REQUEST, "This model supports at most 16384 completion tokens")
+        self.assertIn("16384", client.adapt(err))
+        self.assertEqual((cfg.max_output_tokens, cfg.name), (16384, "m"))
+
+    def test_restricted_key_without_model_listing_continues_unverified(self):
+        profile = load_profile(ROOT / "profiles" / "default.toml", env={})
+
+        def forbidden(cfg, key):
+            raise ModelError(ErrorClass.AUTH, "You have insufficient permissions for this operation. Missing scopes: "
+                                              "api.model.read", status=401)
+
+        r = resolve(profile, "sk-proj-" + "a" * 40, lister=forbidden)
+        self.assertEqual(r.model.name, "gpt-5.1")
+        self.assertIn("unverified", " ".join(r.notes))
+        self.assertEqual(r.model.max_output_tokens, 32768)
+        a = resolve(profile, "sk-ant-api03-xyz", lister=lambda c, k: ["claude-sonnet-5"])
+        self.assertTrue(a.model.prompt_cache)

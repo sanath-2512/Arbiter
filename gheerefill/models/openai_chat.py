@@ -15,7 +15,7 @@ import uuid
 from typing import Any
 
 from gheerefill.config import ModelConfig
-from gheerefill.models.base import ErrorClass, ModelError, ModelTurn, ToolCall, ToolSpec, Usage
+from gheerefill.models.base import ErrorClass, ModelError, ModelTurn, ToolCall, ToolSpec, Usage, output_token_limit
 from gheerefill.models.http import post_json, post_sse
 
 
@@ -144,6 +144,10 @@ class OpenAIChatClient:
         """One-step parameter compatibility repair driven by the provider's own error message.
         Only request *parameters* change; the model, provider and tool protocol never do."""
         msg = error.message.lower()
+        limit = output_token_limit(error.message, self.cfg.max_output_tokens)
+        if limit:
+            self.cfg.max_output_tokens = limit
+            return f"provider caps output at {limit} tokens; max_output_tokens lowered to {limit}"
         if "max_tokens" in msg and self.cfg.max_tokens_field == "max_tokens":
             self.cfg.max_tokens_field = "max_completion_tokens"
             return "provider rejected 'max_tokens'; now sending 'max_completion_tokens'"

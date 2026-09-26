@@ -157,6 +157,28 @@ _UNSUPPORTED_PATTERNS = re.compile(
     re.I,
 )
 _QUOTA_PATTERNS = re.compile(r"insufficient_quota|quota|billing|credit|payment required|spend limit", re.I)
+_OUTPUT_PARAM = re.compile(r"max[_ ]?(completion_|output_|new_)?tokens|output tokens|completion tokens", re.I)
+_OUTPUT_LIMITS = (
+    re.compile(r"at most (\d{3,7})", re.I),                                     # OpenAI
+    re.compile(r"> ?(\d{3,7}),? which is the maximum", re.I),                    # Anthropic
+    re.compile(r"range of max_tokens is \[\s*\d+\s*,\s*(\d{3,7})\s*\]", re.I),  # DeepSeek
+    re.compile(r"less than or equal to `?(\d{3,7})", re.I),                       # Groq
+    re.compile(r"maximum (?:value|allowed|number|output)[^0-9]{0,60}?(\d{3,7})", re.I),
+    re.compile(r"(?:<=|≤) ?`?(\d{3,7})", re.I),
+)
+
+
+def output_token_limit(message: str, current: int) -> int | None:
+    """If a provider rejected the requested output-token budget and names its limit, that limit.
+    (A model whose cap is below the profile's max_output_tokens would otherwise fail every request.)"""
+    if not _OUTPUT_PARAM.search(message):
+        return None
+    for pat in _OUTPUT_LIMITS:
+        for m in pat.finditer(message):
+            n = int(m.group(1))
+            if 256 <= n < current:
+                return n
+    return None
 
 
 def parse_retry_after(headers: dict[str, str], now: float | None = None) -> float | None:

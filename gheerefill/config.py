@@ -174,7 +174,7 @@ def _coerce(section: str, key: str, value: Any, template: Any, annotation: str) 
 
 
 AUTO_RULE_KEYS = {"label", "match", "provider", "base_url", "models", "max_tokens_field", "context_window",
-                  "max_output_tokens"}
+                  "max_output_tokens", "prompt_cache"}
 
 
 def _apply(profile: Profile, data: dict[str, Any]) -> None:

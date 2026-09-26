@@ -31,7 +31,8 @@ from gheerefill.evidence import (
     select_candidate,
     verification_status,
 )
-from gheerefill.models.base import AttemptRecord, ErrorClass, ModelClient, ModelError, ToolCall, call_with_retry
+from gheerefill.models.base import (AttemptRecord, ErrorClass, ModelClient, ModelError, ToolCall, call_with_retry,
+                                    output_token_limit)
 from gheerefill.outputs import OutputArchive
 from gheerefill import prompts
 from gheerefill.records import Redactor, append_jsonl, atomic_write_bytes, atomic_write_json
@@ -83,6 +84,9 @@ class Agent:
         self._sleep = sleep
         self.rng = random.Random(profile.retry.seed)
         self.budget = Budget(profile.limits, profile.model.pricing, clock)
+        # Identity as configured at start: request parameters adapted mid-run (e.g. a lower output cap)
+        # must not make the checkpoint look like a different profile to `finalize`.
+        self.profile_id = profile.identity()
         self.cancel_requested = False
         self.in_model_call = False
         self.termination: str | None = None
@@ -143,7 +147,7 @@ class Agent:
                 "task_id": self.task.task_id,
                 "task_sha256": hashlib.sha256(json.dumps(self.task.to_dict(), sort_keys=True).encode()).hexdigest(),
                 "repo": str(self.task.repo_path),
-                "profile_id": self.profile.identity(),
+                "profile_id": self.profile_id,
                 "base_tree": self.base_tree,
                 "last_tree": self.last_tree,
                 "history": self.history,
@@ -343,7 +347,10 @@ class Agent:
                                                    None, None, True, "request interrupted by cancellation"))
                     raise
             except ModelError as e:
-                if e.cls == ErrorClass.UNSUPPORTED and adaptations < 4 and hasattr(self.client, "adapt"):
+                adaptable = e.cls in (ErrorClass.UNSUPPORTED, ErrorClass.MALFORMED_REQUEST) or (
+                    e.cls == ErrorClass.CONTEXT_OVERFLOW
+                    and output_token_limit(e.message, self.profile.model.max_output_tokens) is not None)
+                if adaptable and adaptations < 4 and hasattr(self.client, "adapt"):
                     change = self.client.adapt(e)
                     if change:
                         adaptations += 1
@@ -642,7 +649,7 @@ class Agent:
             "model": {
                 "provider": m.provider, "name": self.client.model_name, "base_url": m.base_url,
                 "tool_protocol": m.tool_protocol, "live": m.provider != "fake",
-                "profile": self.profile.name, "profile_id": self.profile.identity(),
+                "profile": self.profile.name, "profile_id": self.profile_id,
                 "overrides": self.profile.overrides,
             },
             "status": "infrastructure_error",
