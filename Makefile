@@ -1,20 +1,29 @@
 # gheerefill — root targets required by the event: setup, run, test (+ clean).
 # Runtime needs only Python >= 3.11 (stdlib) and git; `make setup` needs no network.
+#
+#   export AI_API_KEY=...                 # the only required configuration
+#   make setup
+#   make run                              # interactive: paste a GitHub issue URL or issue text
+#   make run ISSUE=https://github.com/OWNER/REPO/issues/N        # non-interactive
+#   make run ISSUE="text of the issue" REPO=/path/to/repo       # non-interactive, local repo
+#
+# Recipes never expand $(AI_API_KEY): the key cannot be echoed by make.
 SHELL := /bin/bash
 PY := $(shell cat .harness-python 2>/dev/null || command -v python3)
+export ISSUE ISSUE_URL ISSUE_FILE GITHUB_ISSUE REPO REPO_PATH REPO_URL BASE
 
 .PHONY: setup run test clean check-config probe smoke demo baseline-setup baseline eval
 
 setup:                ## verify toolchain, pick a Python >= 3.11, byte-compile the harness
 	@bash scripts/setup.sh
 
-run:                  ## solve tasks: JSON/JSONL on stdin, or TASK=file; PROFILE=, OUT= optional
+run:                  ## launch the harness (interactive on a TTY; ISSUE=, REPO=, BASE=, TASK=, PROFILE=, OUT= optional)
 	@$(PY) -m gheerefill run $(if $(TASK),--task "$(TASK)",) $(if $(PROFILE),--profile "$(PROFILE)",) $(if $(OUT),--out "$(OUT)",)
 
 test:                 ## deterministic tests (no network, no credentials, no paid calls)
 	@$(PY) -m unittest discover -s tests -t . $(if $(V),-v,)
 
-check-config:         ## validate the profile and that AI_API_KEY is present (no network)
+check-config:         ## validate profile, resolve the model, check AI_API_KEY with the provider (no tokens)
 	@$(PY) -m gheerefill check-config $(if $(PROFILE),--profile "$(PROFILE)",)
 
 probe:                ## LIVE: endpoint/tool-calling compatibility check (uses AI_API_KEY)
@@ -36,5 +45,5 @@ eval:                 ## dev only, LIVE: paired evaluation SUITE=dir SYSTEMS=our
 	@$(PY) scripts/eval.py $(if $(SUITE),--suite "$(SUITE)",) $(if $(SYSTEMS),--systems "$(SYSTEMS)",) $(if $(PROFILE),--profile "$(PROFILE)",)
 
 clean:                ## remove generated state (runs, work copies, caches)
-	rm -rf runs work .harness-python .venv-baseline
+	rm -rf runs work workspace .harness-python .venv-baseline
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +

@@ -7,3 +7,5 @@ __pycache__/
 .env
 evals/
 baselines/pi/node_modules/
+workspace/
+.env

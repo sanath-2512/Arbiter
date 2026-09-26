@@ -1,22 +1,24 @@
-# Default submission profile.
+# Default submission profile. This file is the harness's model configuration.
 #
-# The organiser-prescribed model is NOT yet known (see NOTES.md). Until it is, the model
-# identity and endpoint must be supplied explicitly (AI_MODEL / AI_BASE_URL environment
-# variables or edit this file). The harness refuses to run with an unset model and never
-# substitutes one. The credential is always read from AI_API_KEY.
+# The evaluator supplies only AI_API_KEY. [model] below pins a model when the organisers prescribe
+# one (set provider, name and base_url; the harness then never substitutes another model).
+# Until then provider = "auto": the ordered [[auto]] rules at the end of this file map the key's
+# format to exactly one provider endpoint and a model preference list. The key is only ever sent
+# to that endpoint. The resolved provider/model/endpoint are printed at start-up and recorded in
+# every result. AI_MODEL / AI_BASE_URL / AI_PROVIDER override these values without editing files.
 name = "default"
 
 [model]
-provider = "openai_chat"          # openai_chat | anthropic_messages  (development assumption)
-name = ""                         # REQUIRED: prescribed model id (or AI_MODEL)
-base_url = ""                     # REQUIRED: API prefix, e.g. https://host/v1 (or AI_BASE_URL)
+provider = "auto"                 # auto | openai_chat | anthropic_messages
+name = ""                         # pin the prescribed model id here (or AI_MODEL)
+base_url = ""                     # pin the endpoint here (or AI_BASE_URL)
 api_key_env = "AI_API_KEY"
 tool_protocol = "native"          # native function calling; "text" = delimited text actions
 max_output_tokens = 8192
-max_tokens_field = "max_tokens"   # some OpenAI-compatible servers need "max_completion_tokens"
-context_window = 128000           # development assumption; set to the prescribed model's window
+max_tokens_field = "max_tokens"   # auto rules override this where the provider needs it
+context_window = 128000           # conservative; overflow errors also lower it adaptively
 request_timeout_s = 300
-# temperature = 0.0               # leave unset unless the endpoint accepts it
+# temperature: provider default (unset) — see README "Reproducibility"
 
 [retry]
 max_attempts = 6
@@ -44,3 +46,81 @@ final_recheck = true
 budget_notices = true
 repetition_notice = true
 git_hygiene = true
+
+# ---------------------------------------------------------------------------------------------
+# Credential-format rules for provider = "auto" (first match wins). `models` is an ordered
+# preference list; the first one the provider's /models endpoint reports is used and recorded.
+# Formats: public key prefixes documented by each provider; OpenAI keys embed "T3BlbkFJ".
+
+[[auto]]
+label = "Anthropic"
+match = "prefix:sk-ant-"
+provider = "anthropic_messages"
+base_url = "https://api.anthropic.com"
+models = ["claude-sonnet-5", "claude-opus-5-5", "claude-sonnet-4-5", "claude-sonnet-4"]
+context_window = 200000
+
+[[auto]]
+label = "OpenRouter"
+match = "prefix:sk-or-"
+provider = "openai_chat"
+base_url = "https://openrouter.ai/api/v1"
+models = ["anthropic/claude-sonnet-5", "anthropic/claude-sonnet-4.5", "openai/gpt-5", "qwen/qwen3-coder"]
+
+[[auto]]
+label = "OpenAI"
+match = "regex:^sk-(proj|svcacct|admin)-|T3BlbkFJ"
+provider = "openai_chat"
+base_url = "https://api.openai.com/v1"
+models = ["gpt-5.1", "gpt-5", "gpt-4.1", "gpt-4o"]
+max_tokens_field = "max_completion_tokens"
+
+[[auto]]
+label = "DeepSeek"
+match = "regex:^sk-[0-9a-f]{32}$"
+provider = "openai_chat"
+base_url = "https://api.deepseek.com/v1"
+models = ["deepseek-chat", "deepseek-reasoner"]
+
+[[auto]]
+label = "Google Gemini (OpenAI-compatible endpoint)"
+match = "prefix:AIza"
+provider = "openai_chat"
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+models = ["gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"]
+context_window = 1000000
+
+[[auto]]
+label = "Groq"
+match = "prefix:gsk_"
+provider = "openai_chat"
+base_url = "https://api.groq.com/openai/v1"
+models = ["moonshotai/kimi-k2-instruct-0905", "openai/gpt-oss-120b", "llama-3.3-70b-versatile"]
+
+[[auto]]
+label = "xAI"
+match = "prefix:xai-"
+provider = "openai_chat"
+base_url = "https://api.x.ai/v1"
+models = ["grok-code-fast-1", "grok-4"]
+
+[[auto]]
+label = "Hugging Face router"
+match = "prefix:hf_"
+provider = "openai_chat"
+base_url = "https://router.huggingface.co/v1"
+models = ["Qwen/Qwen3-Coder-480B-A35B-Instruct", "openai/gpt-oss-120b"]
+
+[[auto]]
+label = "NVIDIA NIM"
+match = "prefix:nvapi-"
+provider = "openai_chat"
+base_url = "https://integrate.api.nvidia.com/v1"
+models = ["qwen/qwen3-coder-480b-a35b-instruct", "openai/gpt-oss-120b"]
+
+[[auto]]
+label = "Cerebras"
+match = "prefix:csk-"
+provider = "openai_chat"
+base_url = "https://api.cerebras.ai/v1"
+models = ["qwen-3-coder-480b", "gpt-oss-120b"]

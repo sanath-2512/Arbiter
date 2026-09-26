@@ -47,14 +47,14 @@ class CliTest(TempDirCase):
                          env=base_env(AI_MODEL="some-model", AI_BASE_URL="https://example.invalid/v1"))
         self.assertEqual(p.returncode, 2)
         recs = self.records(p)
-        self.assertEqual([r["status"] for r in recs], ["configuration_error"] * 2)
+        self.assertEqual([r["status"] for r in recs], ["configuration_error"])  # fails before any task starts
         self.assertIn("AI_API_KEY is not set", recs[0]["error"]["message"])
         self.assertEqual((self.repo / "calc/ops.py").read_text(), CALC["calc/ops.py"])
 
     def test_missing_model_never_substituted(self):
         p = self.run_cli(["run", "--out", str(self.out)], self.task_line(), env=base_env(AI_API_KEY="k" * 20))
         self.assertEqual(p.returncode, 2)
-        self.assertIn("never substitutes", self.records(p)[0]["error"]["message"])
+        self.assertIn("never tried against other providers", self.records(p)[0]["error"]["message"])
 
     def test_stdin_jsonl_with_malformed_line_no_tty(self):
         prof = self.fake_profile([turn(FIX), turn(tc("bash", command=TEST_CMD)), turn(tc("submit"))])

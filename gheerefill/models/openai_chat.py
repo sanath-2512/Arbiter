@@ -140,6 +140,24 @@ class OpenAIChatClient:
             notes=notes,
         )
 
+    def adapt(self, error: ModelError) -> str | None:
+        """One-step parameter compatibility repair driven by the provider's own error message.
+        Only request *parameters* change; the model, provider and tool protocol never do."""
+        msg = error.message.lower()
+        if "max_tokens" in msg and self.cfg.max_tokens_field == "max_tokens":
+            self.cfg.max_tokens_field = "max_completion_tokens"
+            return "provider rejected 'max_tokens'; now sending 'max_completion_tokens'"
+        if "max_completion_tokens" in msg and self.cfg.max_tokens_field == "max_completion_tokens":
+            self.cfg.max_tokens_field = "max_tokens"
+            return "provider rejected 'max_completion_tokens'; now sending 'max_tokens'"
+        if "temperature" in msg and self.cfg.temperature is not None:
+            self.cfg.temperature = None
+            return "provider rejected 'temperature'; now using the provider default"
+        if "stream_options" in msg and self.cfg.stream_usage:
+            self.cfg.stream_usage = False
+            return "provider rejected 'stream_options'; usage may be unreported in streaming mode"
+        return None
+
     def complete(self, messages: list[dict[str, Any]], tools: list[ToolSpec], *, timeout_s: float) -> ModelTurn:
         url = self.cfg.base_url.rstrip("/") + "/chat/completions"
         headers = {"Authorization": f"Bearer {self._api_key}", **self.cfg.extra_headers}

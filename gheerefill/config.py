@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 PROVIDERS = ("openai_chat", "anthropic_messages", "fake")
+AUTO = "auto"  # provider resolved from the credential's format via the profile's [[auto]] rules
 TOOL_PROTOCOLS = ("native", "text")
 TOOL_SETS = ("full", "bash_only")
 
@@ -116,6 +117,8 @@ class Profile:
     limits: LimitsConfig = field(default_factory=LimitsConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
+    # Ordered [[auto]] rules: credential format -> provider, endpoint, model preference list.
+    auto: list[dict[str, Any]] = field(default_factory=list)
     source: str = ""
     overrides: dict[str, str] = field(default_factory=dict)
 
@@ -166,8 +169,30 @@ def _coerce(section: str, key: str, value: Any, template: Any, annotation: str) 
     return value
 
 
+AUTO_RULE_KEYS = {"label", "match", "provider", "base_url", "models", "max_tokens_field", "context_window",
+                  "max_output_tokens"}
+
+
 def _apply(profile: Profile, data: dict[str, Any]) -> None:
     for key, value in data.items():
+        if key == "auto":
+            if not isinstance(value, list) or not all(isinstance(r, dict) for r in value):
+                raise ConfigError("[[auto]] must be an array of tables")
+            for i, r in enumerate(value):
+                unknown = set(r) - AUTO_RULE_KEYS
+                if unknown:
+                    raise ConfigError(f"[[auto]] rule {i}: unknown key(s) {sorted(unknown)}")
+                if not all(k in r for k in ("match", "provider", "base_url", "models")):
+                    raise ConfigError(f"[[auto]] rule {i}: needs match, provider, base_url, models")
+                if r["provider"] not in ("openai_chat", "anthropic_messages"):
+                    raise ConfigError(f"[[auto]] rule {i}: provider must be openai_chat or anthropic_messages")
+                if not isinstance(r["models"], list) or not r["models"]:
+                    raise ConfigError(f"[[auto]] rule {i}: models must be a non-empty list")
+                kind = str(r["match"]).split(":", 1)[0]
+                if kind not in ("prefix", "contains", "regex"):
+                    raise ConfigError(f"[[auto]] rule {i}: match must start with prefix:, contains: or regex:")
+            profile.auto = [dict(r) for r in value]
+            continue
         if key == "name":
             if not isinstance(value, str):
                 raise ConfigError("profile name must be a string")
@@ -188,14 +213,12 @@ def _apply(profile: Profile, data: dict[str, Any]) -> None:
 
 def validate(profile: Profile, *, require_model: bool = True) -> None:
     m = profile.model
+    if m.provider == AUTO:
+        if not profile.auto and not (m.base_url and m.name):
+            raise ConfigError("model.provider = 'auto' needs [[auto]] rules (or AI_BASE_URL and AI_MODEL)")
+        return _validate_rest(profile)
     if m.provider not in PROVIDERS:
-        raise ConfigError(f"model.provider must be one of {PROVIDERS}, got {m.provider!r}")
-    if m.tool_protocol not in TOOL_PROTOCOLS:
-        raise ConfigError(f"model.tool_protocol must be one of {TOOL_PROTOCOLS}")
-    if profile.tools.set not in TOOL_SETS:
-        raise ConfigError(f"tools.set must be one of {TOOL_SETS}")
-    if m.max_tokens_field not in ("max_tokens", "max_completion_tokens", ""):
-        raise ConfigError("model.max_tokens_field must be 'max_tokens', 'max_completion_tokens' or ''")
+        raise ConfigError(f"model.provider must be one of {PROVIDERS + (AUTO,)}, got {m.provider!r}")
     if m.provider != "fake" and require_model:
         if not m.name.strip():
             raise ConfigError(
@@ -208,6 +231,17 @@ def validate(profile: Profile, *, require_model: bool = True) -> None:
             raise ConfigError(f"model.base_url must be an http(s) URL, got {m.base_url!r}")
     if m.provider == "fake" and not m.script:
         raise ConfigError("provider 'fake' requires model.script (a scripted-turn JSON file)")
+    _validate_rest(profile)
+
+
+def _validate_rest(profile: Profile) -> None:
+    m = profile.model
+    if m.tool_protocol not in TOOL_PROTOCOLS:
+        raise ConfigError(f"model.tool_protocol must be one of {TOOL_PROTOCOLS}")
+    if profile.tools.set not in TOOL_SETS:
+        raise ConfigError(f"tools.set must be one of {TOOL_SETS}")
+    if m.max_tokens_field not in ("max_tokens", "max_completion_tokens", ""):
+        raise ConfigError("model.max_tokens_field must be 'max_tokens', 'max_completion_tokens' or ''")
     for k in m.pricing:
         if k not in ("input", "output", "cache_read", "cache_write"):
             raise ConfigError(f"unknown pricing key {k!r}")
@@ -260,7 +294,7 @@ def apply_task_limits(profile: Profile, limits: dict[str, Any]) -> Profile:
 def profile_from_dict(d: dict[str, Any]) -> Profile:
     """Rebuild a profile from its recorded `to_dict()` form (recovery)."""
     p = Profile()
-    data = {k: v for k, v in d.items() if k in _SECTIONS or k == "name"}
+    data = {k: v for k, v in d.items() if k in _SECTIONS or k in ("name", "auto")}
     _apply(p, data)
     p.source = d.get("source", "")
     p.overrides = dict(d.get("overrides") or {})

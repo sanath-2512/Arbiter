@@ -3,7 +3,7 @@
     python -m gheerefill run [--task FILE|-] [--profile FILE] [--out DIR]
     python -m gheerefill finalize --run-dir DIR       # offline recovery from a checkpoint
     python -m gheerefill probe [--profile FILE]       # live endpoint compatibility check
-    python -m gheerefill check-config [--profile FILE]
+    python -m gheerefill check-config [--profile FILE] [--offline]
 
 `run` output protocol (LOCAL DEVELOPMENT PROTOCOL): one JSON result record per task on
 stdout, one line each, in input order; human-readable progress on stderr.
@@ -54,32 +54,118 @@ def _config_error_record(task_id: str | None, message: str) -> dict[str, Any]:
             "submission_ready": False, "error": {"message": message}}
 
 
+ISSUE_VARS = ("ISSUE", "ISSUE_URL", "GITHUB_ISSUE")
+REPO_VARS = ("REPO", "REPO_PATH", "REPO_URL")
+
+
+def load_dotenv(path: Path) -> list[str]:
+    """Developer convenience: fill UNSET variables from a local .env (never committed; values that
+    are already in the environment, e.g. the evaluator's AI_API_KEY, always win)."""
+    loaded = []
+    if not path.is_file():
+        return loaded
+    for line in path.read_text(errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k, v = k.strip().removeprefix("export ").strip(), v.strip().strip('"').strip("'")
+        if k and v and not os.environ.get(k):
+            os.environ[k] = v
+            loaded.append(k)
+    return loaded
+
+
+def _first_env(names: tuple[str, ...]) -> str | None:
+    for n in names:
+        v = os.environ.get(n, "").strip()
+        if v:
+            return v
+    return None
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     from gheerefill.agent import Agent
+    from gheerefill.credentials import take_credential
+    from gheerefill.intake import IntakeError, Request, build_task, parse_github_ref, parse_input
     from gheerefill.models import make_client
-    from gheerefill.task import Task, TaskInputError, iter_tasks
+    from gheerefill.report import card, is_tty, write_report
+    from gheerefill.resolve import resolve
+    from gheerefill.sandbox import Sandbox
 
+    load_dotenv(HARNESS_ROOT / ".env")
     out_root = Path(args.out or os.environ.get("GHEEREFILL_OUT") or HARNESS_ROOT / "runs").resolve()
+    workspace = Path(os.environ.get("GHEEREFILL_WORKSPACE") or HARNESS_ROOT / "workspace").resolve()
+    human = is_tty(sys.stdout)
+    color = human and not os.environ.get("NO_COLOR")
+    issue_arg = args.issue or _first_env(ISSUE_VARS)
+    if not issue_arg and os.environ.get("ISSUE_FILE"):
+        issue_arg = "@" + os.environ["ISSUE_FILE"]
+    repo_arg = args.repo or _first_env(REPO_VARS)
+    base_arg = args.base or os.environ.get("BASE") or None
+    interactive = not issue_arg and args.task in (None, "-") and is_tty(sys.stdin)
+
+    def emit(record: dict[str, Any]) -> None:
+        if not human:
+            _emit(record)
+
+    # ---- configuration (fails before any task is attempted)
     config_error = None
+    resolution = None
+    key = ""
     try:
         profile = load_profile(_profile_path(args.profile))
         validate(profile)
         if profile.model.provider != "fake":
-            from gheerefill.models import read_api_key
-
-            read_api_key(profile.model)
+            key = take_credential(profile.model.api_key_env)
+            if not key:
+                raise ConfigError(f"{profile.model.api_key_env} is not set; export it before `make run`.")
+        resolution = resolve(profile, key, discover=not args.no_discover)
+        profile.model = resolution.model
+        validate(profile)
     except ConfigError as e:
         config_error = str(e)
         profile = None
-    if args.task in (None, "-"):
-        stream, base_dir, source = sys.stdin, Path.cwd(), "stdin"
-    else:
-        tp = Path(args.task)
-        if not tp.exists() or tp.is_dir():  # FIFOs, /dev/stdin and process substitution are fine
-            _err(f"error: task file not found: {tp}")
-            _emit(_config_error_record(None, f"task file not found: {tp}"))
-            return 2
-        stream, base_dir, source = open(tp, encoding="utf-8"), tp.resolve().parent, str(tp)
+    gh_token = take_credential("GITHUB_TOKEN") or take_credential("GH_TOKEN") or None
+    redactor = Redactor([key, gh_token or ""])
+    sandbox_status = Sandbox(profile.policy.sandbox if profile else "key").probe().status
+
+    if human or interactive:
+        _err(f"gheerefill {__version__} — autonomous coding harness")
+        if resolution:
+            _err(f"  model      {resolution.model.provider} · {resolution.model.name} @ {resolution.model.base_url}")
+            _err(f"             ({resolution.source}; {resolution.discovery})")
+            for n in resolution.notes:
+                _err(f"             note: {n}")
+        _err("  isolation  " + ("active — " + sandbox_status["verified"] if sandbox_status.get("active")
+                                else f"inactive ({sandbox_status.get('reason')})"))
+        _err(f"  runs       {out_root}")
+    if config_error:
+        _err(f"configuration error: {config_error}")
+        emit(_config_error_record(None, config_error))
+        return 2
+
+    # ---- inputs
+    requests: list[Request] = []
+    try:
+        if issue_arg:
+            requests = parse_input(issue_arg, base_dir=Path.cwd(), source="ISSUE")
+        elif args.task not in (None, "-"):
+            tp = Path(args.task)
+            if not tp.exists() or tp.is_dir():  # FIFOs, /dev/stdin and process substitution are fine
+                _err(f"error: task file not found: {tp}")
+                emit(_config_error_record(None, f"task file not found: {tp}"))
+                return 2
+            with open(tp, encoding="utf-8", errors="replace") as fh:
+                requests = parse_input(fh.read(), base_dir=tp.resolve().parent, source=str(tp))
+        elif not interactive:
+            requests = parse_input(sys.stdin.read(), base_dir=Path.cwd(), source="stdin")
+    except IntakeError as e:
+        _err(f"invalid input: {e}")
+        emit({"schema": "gheerefill.result/v1", "task_id": None, "status": "invalid_input", "submission_ready": False,
+              "error": {"message": str(e)}})
+        return 1
+
     exit_code = 0
     current: dict[str, Any] = {}
 
@@ -91,55 +177,115 @@ def cmd_run(args: argparse.Namespace) -> int:
         else:
             current["stop"] = True
 
+    def process(req: Request, repo_spec: str | None) -> int:
+        if req.error is not None:
+            _err(f"invalid task input at {req.error.location}: {req.error.message}")
+            emit({"schema": "gheerefill.result/v1", "task_id": req.error.task_id, "status": "invalid_input",
+                  "submission_ready": False, "error": {"location": req.error.location, "message": req.error.message}})
+            return 1
+        try:
+            task = build_task(req, repo_spec=repo_spec, base=base_arg, workspace=workspace, github_token=gh_token,
+                              limits={}, log=lambda m: _err(redactor.text(m)))
+        except IntakeError as e:
+            _err(f"cannot prepare task: {e}")
+            emit({"schema": "gheerefill.result/v1", "task_id": None, "status": "invalid_input",
+                  "submission_ready": False, "error": {"message": str(e), "source": req.source}})
+            return 1
+        try:
+            tp_profile = apply_task_limits(profile, task.limits)
+            validate(tp_profile)
+        except ConfigError as e:
+            emit(_config_error_record(task.task_id, f"invalid task limits: {e}"))
+            return 1
+        run_id = time.strftime("%Y%m%dT%H%M%S", time.gmtime()) + "-" + uuid.uuid4().hex[:6]
+        run_dir = out_root / safe_name(task.task_id) / run_id
+        repo = task.repo_path.resolve()
+        if run_dir == repo or repo in run_dir.parents:
+            emit(_config_error_record(task.task_id, f"output directory {run_dir} is inside the target repository"))
+            return 1
+        client = make_client(tp_profile.model, env={tp_profile.model.api_key_env: key})
+        agent = Agent(task, tp_profile, client, run_dir, redactor=redactor)
+        current["agent"] = agent
+        try:
+            result = agent.run()
+        finally:
+            current.pop("agent", None)
+        if resolution is not None:
+            result["model"]["resolution"] = resolution.to_dict()
+        if task.metadata.get("intake_notes"):
+            result["intake"] = task.metadata["intake_notes"]
+        from gheerefill.records import atomic_write_json
+
+        atomic_write_json(run_dir / "result.json", result)
+        try:
+            write_report(result, task.issue)
+        except Exception as e:  # noqa: BLE001 - the report must never break delivery
+            _err(f"report generation failed: {e}")
+        if human:
+            sys.stdout.write(card(result, color=color))
+            sys.stdout.flush()
+        else:
+            _emit(result)
+        if agent.cancel_requested:
+            current["stop"] = True
+        return 0 if result.get("status") == "completed" else 1
+
     old = {s: signal.signal(s, on_signal) for s in (signal.SIGTERM, signal.SIGINT)}
     try:
-        for item in iter_tasks(stream, base_dir=base_dir, source=source):
-            if current.get("stop"):
-                break
-            if isinstance(item, TaskInputError):
-                _err(f"invalid task input at {item.location}: {item.message}")
-                _emit({"schema": "gheerefill.result/v1", "task_id": item.task_id, "status": "invalid_input",
-                       "submission_ready": False, "error": {"location": item.location, "message": item.message}})
-                exit_code = max(exit_code, 1)
-                continue
-            task: Task = item
-            if config_error or profile is None:
-                _err(f"configuration error: {config_error}")
-                _emit(_config_error_record(task.task_id, config_error or "invalid profile"))
-                exit_code = 2
-                continue
-            try:
-                tp_profile = apply_task_limits(profile, task.limits)
-                validate(tp_profile)
-            except ConfigError as e:
-                _emit(_config_error_record(task.task_id, f"invalid task limits: {e}"))
-                exit_code = max(exit_code, 1)
-                continue
-            run_id = time.strftime("%Y%m%dT%H%M%S", time.gmtime()) + "-" + uuid.uuid4().hex[:6]
-            run_dir = out_root / safe_name(task.task_id) / run_id
-            repo = task.repo_path.resolve()
-            if run_dir == repo or repo in run_dir.parents:
-                _emit(_config_error_record(task.task_id, f"output directory {run_dir} is inside the target repository"))
-                exit_code = max(exit_code, 1)
-                continue
-            redactor = _redactor(tp_profile)
-            client = make_client(tp_profile.model)
-            agent = Agent(task, tp_profile, client, run_dir, redactor=redactor)
-            current["agent"] = agent
-            try:
-                result = agent.run()
-            finally:
-                current.pop("agent", None)
-            _emit(result)
-            if result.get("status") != "completed":
-                exit_code = max(exit_code, 1)
-            if agent.cancel_requested:
-                current["stop"] = True
+        if interactive:
+            _err("\nSupply the task: a GitHub issue URL (or owner/repo#N), @path/to/issue.md, or paste the issue "
+                 "text and end it with a line containing only /go. Commands: /help, /quit.")
+            while not current.get("stop"):
+                sys.stderr.write("issue> ")
+                sys.stderr.flush()
+                line = sys.stdin.readline()
+                if not line:
+                    break
+                s = line.strip()
+                if s in ("/quit", "/exit", "quit", "exit"):
+                    break
+                if not s:
+                    continue
+                if s in ("/help", "help"):
+                    _err("GitHub issue URL | owner/repo#N | @file | pasted text ending with /go | /quit. "
+                         "Set REPO=<path or git URL> for text issues; BASE=<commit|before-issue> to pin the base.")
+                    continue
+                text = s
+                if not (parse_github_ref(s) or s.startswith("@") or s.startswith("{")):
+                    buf = [line]
+                    _err("(pasting: end with a line containing only /go, or Ctrl-D)")
+                    while True:
+                        more = sys.stdin.readline()
+                        if not more or more.strip() == "/go":
+                            break
+                        buf.append(more)
+                    text = "".join(buf)
+                try:
+                    reqs = parse_input(text, base_dir=Path.cwd(), source="interactive")
+                except IntakeError as e:
+                    _err(f"invalid input: {e}")
+                    continue
+                for req in reqs:
+                    spec = repo_arg
+                    if req.issue_text is not None and not spec:
+                        sys.stderr.write("repository (local path or git URL)> ")
+                        sys.stderr.flush()
+                        spec = sys.stdin.readline().strip() or None
+                    exit_code = max(exit_code, process(req, spec))
+                    if current.get("stop"):
+                        break
+        else:
+            if not requests:
+                _err("no task supplied. Give ISSUE=<GitHub issue URL | owner/repo#N | @file | text> (with REPO=... "
+                     "for text), TASK=<file>, pipe the task on stdin, or run `make run` in a terminal.")
+                return 0
+            for req in requests:
+                if current.get("stop"):
+                    break
+                exit_code = max(exit_code, process(req, repo_arg))
     finally:
-        for s, h in old.items():
-            signal.signal(s, h)
-        if stream is not sys.stdin:
-            stream.close()
+        for sig, h in old.items():
+            signal.signal(sig, h)
     return exit_code
 
 
@@ -190,21 +336,37 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     return 0 if result.get("status") == "completed" else 1
 
 
-def cmd_check_config(args: argparse.Namespace) -> int:
-    try:
-        profile = load_profile(_profile_path(args.profile))
-        validate(profile)
-        key_ok = True
-        if profile.model.provider != "fake":
-            from gheerefill.models import read_api_key
+def _resolved_profile(args: argparse.Namespace, *, discover: bool):
+    from gheerefill.credentials import take_credential
+    from gheerefill.resolve import resolve
 
-            read_api_key(profile.model)
+    load_dotenv(HARNESS_ROOT / ".env")
+    profile = load_profile(_profile_path(args.profile))
+    validate(profile)
+    key = ""
+    if profile.model.provider != "fake":
+        key = take_credential(profile.model.api_key_env)
+        if not key:
+            raise ConfigError(f"{profile.model.api_key_env} is not set")
+    resolution = resolve(profile, key, discover=discover)
+    profile.model = resolution.model
+    validate(profile)
+    return profile, key, resolution
+
+
+def cmd_check_config(args: argparse.Namespace) -> int:
+    """Validate the profile, resolve the model and check the key with the provider's model list
+    (no tokens are spent). --offline skips the provider call."""
+    from gheerefill.sandbox import Sandbox
+
+    try:
+        profile, key, resolution = _resolved_profile(args, discover=not args.offline)
     except ConfigError as e:
         _err(f"configuration error: {e}")
         return 2
-    d = profile.to_dict()
-    print(json.dumps({"ok": True, "profile": d, "profile_id": profile.identity(), "credential_present": key_ok},
-                     indent=2, default=str))
+    print(json.dumps({"ok": True, "resolution": resolution.to_dict(), "profile_id": profile.identity(),
+                      "credential_present": bool(key) or profile.model.provider == "fake",
+                      "isolation": Sandbox(profile.policy.sandbox).probe().status}, indent=2, default=str))
     return 0
 
 
@@ -214,21 +376,19 @@ def cmd_probe(args: argparse.Namespace) -> int:
     from gheerefill.models.base import ModelError, ToolSpec
 
     try:
-        profile = load_profile(_profile_path(args.profile))
-        validate(profile)
-        client = make_client(profile.model)
+        profile, key, resolution = _resolved_profile(args, discover=True)
+        client = make_client(profile.model, env={profile.model.api_key_env: key})
     except ConfigError as e:
         _err(f"configuration error: {e}")
         return 2
-    redactor = _redactor(profile)
+    redactor = Redactor([key])
     tool = ToolSpec("bash", "Run a bash command.", {"type": "object", "properties": {"command": {"type": "string"}},
                                                      "required": ["command"], "additionalProperties": False})
     msgs: list[dict[str, Any]] = [
         {"role": "system", "content": "You are a connectivity test. Follow instructions exactly."},
         {"role": "user", "content": "Call the bash tool with the command `echo probe-ok`. Do nothing else."},
     ]
-    report: dict[str, Any] = {"provider": profile.model.provider, "model": profile.model.name,
-                              "base_url": profile.model.base_url, "stream": profile.model.stream,
+    report: dict[str, Any] = {"resolution": resolution.to_dict(), "stream": profile.model.stream,
                               "tool_protocol": profile.model.tool_protocol, "live": profile.model.provider != "fake"}
     try:
         t0 = time.monotonic()
@@ -249,14 +409,13 @@ def cmd_probe(args: argparse.Namespace) -> int:
         report["usage_reported"] = turn.usage.known
     except ModelError as e:
         report["error"] = {"class": e.cls.value, "status": e.status, "message": e.message[:500]}
-    # The other transport mode, one request only, so the profile's `stream` choice is evidence-based.
     import copy
 
     alt = copy.deepcopy(profile.model)
     alt.stream = not profile.model.stream
     try:
         t0 = time.monotonic()
-        alt_turn = make_client(alt).complete(msgs[:2], [tool], timeout_s=profile.model.request_timeout_s)
+        alt_turn = make_client(alt, env={alt.api_key_env: key}).complete(msgs[:2], [tool], timeout_s=profile.model.request_timeout_s)
         report["alternate_mode"] = {"stream": alt.stream, "latency_s": round(time.monotonic() - t0, 2),
                                     "tool_call_ok": bool(alt_turn.tool_calls) and alt_turn.tool_calls[0].name == "bash",
                                     "usage_reported": alt_turn.usage.known}
@@ -273,6 +432,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--task", help="task file (JSON object, array, or JSON Lines); '-' or omitted = stdin")
     p.add_argument("--profile", help=f"profile TOML (default: $GHEEREFILL_PROFILE or {DEFAULT_PROFILE})")
     p.add_argument("--out", help="output root for run records (default: $GHEEREFILL_OUT or ./runs)")
+    p.add_argument("--issue", help="GitHub issue URL, owner/repo#N, @file or issue text (or ISSUE=...)")
+    p.add_argument("--repo", help="repository path or git URL for the issue (or REPO=...)")
+    p.add_argument("--base", help="base commit, or 'before-issue' (or BASE=...)")
+    p.add_argument("--no-discover", action="store_true", help="skip the provider /models lookup")
     p.set_defaults(fn=cmd_run)
     p = sub.add_parser("finalize", help="finalise an interrupted run from its checkpoint (no model calls)")
     p.add_argument("--run-dir", required=True)
@@ -281,8 +444,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("probe", help="live endpoint compatibility check (uses the credential)")
     p.add_argument("--profile")
     p.set_defaults(fn=cmd_probe)
-    p = sub.add_parser("check-config", help="validate profile and credential presence (no network)")
+    p = sub.add_parser("check-config", help="validate profile, resolve the model, check the key (no tokens spent)")
     p.add_argument("--profile")
+    p.add_argument("--offline", action="store_true", help="do not contact the provider")
     p.set_defaults(fn=cmd_check_config)
     args = parser.parse_args(argv)
     return args.fn(args)

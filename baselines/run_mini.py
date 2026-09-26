@@ -32,14 +32,18 @@ from pathlib import Path
 SECRET_SUFFIXES = ("_API_KEY", "_TOKEN", "_SECRET", "_SECRET_ACCESS_KEY", "_PASSWORD")
 
 
-def load_profile(path: Path) -> dict:
-    data = tomllib.loads(path.read_text())
-    model = data.get("model", {})
-    for var, key in (("AI_MODEL", "name"), ("AI_BASE_URL", "base_url"), ("AI_PROVIDER", "provider")):
-        if os.environ.get(var):
-            model[key] = os.environ[var]
-    data["model"] = model
-    return data
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))  # gheerefill is stdlib-only: importable from the baseline venv
+
+
+def resolved_model(profile_path: Path, key: str) -> dict:
+    """Resolve provider/endpoint/model exactly as the harness does (same code path, same result)."""
+    from gheerefill.config import load_profile as _load
+    from gheerefill.resolve import resolve
+
+    prof = _load(profile_path)
+    r = resolve(prof, key, discover=os.environ.get("GHEEREFILL_BASELINE_DISCOVER", "1") == "1")
+    return {**r.model.__dict__, "resolution": r.to_dict()}
 
 
 def main() -> int:
@@ -58,19 +62,16 @@ def main() -> int:
     os.environ["MSWEA_GLOBAL_CONFIG_DIR"] = str(out / "mswea-config")
     os.environ["MSWEA_COST_TRACKING"] = "ignore_errors"
 
-    prof = load_profile(Path(args.profile))
-    m = prof["model"]
-    provider = m.get("provider", "openai_chat")
-    if provider not in ("openai_chat", "anthropic_messages"):
-        print(f"baseline supports live providers only, got {provider!r}", file=sys.stderr)
-        return 2
-    if not m.get("name") or not m.get("base_url"):
-        print("model name/base_url not configured (profile or AI_MODEL/AI_BASE_URL)", file=sys.stderr)
-        return 2
-    key_env = m.get("api_key_env", "AI_API_KEY")
+    prof = tomllib.loads(Path(args.profile).read_text())
+    key_env = prof.get("model", {}).get("api_key_env", "AI_API_KEY")
     api_key = os.environ.pop(key_env, "")
     if not api_key:
         print(f"{key_env} is not set", file=sys.stderr)
+        return 2
+    m = resolved_model(Path(args.profile), api_key)
+    provider = m["provider"]
+    if provider not in ("openai_chat", "anthropic_messages"):
+        print(f"baseline supports live providers only, got {provider!r}", file=sys.stderr)
         return 2
     for k in list(os.environ):
         if k.upper().endswith(SECRET_SUFFIXES):

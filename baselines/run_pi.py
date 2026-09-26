@@ -53,17 +53,19 @@ def main() -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     prof = tomllib.loads(Path(args.profile).read_text())
-    m = prof.get("model", {})
-    for var, key in (("AI_MODEL", "name"), ("AI_BASE_URL", "base_url"), ("AI_PROVIDER", "provider")):
-        if os.environ.get(var):
-            m[key] = os.environ[var]
-    provider = m.get("provider", "openai_chat")
-    if provider not in ("openai_chat", "anthropic_messages") or not m.get("name") or not m.get("base_url"):
-        print("Pi baseline needs a live provider with model name and base_url", file=sys.stderr)
-        return 2
-    key = os.environ.get(m.get("api_key_env", "AI_API_KEY"), "")
+    key = os.environ.get(prof.get("model", {}).get("api_key_env", "AI_API_KEY"), "")
     if not key:
         print("API key not set", file=sys.stderr)
+        return 2
+    sys.path.insert(0, str(ROOT))  # same resolver as the harness: identical model for every system
+    from gheerefill.config import load_profile
+    from gheerefill.resolve import resolve
+
+    m = resolve(load_profile(Path(args.profile)), key,
+                discover=os.environ.get("GHEEREFILL_BASELINE_DISCOVER", "1") == "1").model.__dict__
+    provider = m["provider"]
+    if provider not in ("openai_chat", "anthropic_messages"):
+        print("Pi baseline needs a live provider", file=sys.stderr)
         return 2
     if not Path(args.pi_bin).exists():
         print(f"pi not installed at {args.pi_bin}", file=sys.stderr)

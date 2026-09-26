@@ -4,50 +4,32 @@ These are persistent working notes. Update them when evidence changes.
 
 ## 1. Contract status
 
-No official event documents were available in the workspace. The rules below come from the
-implementation brief.
+The authoritative source is "AI Harness Hackathon 2026 — Standardised Makefile-Based Evaluation
+Setup" (received 2026-09-26).
 
-**Confirmed**
-
-| Item | Current handling |
-|---|---|
-| Root `make setup` / `make run` / `make test` (+ `clean`) | Implemented. Setup works offline. Run is unattended. Test needs no network or credentials. |
-| Credential from `AI_API_KEY`, never committed or logged | Read only in `models/__init__.py`. Stripped from tool environments. Redacted from every record (tested). |
-| Use the prescribed model; never substitute silently | The profile must name the model. A missing model or credential gives a clear error. There is no fallback model. |
-| Text-only evaluation; unattended operation | Text tools only. No TTY needed (tested via subprocess without a TTY). |
-| Evaluator clones, supplies credentials, runs setup/run, supplies tasks | Setup needs only Python ≥ 3.11 + git. The task source is replaceable (`task.py`). |
-
-**Development assumptions**
+**Confirmed by the official document**
 
 | Item | Current handling |
 |---|---|
-| Provider/API protocol | OpenAI-compatible Chat Completions (default) and Anthropic Messages adapters, both non-streaming with native tools. An explicit `text` protocol exists as a separate profile. |
-| Context/output limits | Profile defaults: 128k context, 8192 output tokens. |
-| Reasoning controls | `model.extra_body` passthrough (e.g. `reasoning_effort`, `thinking`). |
-| Token/time/concurrency limits | Defaults 1800 s / 150 steps. Per-task `limits` override them. Tasks run sequentially. |
-| Task input/output format | Local adapter: JSON / JSON Lines in, one JSON record per task out. The deliverable is the in-place working tree plus a patch file. |
-| Repository languages | Language-agnostic tools, plus output parsers for common test runners. |
-| Prepared vs bare environments | Assumed prepared. The model may install dependencies via bash. There is no automatic setup-recipe generation. |
-| Network/container permissions | The harness needs outbound HTTPS to the model endpoint only. |
-| Cross-task persistence | None is used. Each task is independent. |
+| Root `Makefile` with `setup`, `run`, `test` (`clean` where applicable); at minimum setup and run must work | All four exist. Setup is offline and takes ~0.2 s. The official sequence has been rehearsed from a fresh clone. |
+| Credential only via `AI_API_KEY`; never hard-coded, committed, or in `.env`/docs | Read once, then scrubbed from the process. Recipes never expand it (`make -n` shows no key). A `.env.example` is provided; `.env` is git-ignored and never overrides the environment. |
+| The evaluator runs only `export AI_API_KEY; make setup; make run` and must not edit files or configuration | The model configuration is committed. `provider = "auto"` resolves the endpoint and model from the key format, with no other variables needed. |
+| Model configuration clearly defined in the application/config files; use the prescribed model if specified; no substitution | `profiles/default.toml` holds `[model]` plus the `[[auto]]` rules. A pinned name is never replaced. Resolution is printed and recorded. |
+| Text-only models and input | Text only. |
+| `make run` launches the harness; the GitHub issue/test case is then supplied to the running harness | Interactive console on a TTY (URL, `owner/repo#N`, `@file`, or pasted text). Non-interactive via `ISSUE=`, `TASK=` or stdin. Loops for further issues. |
+| A TUI, if any, launches via `make run` | Line-mode console, no full-screen UI. Works over any terminal, and piped. |
+| Declare dependencies; document randomness and settings that affect results | Runtime needs only stdlib + git. Randomness is limited to provider sampling (provider default temperature) and seeded retry jitter. Every result records the resolved model, profile hash, and base commit. |
 
-**Blocked on organiser information**
+**Still open (no organiser information yet)**
 
 | Item | Current handling |
 |---|---|
-| Exact model/version | Configure via `AI_MODEL` or `profiles/default.toml`. |
-| Provider/API protocol | See the assumption above. |
-| Context/output limits | See the assumption above. |
-| Reasoning controls | See the assumption above. |
-| Token/time/concurrency limits | See the assumption above. |
-| Task input/output format | See the assumption above. **The local protocol is not proof of event compatibility.** |
-| Repository languages | See the assumption above. |
-| Prepared vs bare environments | See the assumption above. |
-| Network/container permissions | See the assumption above. |
-| Scoring weights | Unknown. The design maximises valid, verified submissions. |
-| Cross-task persistence | See the assumption above. |
-| Code-reuse rules | The runtime is original code with one attributed adaptation. Baselines are dev-only. |
-| Restrictions on dev-time optimisation / auxiliary models | None are used, so nothing needs permission yet. |
+| Which model/provider is prescribed | Auto-resolution from the key format. Pin it in `profiles/default.toml` once announced. |
+| How exactly the issue is "supplied to the running harness" | Every plausible channel is supported (TTY paste/URL, `ISSUE=`, stdin, file, JSON). |
+| Whether the repository is pre-provisioned or must be cloned | `REPO=` for a provided checkout; otherwise clone from GitHub. |
+| Time/token limits, concurrency, scoring weights | Defaults are 1800 s / 150 steps. Per-task limits are accepted. |
+| Network policy in the evaluation environment | Needs HTTPS to the model endpoint, plus GitHub if cloning. |
+| Cross-task persistence | None used. |
 
 ## 2. Claims and their evidence
 

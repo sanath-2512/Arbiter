@@ -8,8 +8,17 @@ class ConfigTest(TempDirCase):
         p.write_text(text)
         return p
 
-    def test_default_profile_refuses_unset_model(self):
+    def test_default_profile_refuses_unknown_key_format(self):
+        from gheerefill.resolve import resolve
+
         prof = load_profile(ROOT / "profiles" / "default.toml", env={})
+        validate(prof)
+        with self.assertRaises(ConfigError) as cm:
+            resolve(prof, "not-a-known-format-123", discover=False)
+        self.assertIn("never tried against other providers", str(cm.exception))
+
+    def test_explicit_provider_without_model_is_refused(self):
+        prof = load_profile(self.write("[model]\nprovider = 'openai_chat'\n"), env={})
         with self.assertRaises(ConfigError) as cm:
             validate(prof)
         self.assertIn("never substitutes", str(cm.exception))

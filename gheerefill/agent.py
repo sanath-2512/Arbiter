@@ -301,6 +301,7 @@ class Agent:
         format_errors = 0
         submit_reviews = 0
         overflow_retries = 0
+        adaptations = 0
         notice_sent = False
         while True:
             if self.cancel_requested:
@@ -342,6 +343,13 @@ class Agent:
                                                    None, None, True, "request interrupted by cancellation"))
                     raise
             except ModelError as e:
+                if e.cls == ErrorClass.UNSUPPORTED and adaptations < 4 and hasattr(self.client, "adapt"):
+                    change = self.client.adapt(e)
+                    if change:
+                        adaptations += 1
+                        self.notes.append(f"parameter compatibility: {change}")
+                        self.log(f"parameter compatibility: {change}")
+                        continue
                 if e.cls == ErrorClass.CONTEXT_OVERFLOW and overflow_retries < 3:
                     overflow_retries += 1
                     self.ctx.force_reduce(self.ctx.estimate(view))

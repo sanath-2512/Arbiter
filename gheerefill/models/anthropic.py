@@ -134,6 +134,12 @@ class AnthropicClient:
             provider_raw=content,
         )
 
+    def adapt(self, error: ModelError) -> str | None:
+        if "temperature" in error.message.lower() and self.cfg.temperature is not None:
+            self.cfg.temperature = None
+            return "provider rejected 'temperature'; now using the provider default"
+        return None
+
     def complete(self, messages: list[dict[str, Any]], tools: list[ToolSpec], *, timeout_s: float) -> ModelTurn:
         base = self.cfg.base_url.rstrip("/")
         url = base + ("/messages" if base.endswith("/v1") else "/v1/messages")
