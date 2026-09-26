@@ -1,0 +1,2 @@
+# Upstream baseline (development-only; never a runtime dependency of the submission).
+mini-swe-agent==2.4.6

@@ -1,0 +1,3 @@
+{"task_id": "py-ttl-cache", "partition": "dev", "kind": "feature", "language": "python",
+ "limits": {"time_limit_s": 900, "max_steps": 50},
+ "judge": {"files": {"hidden": "_judge"}, "cmd": "python3 -m unittest discover -s _judge -t ."}}
