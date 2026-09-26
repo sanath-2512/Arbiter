@@ -11,6 +11,7 @@ Normalised: input_tokens = prompt_tokens - cached_tokens, cache_read_tokens = ca
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from typing import Any
 
@@ -27,6 +28,8 @@ def normalize_openai_usage(usage: Any) -> Usage:
     pdet = usage.get("prompt_tokens_details") or {}
     cdet = usage.get("completion_tokens_details") or {}
     cached = int((pdet.get("cached_tokens") if isinstance(pdet, dict) else 0) or 0)
+    if not cached and usage.get("prompt_cache_hit_tokens"):  # DeepSeek: prompt = hit + miss
+        cached = int(usage.get("prompt_cache_hit_tokens") or 0)
     reasoning = int((cdet.get("reasoning_tokens") if isinstance(cdet, dict) else 0) or 0)
     return Usage(
         input_tokens=max(0, prompt - cached),
@@ -65,6 +68,7 @@ class OpenAIChatClient:
 
     def render_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
+        passback = self.cfg.reasoning_passback
         for m in messages:
             role = m["role"]
             if role == "system":
@@ -73,15 +77,20 @@ class OpenAIChatClient:
                 out.append({"role": "user", "content": m["content"]})
             elif role == "assistant":
                 calls = m.get("tool_calls") or []
-                d: dict[str, Any] = {"role": "assistant", "content": m.get("content") or (None if calls else "")}
+                # null (not "") next to tool calls: DeepSeek rejects an empty string there; an assistant
+                # turn with neither text nor calls gets a placeholder instead of an empty message
+                d: dict[str, Any] = {"role": "assistant", "content": m.get("content") or (None if calls else "(no reply)")}
                 if calls:
                     d["tool_calls"] = [
-                        {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"]}}
+                        {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"] or "{}"}}
                         for c in calls
                     ]
+                reasoning = m.get("reasoning")
+                if reasoning and (passback == "all" or (passback == "auto" and calls)):
+                    d["reasoning_content"] = reasoning
                 out.append(d)
             elif role == "tool":
-                out.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": m["content"]})
+                out.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": m["content"] or "(no output)"})
             else:
                 raise ValueError(f"unknown message role {role!r}")
         return out
@@ -132,12 +141,22 @@ class OpenAIChatClient:
                 call_id = f"call_{uuid.uuid4().hex[:12]}"
                 notes.append("provider omitted a tool call id; generated one")
             calls.append(ToolCall(id=str(call_id), name=name, arguments=args, raw_arguments=raw, parse_error=err))
+        finish = str(choice.get("finish_reason") or "")
+        text = _content_text(msg.get("content"))
+        reasoning = msg.get("reasoning_content") or msg.get("reasoning") or ""
+        if not isinstance(reasoning, str):
+            reasoning = json.dumps(reasoning)
+        if finish == "insufficient_system_resource" and not calls:
+            # DeepSeek ends a response early under load; the partial turn is useless, ask again
+            raise ModelError(ErrorClass.SERVER, "provider stopped the response: insufficient_system_resource",
+                             usage_uncertain=True)
         return ModelTurn(
-            text=_content_text(msg.get("content")),
+            text=text,
             tool_calls=calls,
-            finish_reason=str(choice.get("finish_reason") or ""),
+            finish_reason=finish,
             usage=usage,
             notes=notes,
+            reasoning=reasoning,
         )
 
     def adapt(self, error: ModelError) -> str | None:
@@ -160,6 +179,21 @@ class OpenAIChatClient:
         if "stream_options" in msg and self.cfg.stream_usage:
             self.cfg.stream_usage = False
             return "provider rejected 'stream_options'; usage may be unreported in streaming mode"
+        if "reasoning_content" in msg or "content[].thinking" in msg:
+            if re.search(r"must be passed back|pass(ed)? back|is required|missing", msg):
+                if self.cfg.reasoning_passback != "all":
+                    self.cfg.reasoning_passback = "all"
+                    return "provider requires reasoning_content on earlier assistant turns; now sent on all of them"
+                if self.cfg.extra_body.get("thinking") != {"type": "disabled"}:
+                    self.cfg.extra_body["thinking"] = {"type": "disabled"}
+                    return "reasoning passback still rejected; thinking mode disabled for the rest of the run"
+            elif self.cfg.reasoning_passback != "none":
+                self.cfg.reasoning_passback = "none"
+                return "provider rejected reasoning_content in messages; no longer sent"
+        if re.search(r"only supports? stream|stream mode|non-stream(ing)? calls?|must be set to false for non-stream", msg) \
+                and not self.cfg.stream:
+            self.cfg.stream = True
+            return "provider requires streaming for this model; now streaming"
         return None
 
     def complete(self, messages: list[dict[str, Any]], tools: list[ToolSpec], *, timeout_s: float) -> ModelTurn:
@@ -177,6 +211,7 @@ class OpenAIChatClient:
 def accumulate_openai_stream(events) -> dict[str, Any]:
     """Rebuild a non-streaming chat.completion dict from chat.completion.chunk events."""
     content: list[str] = []
+    reasoning: list[str] = []
     calls: dict[int, dict[str, Any]] = {}
     finish = ""
     usage = None
@@ -191,6 +226,9 @@ def accumulate_openai_stream(events) -> dict[str, Any]:
             delta = ch.get("delta") or {}
             if isinstance(delta.get("content"), str):
                 content.append(delta["content"])
+            r = delta.get("reasoning_content") if delta.get("reasoning_content") is not None else delta.get("reasoning")
+            if isinstance(r, str):
+                reasoning.append(r)
             for tc in delta.get("tool_calls") or []:
                 slot = calls.setdefault(int(tc.get("index", len(calls))), {"id": None, "name": "", "arguments": ""})
                 if tc.get("id"):
@@ -203,6 +241,8 @@ def accumulate_openai_stream(events) -> dict[str, Any]:
             if ch.get("finish_reason"):
                 finish = ch["finish_reason"]
     message: dict[str, Any] = {"role": "assistant", "content": "".join(content)}
+    if reasoning:
+        message["reasoning_content"] = "".join(reasoning)
     if calls:
         message["tool_calls"] = [
             {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"]}}

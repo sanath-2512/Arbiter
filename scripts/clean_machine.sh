@@ -124,9 +124,10 @@ if [ $rc -eq 0 ] && echo "$verdict" | grep -q '"solved": true'; then
 else record "run: ISSUE=<github issue URL>" fail $((SECONDS-t0)) "rc=$rc judged: $verdict $(echo "$out" | tail -2 | tr '\n' ' ' | cut -c1-200)"; fi
 
 # 8. nothing secret-looking was written by the runs (the scripted key is the only key that existed)
-if grep -rIl "sk-scripted-policy-not-a-key\|sk-invalid-not-a-key" "$G" "$W/home" 2>/dev/null | grep -v '/\.git/' | head -1 | grep -q .; then
-  record "no key material on disk" fail 0 "$(grep -rIl 'sk-scripted-policy-not-a-key\|sk-invalid-not-a-key' "$G" "$W/home" | head -3 | tr '\n' ' ')"
-else record "no key material on disk" pass 0 "checked the clone (runs/, workspace/) and HOME"; fi
+KEYDIRS=("$W/home"); for d in "$G/runs" "$G/workspace" "$W"/r_*; do [ -e "$d" ] && KEYDIRS+=("$d"); done
+if grep -rIl "sk-scripted-policy-not-a-key\|sk-invalid-not-a-key" "${KEYDIRS[@]}" 2>/dev/null | head -1 | grep -q .; then
+  record "no key material on disk" fail 0 "$(grep -rIl 'sk-scripted-policy-not-a-key\|sk-invalid-not-a-key' "${KEYDIRS[@]}" | head -3 | tr '\n' ' ')"
+else record "no key material on disk" pass 0 "checked run outputs, cloned workspaces, target repos and HOME"; fi
 
 # 9. clean
 t0=$SECONDS; out=$(cleanenv make -C "$G" clean 2>&1); rc=$?

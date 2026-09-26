@@ -62,6 +62,11 @@ class ModelConfig:
     # Passed verbatim into the request body (e.g. reasoning_effort, top_p, thinking).
     extra_body: dict[str, Any] = field(default_factory=dict)
     extra_headers: dict[str, str] = field(default_factory=dict)
+    # Thinking-mode APIs (DeepSeek V4, Qwen with preserve_thinking) need the returned reasoning back on
+    # assistant turns that called tools; "auto" = exactly those turns, "all", or "none".
+    reasoning_passback: str = "auto"
+    # Recover tool calls a model wrote into its reply text instead of the native field.
+    text_tool_calls: bool = True
     # USD per million tokens. Empty => cost reported as unavailable, never as zero.
     pricing: dict[str, float] = field(default_factory=dict)
     # Fake provider only: path to a scripted-turn JSON file (deterministic tests/replay).
@@ -202,8 +207,10 @@ def _coerce(section: str, key: str, value: Any, template: Any, annotation: str) 
     return value
 
 
-AUTO_RULE_KEYS = {"label", "match", "provider", "base_url", "models", "max_tokens_field", "context_window",
-                  "max_output_tokens", "prompt_cache"}
+AUTO_RULE_PARAMS = {"max_tokens_field", "context_window", "max_output_tokens", "prompt_cache", "extra_headers",
+                    "extra_body", "reasoning_passback", "request_timeout_s", "stream"}
+AUTO_RULE_KEYS = {"label", "match", "provider", "base_url", "models", "candidates"} | AUTO_RULE_PARAMS
+AUTO_CANDIDATE_KEYS = {"label", "base_url", "models"} | AUTO_RULE_PARAMS
 
 
 def _apply(profile: Profile, data: dict[str, Any]) -> None:
@@ -221,6 +228,10 @@ def _apply(profile: Profile, data: dict[str, Any]) -> None:
                     raise ConfigError(f"[[auto]] rule {i}: provider must be openai_chat or anthropic_messages")
                 if not isinstance(r["models"], list) or not r["models"]:
                     raise ConfigError(f"[[auto]] rule {i}: models must be a non-empty list")
+                for j, c in enumerate(r.get("candidates") or []):
+                    if not isinstance(c, dict) or "base_url" not in c or set(c) - AUTO_CANDIDATE_KEYS:
+                        raise ConfigError(f"[[auto]] rule {i} candidate {j}: needs base_url; allowed keys "
+                                          f"{sorted(AUTO_CANDIDATE_KEYS)}")
                 kind = str(r["match"]).split(":", 1)[0]
                 if kind not in ("prefix", "contains", "regex"):
                     raise ConfigError(f"[[auto]] rule {i}: match must start with prefix:, contains: or regex:")

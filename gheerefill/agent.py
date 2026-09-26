@@ -33,6 +33,7 @@ from gheerefill.evidence import (
 )
 from gheerefill.models.base import (AttemptRecord, ErrorClass, ModelClient, ModelError, ToolCall, call_with_retry,
                                     output_token_limit)
+from gheerefill.models import quirks
 from gheerefill.outputs import OutputArchive
 from gheerefill import attest, locate, memory, prompts, proof, tasktype
 from gheerefill.progress import FailureMemory
@@ -94,6 +95,7 @@ class Agent:
         self.termination: str | None = None
         self.error: dict[str, Any] | None = None
         self.notes: list[str] = []
+        self.model_quirks: dict[str, int] = {}  # how often each model-output repair was needed
         self.ws: Workspace | None = None
         self.base_tree: str | None = None
         self.last_tree: str | None = None
@@ -376,6 +378,7 @@ class Agent:
         format_errors = 0
         submit_reviews = 0
         overflow_retries = 0
+        filter_retries = 0
         adaptations = 0
         notice_sent = check_nudged = False
         while True:
@@ -445,6 +448,13 @@ class Agent:
                         self.notes.append(f"parameter compatibility: {change}")
                         self.log(f"parameter compatibility: {change}")
                         continue
+                if e.cls == ErrorClass.CONTENT_FILTER and filter_retries < 3:
+                    filter_retries += 1
+                    n = self._withhold_recent_outputs(2 * filter_retries)
+                    self._quirk("provider content filter: recent tool outputs withheld")
+                    self.log(f"provider content filter rejected the request; withheld {n} recent tool output(s), retrying")
+                    if n:
+                        continue
                 if e.cls == ErrorClass.CONTEXT_OVERFLOW and overflow_retries < 3:
                     overflow_retries += 1
                     self.ctx.force_reduce(self.ctx.estimate(view))
@@ -460,6 +470,8 @@ class Agent:
                 except FileNotFoundError:
                     pass
             overflow_retries = 0
+            filter_retries = 0
+            turn = self._normalize_turn(turn)
             self.budget.steps += 1
             self.ctx.observe(view, turn.usage)
             for n in turn.notes:
@@ -511,6 +523,49 @@ class Agent:
             if format_errors >= lim.max_consecutive_format_errors:
                 self.termination = "repeated_format_errors"
                 return
+
+    def _quirk(self, what: str) -> None:
+        self.model_quirks[what] = self.model_quirks.get(what, 0) + 1
+
+    def _normalize_turn(self, turn):
+        """Repair a turn's model-family quirks (see models/quirks.py) before acting on it."""
+        specs = self.tools.specs
+        reasoning, visible = quirks.split_think(turn.text)
+        if reasoning:
+            turn.reasoning = (turn.reasoning + "\n" + reasoning).strip() if turn.reasoning else reasoning
+            turn.text = visible
+            self._quirk("inline <think> block moved out of the reply")
+        if not turn.tool_calls and self.profile.model.text_tool_calls and self.profile.model.tool_protocol == "native":
+            calls, rest, dialect = quirks.recover_text_tool_calls(turn.text, specs)
+            if calls:
+                turn.tool_calls, turn.text = calls, rest
+                self._quirk(f"tool call written as text recovered ({dialect})")
+                self.log(f"recovered {len(calls)} tool call(s) the model wrote as text ({dialect})")
+        fixed, seen = [], set()
+        for c in turn.tool_calls:
+            c2, notes = quirks.normalize_call(c, specs)
+            for n in notes:
+                self._quirk(re.sub(r"`[^`]*`", "`…`", n))
+            if not c2.id or c2.id in seen:
+                c2.id = f"call_{len(seen)}_{self.budget.steps}"
+                self._quirk("missing or duplicate tool call id replaced")
+            seen.add(c2.id)
+            fixed.append(c2)
+        turn.tool_calls = fixed
+        return turn
+
+    def _withhold_recent_outputs(self, n: int) -> int:
+        """Replace the newest `n` tool outputs (a provider's moderation rejected the request; the likely
+        trigger is recent untrusted text). The model can re-run a narrower command."""
+        done = 0
+        for m in reversed(self.transcript):
+            if done >= n:
+                break
+            if m.get("role") == "tool" and not str(m.get("content", "")).startswith("[output withheld"):
+                m["content"] = ("[output withheld: the model provider's content filter rejected a request containing "
+                                "it. Re-run a narrower command if you still need it.]")
+                done += 1
+        return done
 
     def _checked_this_attempt(self) -> bool:
         start = int(self.attempt_start["step"])
@@ -1151,6 +1206,7 @@ class Agent:
             "submission_ready": False,
             "submit_summary": self.submit_summary,
             "error": self.error,
+            "model_quirks": dict(self.model_quirks),
             "usage": self.budget.summary(),
             "timing": {
                 "total_s": round(self.budget.elapsed(), 3),

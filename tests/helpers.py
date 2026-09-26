@@ -22,6 +22,12 @@ GIT_ENV = {
 }
 
 
+# Tests start `make` themselves; when the suite itself runs under `make -C DIR test`, make's own
+# variables (MAKEFLAGS carries -w) would make those child makes print "Entering directory" lines
+# into the stdout the tests parse.
+for _var in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES"):
+    os.environ.pop(_var, None)
+
 def git(cwd: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, env=GIT_ENV).stdout.decode()
 

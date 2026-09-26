@@ -18,16 +18,23 @@ CHARS_PER_TOKEN = 3.2  # conservative for code-heavy text
 def estimate_tokens(messages: list[dict[str, Any]]) -> int:
     chars = 0
     for m in messages:
-        chars += len(m.get("content") or "") + 16
+        chars += len(m.get("content") or "") + len(m.get("reasoning") or "") + 16
         for c in m.get("tool_calls") or []:
             chars += len(c.get("arguments") or "") + len(c.get("name") or "") + 16
     return int(chars / CHARS_PER_TOKEN)
 
 
 class ContextManager:
+    # Thinking models return long reasoning every turn and thinking-mode APIs take it back on tool-call
+    # turns; beyond the newest few turns it is cut to a stub (deterministically by position, so each
+    # message changes once and the cached prefix stays stable afterwards).
+    REASONING_KEEP_TURNS = 4
+    REASONING_STUB_CHARS = 400
+
     def __init__(self, context_window: int, max_output_tokens: int, reduce_at: float, keep_recent: int,
                  fixed_overhead_tokens: int = 0):
-        self.limit = context_window - max_output_tokens - fixed_overhead_tokens
+        # the output reservation never takes more than half the window (thinking models ask for a lot)
+        self.limit = context_window - min(max_output_tokens, context_window // 2) - fixed_overhead_tokens
         self.reduce_at = reduce_at
         self.keep_recent = keep_recent
         self.elided: set[int] = set()
@@ -47,7 +54,12 @@ class ContextManager:
 
     def _render(self, transcript: list[dict[str, Any]]) -> list[dict[str, Any]]:
         out = []
+        assistants = [i for i, m in enumerate(transcript) if m.get("role") == "assistant"]
+        old_reasoning = set(assistants[:-self.REASONING_KEEP_TURNS]) if len(assistants) > self.REASONING_KEEP_TURNS else set()
         for i, m in enumerate(transcript):
+            r = m.get("reasoning")
+            if r and i in old_reasoning and len(r) > self.REASONING_STUB_CHARS:
+                m = {**m, "reasoning": r[:self.REASONING_STUB_CHARS] + " [... earlier reasoning truncated ...]"}
             if i in self.elided:
                 ref = m.get("output_id")
                 src = m.get("source_output")

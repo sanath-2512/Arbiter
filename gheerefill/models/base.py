@@ -33,6 +33,7 @@ class ErrorClass(str, Enum):
     BAD_RESPONSE = "bad_response"
     CANCELLED = "cancelled"
     DEADLINE = "deadline"
+    CONTENT_FILTER = "content_filter"  # provider moderation rejected the input (DashScope data_inspection_failed)
 
 
 TRANSIENT = {ErrorClass.RATE_LIMIT, ErrorClass.SERVER, ErrorClass.TIMEOUT, ErrorClass.NETWORK, ErrorClass.BAD_RESPONSE}
@@ -114,6 +115,9 @@ class ModelTurn:
     provider_raw: Any = None
     latency_s: float = 0.0
     notes: list[str] = field(default_factory=list)
+    # Chain of thought returned separately (DeepSeek/Qwen `reasoning_content`, or inline <think>).
+    # Kept in the transcript because thinking-mode APIs require it back on tool-call turns.
+    reasoning: str = ""
 
     def to_message(self) -> dict[str, Any]:
         msg: dict[str, Any] = {
@@ -121,6 +125,8 @@ class ModelTurn:
             "content": self.text,
             "tool_calls": [{"id": c.id, "name": c.name, "arguments": c.raw_arguments} for c in self.tool_calls],
         }
+        if self.reasoning:
+            msg["reasoning"] = self.reasoning
         if self.provider_raw is not None:
             msg["provider_raw"] = self.provider_raw
         return msg
@@ -148,7 +154,7 @@ class ModelClient(Protocol):
 _CONTEXT_PATTERNS = re.compile(
     r"context[_ ]length|maximum context|context window|prompt is too long|too many tokens|"
     r"input is too long|reduce the length|max_tokens.*exceed|exceeds? the (model'?s? )?(maximum|limit)|"
-    r"input tokens exceed|token limit",
+    r"input tokens exceed|token limit|range of input length|input length should be",
     re.I,
 )
 _UNSUPPORTED_PATTERNS = re.compile(
@@ -156,7 +162,10 @@ _UNSUPPORTED_PATTERNS = re.compile(
     r"does not support|unexpected keyword|invalid_request_error.*(param|field)|is not allowed",
     re.I,
 )
-_QUOTA_PATTERNS = re.compile(r"insufficient_quota|quota|billing|credit|payment required|spend limit", re.I)
+_QUOTA_PATTERNS = re.compile(r"insufficient_quota|quota|billing|credit|payment required|spend limit|"
+                             r"insufficient (account )?balance|arrearage|overdue", re.I)
+_CONTENT_FILTER = re.compile(r"data_?inspection_?failed|inappropriate content|content exists risk|content_filter|"
+                             r"content management policy|sensitive content|safety (system|check) (rejected|blocked)", re.I)
 _OUTPUT_PARAM = re.compile(r"max[_ ]?(completion_|output_|new_)?tokens|output tokens|completion tokens", re.I)
 _OUTPUT_LIMITS = (
     re.compile(r"at most (\d{3,7})", re.I),                                     # OpenAI
@@ -215,12 +224,16 @@ def classify_http_error(status: int, body: str, headers: dict[str, str] | None =
     except (json.JSONDecodeError, AttributeError):
         pass
     msg = (msg or f"HTTP {status}").strip()[:1000]
+    if status == 403 and _CONTENT_FILTER.search(msg):
+        return ModelError(ErrorClass.CONTENT_FILTER, msg, status=status, body=body)
     if status in (401, 403):
         return ModelError(ErrorClass.AUTH, msg, status=status, body=body)
     if status == 402 or (status == 429 and _QUOTA_PATTERNS.search(msg)):
         return ModelError(ErrorClass.QUOTA, msg, status=status, body=body)
     if status == 429:
         return ModelError(ErrorClass.RATE_LIMIT, msg, status=status, retry_after_s=retry_after, body=body)
+    if status in (400, 403, 422, 451) and _CONTENT_FILTER.search(msg):
+        return ModelError(ErrorClass.CONTENT_FILTER, msg, status=status, body=body)
     if status == 413 or (status in (400, 422) and _CONTEXT_PATTERNS.search(msg)):
         return ModelError(ErrorClass.CONTEXT_OVERFLOW, msg, status=status, body=body)
     if status in (400, 404, 422) and _UNSUPPORTED_PATTERNS.search(msg):

@@ -66,7 +66,9 @@ label = "OpenRouter"
 match = "prefix:sk-or-"
 provider = "openai_chat"
 base_url = "https://openrouter.ai/api/v1"
-models = ["anthropic/claude-sonnet-5", "anthropic/claude-sonnet-4.5", "openai/gpt-5", "qwen/qwen3-coder"]
+models = ["qwen/qwen3.8-max", "deepseek/deepseek-v4-pro", "qwen/qwen3-coder", "deepseek/deepseek-v4.1-flash",
+          "anthropic/claude-sonnet-5", "openai/gpt-5"]
+max_output_tokens = 32768
 
 [[auto]]
 label = "OpenAI"
@@ -77,12 +79,38 @@ models = ["gpt-5.1", "gpt-5", "gpt-4.1", "gpt-4o"]
 max_tokens_field = "max_completion_tokens"
 max_output_tokens = 32768           # reasoning tokens count against this budget; lowered automatically if capped
 
+# DeepSeek and Alibaba Cloud (Qwen) both issue `sk-` + 32 hex keys: one rule, candidate endpoints tried
+# in order, moving on only when an endpoint answers 401 (see gheerefill/resolve.py).
+# Thinking models: output budget covers reasoning; the context window is a working budget (tokens
+# cost), not the provider maximum (1M); reasoning is passed back on tool-call turns as required.
 [[auto]]
 label = "DeepSeek"
 match = "regex:^sk-[0-9a-f]{32}$"
 provider = "openai_chat"
-base_url = "https://api.deepseek.com/v1"
-models = ["deepseek-chat", "deepseek-reasoner"]
+base_url = "https://api.deepseek.com"
+models = ["deepseek-v4-pro", "deepseek-flash", "deepseek-v4-flash", "deepseek-chat"]
+max_output_tokens = 32768
+context_window = 200000
+reasoning_passback = "auto"
+candidates = [
+  { label = "Alibaba Cloud Model Studio (Singapore)", base_url = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", models = ["qwen3.8-max", "qwen3-coder-plus", "qwen3.7-max", "qwen3-coder-next", "qwen3.6-plus", "qwen-plus"], extra_headers = { X-DashScope-CacheControl = "enable" } },
+  { label = "Alibaba Cloud Model Studio (Beijing)", base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1", models = ["qwen3.8-max", "qwen3-coder-plus", "qwen3.7-max", "qwen3-coder-next", "qwen3.6-plus", "qwen-plus"], extra_headers = { X-DashScope-CacheControl = "enable" } },
+  { label = "Alibaba Cloud Model Studio (US)", base_url = "https://dashscope-us.aliyuncs.com/compatible-mode/v1", models = ["qwen3.8-max", "qwen3-coder-plus", "qwen3.7-max", "qwen3-coder-next", "qwen3.6-plus", "qwen-plus"], extra_headers = { X-DashScope-CacheControl = "enable" } },
+  { label = "QwenCloud", base_url = "https://maas.qwencloudapi.com/compatible-mode/v1", models = ["qwen3.8-max", "qwen3-coder-plus", "qwen3.7-max", "qwen3-coder-next", "qwen3.6-plus"] },
+  { label = "Alibaba Cloud Model Studio (Hong Kong)", base_url = "https://cn-hongkong.dashscope.aliyuncs.com/compatible-mode/v1", models = ["qwen3.8-max", "qwen3-coder-plus", "qwen3.7-max", "qwen3.6-plus", "qwen-plus"], extra_headers = { X-DashScope-CacheControl = "enable" } },
+]
+
+[[auto]]
+label = "Alibaba Cloud Coding Plan (Qwen)"
+match = "prefix:sk-sp-"
+provider = "openai_chat"
+base_url = "https://coding-intl.dashscope.aliyuncs.com/v1"
+models = ["qwen3-coder-plus", "qwen3.8-max", "qwen3-coder-next"]
+max_output_tokens = 32768
+context_window = 200000
+candidates = [
+  { label = "Alibaba Cloud Coding Plan (Beijing)", base_url = "https://coding.dashscope.aliyuncs.com/v1" },
+]
 
 [[auto]]
 label = "Google Gemini (OpenAI-compatible endpoint)"

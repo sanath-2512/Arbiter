@@ -5,8 +5,13 @@ profile (`profiles/default.toml`): `[model]` pins a model when one is prescribed
 `[[auto]]` rules map the credential's *format* to one provider, endpoint and model preference list.
 
 Rules of engagement:
-- The key is sent only to the endpoint of the first rule its format matches. It is never tried
-  against other providers ("key spraying" would leak it to third parties).
+- The key is sent only to the endpoint(s) of the first rule its format matches. It is never tried
+  against providers whose documented key format differs ("key spraying" would leak it to third
+  parties). One exception, by necessity: DeepSeek and Alibaba Cloud (Qwen: DashScope regions,
+  QwenCloud) issue keys in the same `sk-` + 32 hex format, so that rule lists those endpoints as
+  candidates and moves to the next only when one answers 401.
+- AI_BASE_URL without a model (a self-hosted vLLM/SGLang/Ollama server, any key) picks from the
+  server's own model list: a Qwen or DeepSeek coder first, else the only / first model served.
 - A pinned model name (profile, or AI_MODEL) is used as-is. It is never replaced; if the provider's
   model list does not contain it, a warning is recorded and the first request decides.
 - With no pinned name, the first entry of the rule's preference list that the provider's
@@ -100,63 +105,148 @@ def choose_model(preferences: list[str], available: list[str]) -> str | None:
     return None
 
 
+# Self-hosted / unknown OpenAI-compatible servers: which served model to prefer (regex, in order).
+GENERIC_PREFS = (r"qwen.*coder", r"deepseek.*(v4|pro)", r"deepseek", r"qwen3\.[5-9]|qwen3-max|qwen-max", r"qwen",
+                 r"coder")
+RULE_PARAMS = ("max_tokens_field", "context_window", "max_output_tokens", "prompt_cache", "extra_headers",
+               "extra_body", "reasoning_passback", "request_timeout_s", "stream")
+
+
+def choose_generic(available: list[str]) -> str | None:
+    for pat in GENERIC_PREFS:
+        hits = [a for a in available if re.search(pat, a, re.I) and not re.search(r"embed|rerank|vl|audio|omni|tts|asr",
+                                                                                     a, re.I)]
+        if hits:
+            return hits[0]
+    return available[0] if available else None
+
+
+def probe_completion(cfg: ModelConfig, key: str, model: str, timeout_s: float = 30.0) -> str:
+    """For endpoints without a model list: does a 1-token request authenticate? ok | auth | other."""
+    body = json.dumps({"model": model, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1}).encode()
+    req = urllib.request.Request(cfg.base_url.rstrip("/") + "/chat/completions", data=body, method="POST",
+                                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                                          **cfg.extra_headers})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s,
+                                    context=_ssl_context() if cfg.base_url.startswith("https://") else None):
+            return "ok"
+    except urllib.error.HTTPError as e:
+        return "auth" if e.code == 401 else "other"
+    except (urllib.error.URLError, OSError, ValueError):
+        return "other"
+
+
+def _candidates(rule: dict[str, Any]) -> list[dict[str, Any]]:
+    base = {k: v for k, v in rule.items() if k != "candidates"}
+    return [base] + [{**base, **c} for c in rule.get("candidates") or []]
+
+
+def _apply_rule(m: ModelConfig, cand: dict[str, Any], base_override: str) -> ModelConfig:
+    c = copy.deepcopy(m)
+    c.provider = cand["provider"]
+    c.base_url = base_override or cand["base_url"]
+    for k in RULE_PARAMS:
+        if k in cand:
+            v = cand[k]
+            if k in ("extra_headers", "extra_body"):
+                v = {**v, **getattr(m, k)}  # explicit profile values win
+            setattr(c, k, copy.deepcopy(v))
+    return c
+
+
 def resolve(profile: Profile, key: str, *, discover: bool = True,
-            lister: Callable[[ModelConfig, str], list[str]] = list_models) -> Resolution:
+            lister: Callable[[ModelConfig, str], list[str]] = list_models,
+            prober: Callable[[ModelConfig, str, str], str] = probe_completion) -> Resolution:
     m = copy.deepcopy(profile.model)
     notes: list[str] = []
     if m.provider == "fake":
         return Resolution(m, "profile (scripted fake model)", "not applicable")
     rule = None
+    generic = False
+    candidates: list[dict[str, Any]] = []
     if m.provider == AUTO:
-        if m.base_url and m.name:
+        rule = next((r for r in profile.auto if rule_matches(str(r["match"]), key)), None)
+        if m.base_url and (m.name or rule is None):
             m.provider = "openai_chat"
-            source = "AI_BASE_URL/AI_MODEL override (OpenAI-compatible)"
+            generic = not m.name
+            source = "AI_BASE_URL/AI_MODEL override (OpenAI-compatible)" if m.name else \
+                "AI_BASE_URL override (OpenAI-compatible); model chosen from the server's list"
+            rule = None
+        elif rule is None:
+            raise ConfigError(
+                "cannot infer the provider from the AI_API_KEY format (no [[auto]] rule matches). "
+                "Set AI_BASE_URL (and AI_MODEL) or pin [model] in profiles/default.toml. The key is never "
+                "tried against other providers."
+            )
         else:
-            rule = next((r for r in profile.auto if rule_matches(str(r["match"]), key)), None)
-            if rule is None:
-                raise ConfigError(
-                    "cannot infer the provider from the AI_API_KEY format (no [[auto]] rule matches). "
-                    "Set AI_BASE_URL (and AI_MODEL) or pin [model] in profiles/default.toml. The key is never "
-                    "tried against other providers."
-                )
-            m.provider = rule["provider"]
-            m.base_url = m.base_url or rule["base_url"]
-            for k in ("max_tokens_field", "context_window", "max_output_tokens", "prompt_cache"):
-                if k in rule:
-                    setattr(m, k, rule[k])
+            candidates = [_apply_rule(m, c, m.base_url) for c in _candidates(rule)]
+            if m.base_url:  # AI_BASE_URL with a recognised key: that endpoint only
+                candidates = candidates[:1]
+                generic = True
+            m = candidates[0]
             source = f"auto rule '{rule.get('label', rule['match'])}' (key format {rule['match']})"
     else:
         source = f"profile {profile.name!r}"
     if profile.overrides:
         source += f"; overrides: {', '.join(f'{k}<-{v}' for k, v in profile.overrides.items())}"
     discovery = "skipped"
+    available: list[str] | None = None
+    prefs: list[str] = []
     if discover:
-        try:
-            available = lister(m, key)
-            discovery = f"{len(available)} models listed by the provider"
-        except ModelError as e:
-            if e.cls == ErrorClass.QUOTA or (e.cls == ErrorClass.AUTH and INVALID_KEY.search(e.message)):
-                raise ConfigError(f"the provider rejected AI_API_KEY ({e.cls.value}): {e.message[:200]}") from None
-            # Restricted keys may be allowed to call the model but not to list models (401/403 with a
-            # permission/scope message): continue, and let the first real request decide.
-            available = None
-            discovery = f"model list unavailable ({e.cls.value}: {e.message[:80]}); choice unverified until the first request"
-    else:
-        available = None
+        tried: list[str] = []
+        for idx, cand_m in enumerate(candidates or [m]):
+            cand = _candidates(rule)[idx] if rule else {}
+            label = cand.get("label", cand_m.base_url)
+            last = idx == len(candidates or [m]) - 1
+            try:
+                available = lister(cand_m, key)
+                m, discovery = cand_m, f"{len(available)} models listed by the provider"
+                if rule:
+                    prefs = list(cand.get("models") or rule["models"])
+                if tried:
+                    notes.append(f"key not accepted by {', '.join(tried)}; accepted by {label}")
+                break
+            except ModelError as e:
+                key_unknown_here = e.cls == ErrorClass.AUTH and (e.status == 401 or INVALID_KEY.search(e.message))
+                if key_unknown_here and not last:  # another vendor issuing this key format may know it
+                    tried.append(label)
+                    continue
+                if e.cls == ErrorClass.QUOTA or (e.cls == ErrorClass.AUTH and (INVALID_KEY.search(e.message) or tried)):
+                    where = f" (tried {', '.join(tried + [label])})" if tried else ""
+                    raise ConfigError(f"the provider rejected AI_API_KEY ({e.cls.value}){where}: {e.message[:200]}") from None
+                if len(candidates) > 1 and not last and rule:
+                    # no usable model list: a 1-token request tells whether this endpoint knows the key
+                    verdict = prober(cand_m, key, (cand.get("models") or rule["models"])[0])
+                    if verdict == "auth":
+                        tried.append(label)
+                        continue
+                # Restricted keys may be allowed to call the model but not to list models (401/403 with a
+                # permission/scope message): continue, and let the first real request decide.
+                m, available = cand_m, None
+                if rule:
+                    prefs = list(cand.get("models") or rule["models"])
+                discovery = f"model list unavailable ({e.cls.value}: {e.message[:80]}); choice unverified until the first request"
+                break
+    elif rule:
+        prefs = list(rule["models"])
     if m.name:
         if available is not None and m.name not in available and choose_model([m.name], available) is None:
             notes.append(f"pinned model {m.name!r} is not in the provider's model list; using it anyway "
                          "(never substituted); the first request will confirm")
     else:
-        prefs = list(rule["models"]) if rule else []
-        if not prefs:
-            raise ConfigError("no model configured: set [model].name or AI_MODEL")
-        chosen = choose_model(prefs, available) if available else None
-        if chosen is None and available:
+        chosen = choose_model(prefs, available) if (available and prefs) else None
+        if chosen is None and available and generic:
+            chosen = choose_generic(available)
+            if chosen:
+                notes.append(f"model {chosen!r} chosen from the server's list {sorted(available)[:6]}")
+        if chosen is None and available and prefs:
             raise ConfigError(
                 f"none of the configured models {prefs} is available with this key "
                 f"(provider lists e.g. {sorted(available)[:8]}). Pin one with AI_MODEL or [model].name."
             )
+        if chosen is None and not prefs:
+            raise ConfigError("no model configured: set [model].name or AI_MODEL (the server did not list its models)")
         m.name = chosen or prefs[0]
         if chosen is None:
             notes.append(f"model list unavailable: using first preference {m.name!r} (unverified)")
