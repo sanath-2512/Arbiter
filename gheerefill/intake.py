@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from gheerefill.models.http import _ssl_context  # noqa: F401 (TLS policy shared with the model client)
+from gheerefill.models.http import _ssl_context
 from gheerefill.records import safe_name
 from gheerefill.task import Task, TaskInputError, iter_tasks
 
