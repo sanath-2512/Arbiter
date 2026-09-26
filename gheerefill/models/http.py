@@ -19,9 +19,14 @@ from gheerefill.models.base import ErrorClass, ModelError, classify_http_error
 
 
 def _ssl_context() -> ssl.SSLContext:
+    """Default verification (certificate chain + hostname), minus Python 3.13's VERIFY_X509_STRICT.
+    Strict mode rejects CA certificates without a key-usage extension, which many corporate
+    TLS-inspection proxies use; curl/OpenSSL accept them. Verification is NOT disabled."""
     import os
 
     ctx = ssl.create_default_context()
+    if hasattr(ssl, "VERIFY_X509_STRICT"):
+        ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT
     for var in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"):
         path = os.environ.get(var)
         if path and os.path.isfile(path):

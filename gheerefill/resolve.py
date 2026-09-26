@@ -27,7 +27,7 @@ from typing import Any, Callable
 
 from gheerefill.config import AUTO, ConfigError, ModelConfig, Profile
 from gheerefill.models.base import ErrorClass, ModelError, classify_http_error
-from gheerefill.models.http import _ssl_context
+from gheerefill.models.http import _ssl_context  # noqa: F401 (TLS policy shared with the model client)
 
 DATE_SUFFIX = re.compile(r"^(?P<base>.+?)(-\d{8}|-\d{4}-\d{2}-\d{2}|-latest)$")
 

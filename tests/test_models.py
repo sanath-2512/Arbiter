@@ -418,3 +418,16 @@ class StreamingTest(unittest.TestCase):
         with ScriptedServer([ok_openai()]) as srv:
             turn = OpenAIChatClient(self.cfg(srv.url), "k").complete(MSGS, [TOOL], timeout_s=5)
         self.assertEqual(turn.tool_calls[0].name, "bash")
+
+
+class TlsContextTest(unittest.TestCase):
+    def test_verification_kept_but_x509_strict_relaxed(self):
+        import ssl
+
+        from gheerefill.models.http import _ssl_context
+
+        ctx = _ssl_context()
+        self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(ctx.check_hostname)
+        if hasattr(ssl, "VERIFY_X509_STRICT"):
+            self.assertFalse(ctx.verify_flags & ssl.VERIFY_X509_STRICT)
