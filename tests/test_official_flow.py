@@ -82,6 +82,30 @@ class IntakeParsingTest(TempDirCase):
         with self.assertRaises(IntakeError):
             parse_input("@missing.md", base_dir=self.tmp)
 
+    def test_url_followed_by_instructions_and_url_inside_text(self):
+        (req,) = parse_input("https://github.com/acme/calc/issues/7\nKeep the public API unchanged.\n", base_dir=self.tmp)
+        self.assertEqual((req.github, req.metadata["instructions"]), (("acme", "calc", 7), "Keep the public API unchanged."))
+        text = "divide() truncates, like https://github.com/acme/calc/issues/3 did\nplease fix"
+        self.assertEqual(parse_input(text, base_dir=self.tmp)[0].issue_text, text)  # a mention is not the task
+
+    def test_images_are_announced_not_silently_dropped(self):
+        from gheerefill.intake import image_note
+
+        body = "Broken layout:\n![screenshot](https://example.com/a.png)\n<img src='b.png' width=300>\nsee above"
+        self.assertIn("2 image(s)", image_note(body))
+        self.assertEqual(image_note("no pictures here [link](https://x)"), "")
+
+    def test_prepared_checkout_detection_reads_config_only(self):
+        from gheerefill.intake import origin_matches
+
+        repo = make_repo(self.tmp / "co", CALC)
+        for url, ok in (("https://github.com/acme/calc.git", True), ("git@github.com:acme/calc.git", True),
+                        ("https://github.com/Acme/Calc/", True), ("https://github.com/acme/calculator.git", False),
+                        ("https://github.com/other/calc.git", False)):
+            git(repo, "remote", "remove", "origin") if "origin" in git(repo, "remote") else None
+            git(repo, "remote", "add", "origin", url)
+            self.assertEqual(origin_matches(repo, "acme", "calc"), ok, url)
+
     def test_issue_text_includes_discussion_and_is_bounded(self):
         meta = {"title": "T", "html_url": "u", "state": "open", "created_at": "c", "labels": ["bug"], "body": "B",
                 "comments": [{"author": "x", "created_at": "d", "body": "the real cause is Y"}]}
@@ -201,6 +225,19 @@ class OfficialFlowTest(TempDirCase):
         self.assertEqual(p.returncode, 1)
         self.assertIn("needs a repository", json.loads(p.stdout)["error"]["message"])
 
+    def test_existing_checkout_is_used_in_place_instead_of_cloning(self):
+        checkout = make_repo(self.tmp / "evaluator-checkout", CALC)
+        git(checkout, "remote", "add", "origin", "https://github.com/acme/calc.git")
+        with FakeGitHub({"acme/calc/issues/7": issue_json()}) as gh:
+            p = subprocess.run([sys.executable, "-m", "gheerefill", "run", "--issue", "acme/calc#7"], cwd=ROOT,
+                               env=self.env(gh, GHEEREFILL_CALLER_DIR=str(checkout)), capture_output=True, text=True,
+                               timeout=180, stdin=subprocess.DEVNULL)
+        rec = json.loads(p.stdout.strip().splitlines()[-1])
+        self.assertTrue(rec["submission_ready"], p.stderr[-2000:])
+        self.assertIn("a / b", (checkout / "calc" / "ops.py").read_text())
+        self.assertFalse(self.ws.exists() and any(self.ws.iterdir()))  # nothing cloned
+        self.assertTrue(any("existing checkout" in n for n in rec["intake"]))
+
     def test_no_input_is_not_a_failure(self):
         with FakeGitHub({}) as gh:
             p = subprocess.run(["make", "-s", "run"], cwd=ROOT, env=self.env(gh), capture_output=True, text=True,
@@ -239,6 +276,47 @@ class OfficialFlowTest(TempDirCase):
         self.assertEqual(os.waitstatus_to_exitcode(status), 0)
         self.assertIn(b"+    return a / b", out)
         self.assertIn(b"checks_passed", out)
+
+
+    def _pty_session(self, gh, extra_env):
+        pid, fd = pty.fork()
+        if pid == 0:
+            os.chdir(ROOT)
+            os.execvpe(sys.executable, [sys.executable, "-m", "gheerefill", "run"], self.env(gh, NO_COLOR="1", **extra_env))
+        buf = {"out": b""}
+
+        def read_until(needle: bytes, timeout: float = 60) -> None:
+            end = time.time() + timeout
+            while needle not in buf["out"] and time.time() < end:
+                r, _, _ = select.select([fd], [], [], 0.2)
+                if r:
+                    try:
+                        buf["out"] += os.read(fd, 65536)
+                    except OSError:
+                        break
+            self.assertIn(needle, buf["out"], buf["out"].decode(errors="replace")[-3000:])
+
+        return pid, fd, buf, read_until
+
+    def test_interactive_bracketed_paste_and_ctrl_c_at_prompt(self):
+        local = make_repo(self.tmp / "local", CALC)
+        with FakeGitHub({}) as gh:
+            pid, fd, buf, read_until = self._pty_session(gh, {"REPO": str(local)})
+            read_until(b"issue> ")
+            self.assertIn(b"\x1b[?2004h", buf["out"])  # bracketed paste enabled for the prompt
+            os.write(fd, b"\x1b[200~divide() truncates\n\nExpected: divide(7, 2) == 3.5\x1b[201~\n")
+            read_until(b"Result: issue-")
+            read_until(b"issue> ")
+            os.write(fd, b"\x03")  # Ctrl-C while waiting for input: leave at once
+            _, status = os.waitpid(pid, 0)
+            try:
+                buf["out"] += os.read(fd, 65536)
+            except OSError:
+                pass
+            os.close(fd)
+        self.assertEqual(os.waitstatus_to_exitcode(status), 0)
+        self.assertIn(b"checks_passed", buf["out"])
+        self.assertIn(b"\x1b[?2004l", buf["out"])  # and disabled again on the way out
 
 
 class ParameterAdaptationTest(TempDirCase):

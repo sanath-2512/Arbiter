@@ -87,6 +87,10 @@ def parse_input(text: str, *, base_dir: Path, source: str = "input", _depth: int
     refs = [parse_github_ref(l) for l in lines]
     if all(refs):
         return [Request(github=r, source=l) for r, l in zip(refs, lines)]
+    if refs[0] and not any(refs[1:]):
+        # "<issue URL>" followed by free text: that issue, plus the evaluator's extra instructions.
+        extra = stripped.split("\n", 1)[1].strip()
+        return [Request(github=refs[0], source=lines[0], metadata={"instructions": extra[:MAX_ISSUE_CHARS // 4]})]
     return [Request(issue_text=stripped, source=source)]
 
 
@@ -135,6 +139,18 @@ def fetch_issue(owner: str, repo: str, number: int, token: str | None = None) ->
     }
 
 
+IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)\s]+[^)]*\)|<img\s[^>]*>", re.I)
+
+
+def image_note(text: str) -> str:
+    """Screenshots cannot be seen by a text-only harness; say so instead of letting the model guess."""
+    n = len(IMAGE_RE.findall(text))
+    if not n:
+        return ""
+    return (f"\n\n[Harness note: the text above embeds {n} image(s) (screenshots or diagrams) that are not shown "
+            "here. Work from the text, the code and your own reproduction.]")
+
+
 def compose_issue_text(meta: dict[str, Any]) -> str:
     head = f"# {meta['title']}\n{meta['html_url']} · state: {meta['state']} · opened {meta['created_at']}"
     if meta.get("labels"):
@@ -146,7 +162,7 @@ def compose_issue_text(meta: dict[str, Any]) -> str:
             text += f"\n\n### {c['author']} ({c['created_at']})\n{c['body'].strip()}"
     if len(text) > MAX_ISSUE_CHARS:
         text = text[:MAX_ISSUE_CHARS] + "\n\n[... discussion truncated ...]"
-    return text
+    return text + image_note(text)
 
 
 # ------------------------------------------------------------------------------------ repositories
@@ -164,6 +180,43 @@ def clone_url(owner: str, repo: str) -> str:
     return f"{base}/{owner}/{repo}.git" if base.startswith("http") else f"{base}/{owner}/{repo}"
 
 
+HARNESS_ROOT = Path(__file__).resolve().parent.parent
+PREPARED_CHECKOUTS = ("/testbed",)  # SWE-bench-style evaluation images keep the repository here
+
+
+def origin_matches(repo_dir: Path, owner: str, repo: str) -> bool:
+    """True if the checkout's .git/config names github.com/OWNER/REPO as a remote. The config file
+    is read as text; git is not executed in an unknown checkout."""
+    cfg = repo_dir / ".git" / "config"
+    try:
+        text = cfg.read_text(errors="replace") if cfg.is_file() else ""
+    except OSError:
+        return False
+    want = re.compile(rf"github\.com[:/]+{re.escape(owner)}/{re.escape(repo)}(\.git)?/?$", re.I)
+    return any(want.search(u.strip()) for u in re.findall(r"^\s*url\s*=\s*(.+)$", text, re.M))
+
+
+def find_prepared_checkout(owner: str, repo: str) -> Path | None:
+    """An existing checkout of this repository that the evaluator prepared: the directory `make`
+    was started in, or a conventional location such as /testbed. Never the harness itself."""
+    candidates = [os.environ.get("GHEEREFILL_CALLER_DIR", ""), *PREPARED_CHECKOUTS]
+    for c in candidates:
+        if not c:
+            continue
+        p = Path(c).resolve()
+        if p != HARNESS_ROOT and p.is_dir() and origin_matches(p, owner, repo):
+            return p
+    return None
+
+
+def _base_ignored(base: str | None, log) -> list[str]:
+    if not base:
+        return []
+    msg = f"BASE={base} ignored: an existing checkout is used exactly as it is (check out the base there instead)"
+    log("note: " + msg)
+    return [msg]
+
+
 def prepare_repo(spec: str | None, *, owner: str | None, repo: str | None, number: int | None, workspace: Path,
                  base: str | None, issue_created_at: str | None, log) -> tuple[Path, list[str]]:
     """Return a local repository path for the task and notes describing what was done."""
@@ -172,7 +225,13 @@ def prepare_repo(spec: str | None, *, owner: str | None, repo: str | None, numbe
         path = Path(spec).expanduser().resolve()
         if not path.is_dir():
             raise IntakeError(f"REPO path does not exist: {path}")
-        return path, [f"repository: {path} (supplied)"]
+        return path, [f"repository: {path} (supplied, used in place)"] + _base_ignored(base, log)
+    if not spec and owner and repo:
+        found = find_prepared_checkout(owner, repo)
+        if found is not None:
+            log(f"using the prepared checkout {found} (its remote is github.com/{owner}/{repo}); not cloning")
+            return found, [f"repository: {found} (existing checkout of {owner}/{repo}, used in place)"] + \
+                _base_ignored(base, log)
     url = spec or clone_url(owner or "", repo or "")
     name = safe_name(f"{owner}__{repo}__{number}" if owner else Path(url.rstrip("/")).stem)
     workspace.mkdir(parents=True, exist_ok=True)
@@ -228,7 +287,10 @@ def build_task(req: Request, *, repo_spec: str | None, base: str | None, workspa
             log("note: " + n)
         path, repo_notes = prepare_repo(repo_spec, owner=owner, repo=repo, number=number, workspace=workspace,
                                         base=base, issue_created_at=meta["created_at"], log=log)
-        return Task(task_id=f"{owner}__{repo}-{number}", repo_path=path, issue=compose_issue_text(meta),
+        issue = compose_issue_text(meta)
+        if req.metadata.get("instructions"):
+            issue += "\n\n## Additional instructions supplied with the issue\n" + req.metadata["instructions"]
+        return Task(task_id=f"{owner}__{repo}-{number}", repo_path=path, issue=issue,
                     limits=dict(limits), metadata={"source": meta["html_url"], "issue_state": meta["state"],
                                                    "intake_notes": notes + repo_notes})
     if req.issue_text is not None:
@@ -237,6 +299,6 @@ def build_task(req: Request, *, repo_spec: str | None, base: str | None, workspa
         path, repo_notes = prepare_repo(repo_spec, owner=None, repo=None, number=None, workspace=workspace,
                                         base=base, issue_created_at=None, log=log)
         tid = "issue-" + hashlib.sha256(req.issue_text.encode()).hexdigest()[:8]
-        return Task(task_id=tid, repo_path=path, issue=req.issue_text, limits=dict(limits),
+        return Task(task_id=tid, repo_path=path, issue=req.issue_text + image_note(req.issue_text), limits=dict(limits),
                     metadata={"source": req.source, "intake_notes": repo_notes})
     raise IntakeError(req.error.message if req.error else "empty request")
