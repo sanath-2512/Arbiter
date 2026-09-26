@@ -189,6 +189,18 @@ class AgentTest(TempDirCase):
         notes = [m for m in agent.transcript if m["role"] == "user" and "same command" in m["content"]]
         self.assertEqual(len(notes), 1)
 
+    def test_oversized_issue_is_bounded_with_full_text_available(self):
+        profile = test_profile()
+        profile.model.context_window, profile.model.max_output_tokens = 4000, 1000
+        issue = "START " + "x" * 20000 + " END"
+        result, agent = run_agent(self.repo, [turn(SUBMIT), turn(SUBMIT)], self.run_dir, profile=profile, issue=issue)
+        shown = agent.transcript[1]["content"]
+        self.assertLess(len(shown), 6000)
+        self.assertIn("START", shown)
+        self.assertIn("END", shown)
+        self.assertIn("ISSUE_FULL.md", shown)
+        self.assertEqual((self.run_dir / "scratch" / "ISSUE_FULL.md").read_text(), issue)
+
     def test_setup_failure_reports_infrastructure_error(self):
         (self.run_dir / "shadow.git").mkdir(parents=True)  # pre-existing store: refuse to clobber
         result, _ = run_agent(self.repo, [turn(SUBMIT)], self.run_dir)

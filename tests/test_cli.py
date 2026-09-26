@@ -128,10 +128,36 @@ class CliTest(TempDirCase):
         self.assertEqual(p.returncode, 0, p.stderr[-2000:])
         rec = self.records(p)[0]
         self.assertEqual(rec["termination"], "recovered_after_interruption")
+        self.assertEqual(rec["usage"]["requests"], 2)  # ledger rebuilt from requests.jsonl, not reset to zero
+        self.assertGreater(rec["usage"]["total_tokens"], 0)
         self.assertTrue(rec["deliverable"]["reconstruction_verified"])
         self.assertIn("+    return a / b", (run_dir / "patch.diff").read_text())
         p = self.run_cli(["finalize", "--run-dir", str(run_dir)])
         self.assertEqual(p.returncode, 2)  # already finalised
+
+    def test_kill_during_model_call_counts_unknown_usage(self):
+        prof = self.fake_profile([turn(FIX), {"sleep_s": 60, "text": "slow", "tool_calls": []}])
+        proc = subprocess.Popen([sys.executable, "-m", "gheerefill", "run", "--profile", str(prof), "--out", str(self.out)],
+                                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True,
+                                cwd=ROOT, env=base_env())
+        proc.stdin.write(self.task_line())
+        proc.stdin.close()
+        deadline = time.time() + 30
+        while time.time() < deadline and not list(self.out.rglob("inflight.json")):
+            time.sleep(0.1)
+        states = list(self.out.rglob("state.json"))
+        while time.time() < deadline and not (states and json.loads(states[0].read_text()).get("step", 0) >= 1
+                                               and list(self.out.rglob("inflight.json"))):
+            time.sleep(0.1)
+            states = list(self.out.rglob("state.json"))
+        proc.kill()
+        proc.wait(timeout=10)
+        run_dir = states[0].parent
+        p = self.run_cli(["finalize", "--run-dir", str(run_dir)])
+        rec = self.records(p)[0]
+        self.assertEqual(rec["usage"]["requests_usage_unknown"], 1)
+        self.assertFalse(rec["usage"]["usage_complete"])
+        self.assertIn("+    return a / b", (run_dir / "patch.diff").read_text())
 
     def test_check_config(self):
         prof = self.fake_profile([])

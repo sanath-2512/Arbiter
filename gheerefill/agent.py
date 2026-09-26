@@ -213,6 +213,13 @@ class Agent:
         agent.target_git_initial = TargetGitState(**tg) if tg else None
         agent.base_ignored = set(state.get("base_ignored") or [])
         agent.budget.steps = int(state.get("step") or 0)
+        for d in read_jsonl(Path(run_dir) / "requests.jsonl"):
+            fields = {k: d.get(k) for k in AttemptRecord.__dataclass_fields__}
+            agent.budget.record_attempt(AttemptRecord(**fields), role=d.get("role", "solver"))
+        if (Path(run_dir) / "inflight.json").exists():
+            agent.budget.requests += 1
+            agent.budget.requests_usage_unknown += 1
+            agent.notes.append("a model request was in flight when the run was interrupted; its usage is unknown")
         agent.termination = "recovered_after_interruption"
         agent.notes.append(f"finalised offline from checkpoint (interrupted in phase {state.get('phase')!r}, "
                            f"previous termination {state.get('termination')!r})")
@@ -239,8 +246,16 @@ class Agent:
         )
         self.specs = list(self.tools.specs.values())
         overview = prompts.repo_overview(self.tools.repo) if self.profile.policy.repo_overview else ""
+        issue = self.task.issue.strip()
+        issue_cap = int((self.profile.model.context_window - self.profile.model.max_output_tokens) * 0.4 * 3.2)
+        if len(issue) > issue_cap:
+            full = self.tools.scratch / "ISSUE_FULL.md"
+            full.write_text(issue, encoding="utf-8")
+            issue = (issue[: issue_cap // 2] + f"\n\n[... issue truncated to fit the context window; the complete text "
+                     f"({len(self.task.issue)} chars) is in {full} ...]\n\n" + issue[-issue_cap // 4:])
+            self.notes.append(f"issue text truncated in the prompt ({len(self.task.issue)} chars); full text at {full}")
         self._append({"role": "system", "content": prompts.SYSTEM.format(repo=self.tools.repo, scratch=self.tools.scratch)})
-        self._append({"role": "user", "content": prompts.TASK.format(issue=self.task.issue.strip(), overview=overview)})
+        self._append({"role": "user", "content": prompts.TASK.format(issue=issue, overview=overview)})
         spec_tokens = estimate_tokens([{"content": json.dumps([s.parameters for s in self.specs])}])
         self.ctx = ContextManager(
             self.profile.model.context_window, self.profile.model.max_output_tokens,
@@ -278,7 +293,9 @@ class Agent:
                 notice_sent = True
                 self._append({"role": "user", "content": prompts.budget_notice(steps_left, secs_left)})
             view = self.ctx.prepare(self.transcript)
+            inflight = self.run_dir / "inflight.json"
             try:
+                atomic_write_json(inflight, {"step": self.budget.steps + 1, "started_at": time.time()})
                 self.in_model_call = True
                 if self.cancel_requested:
                     raise Cancelled()
@@ -304,6 +321,10 @@ class Agent:
                 return
             finally:
                 self.in_model_call = False
+                try:
+                    inflight.unlink()
+                except FileNotFoundError:
+                    pass
             self.budget.steps += 1
             self.ctx.observe(view, turn.usage)
             for n in turn.notes:
