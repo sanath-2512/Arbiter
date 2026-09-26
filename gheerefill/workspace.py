@@ -255,6 +255,15 @@ class Workspace:
         return self.git("diff", "--binary", "--full-index", "--no-renames", "--no-ext-diff", "--no-textconv",
                         "--src-prefix=a/", "--dst-prefix=b/", a, b).stdout
 
+    def lines_removed(self, a: str, b: str, path: str) -> int:
+        """Lines deleted or changed in `path` between two trees (0 = the change only adds lines)."""
+        out = self.git("diff", "--numstat", "--no-renames", a, b, "--", path).stdout.decode(errors="replace")
+        total = 0
+        for line in out.splitlines():
+            parts = line.split("\t")
+            total += int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 1  # binary: count as changed
+        return total
+
     def shortstat(self, a: str, b: str) -> str:
         return self.git("diff", "--shortstat", "--no-renames", a, b).stdout.decode().strip()
 
@@ -288,6 +297,28 @@ class Workspace:
             idx = Path(td) / "index"
             self.git("add", "-A", "-f", work_tree=directory, index=idx)
             return self.git("write-tree", work_tree=directory, index=idx).stdout.decode().strip()
+
+    def overlay_tree(self, base: str, source: str, paths: list[str]) -> str:
+        """`base` with the given paths taken from `source` (removed where `source` lacks them).
+        Used for the counterfactual state: original code + the candidate's own test changes."""
+        if not paths:
+            return base
+        with tempfile.TemporaryDirectory(dir=self.state_dir) as td:
+            idx = Path(td) / "index"
+            self.git("read-tree", base, index=idx)
+            listing = self.git("ls-tree", "-r", "-z", source, "--", *paths).stdout
+            present: dict[str, tuple[str, str]] = {}
+            for item in listing.split(b"\0"):
+                if item:
+                    meta, path = item.split(b"\t", 1)
+                    mode, _typ, oid = meta.decode().split()
+                    present[path.decode("utf-8", "surrogateescape")] = (mode, oid)
+            info = b""
+            for p in paths:
+                mode, oid = present.get(p, ("0", "0" * 40))  # mode 0 removes the entry
+                info += f"{mode} {oid}\t".encode() + p.encode("utf-8", "surrogateescape") + b"\0"
+            self.git("update-index", "-z", "--index-info", index=idx, input=info)
+            return self.git("write-tree", index=idx).stdout.decode().strip()
 
     def verify_reconstruction(self, base: str, candidate: str, patch_path: Path) -> tuple[bool, str]:
         """Apply the exported patch to a clean copy of the base and compare tree ids."""

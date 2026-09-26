@@ -1,7 +1,7 @@
 """Model-facing tools: validated arguments, structured status, bounded observations.
 
-Tools: bash, read_file, search, edit_file, write_file, read_output, submit.
-`submit` is interpreted by the controller (agent.py), not executed here.
+Tools: bash, read_file, search, edit_file, write_file, read_output, register_reproduction, submit.
+`submit` and `register_reproduction` are interpreted by the controller (agent.py), not executed here.
 
 Argument handling: arguments are validated against each tool's JSON schema before
 dispatch. The only normalisations applied are predefined and semantics-preserving:
@@ -27,6 +27,7 @@ from gheerefill.outputs import OutputArchive, bounded_view, numbered_range
 from gheerefill.shell import read_output_file, run_shell
 
 LARGE_OUTPUT_BYTES = 8 * 1024 * 1024
+CONTROLLER_TOOLS = ("submit", "register_reproduction")  # interpreted by the controller (agent.py)
 
 
 def _spec(name: str, description: str, props: dict[str, Any], required: list[str]) -> ToolSpec:
@@ -58,6 +59,19 @@ def tool_specs(cfg: ToolsConfig) -> list[ToolSpec]:
     )
     if cfg.set == "bash_only":
         return [bash, submit]
+    reproduction = _spec(
+        "register_reproduction",
+        "Register a command that reproduces the issue: it must FAIL (non-zero exit, or failing tests) while the bug "
+        "is present and PASS (exit 0) once it is fixed. The harness runs it on the original code right away to "
+        "confirm it reproduces the problem, and again on your final code. Keep throwaway scripts in the scratch "
+        "directory; a new test inside the repository also works (e.g. `python -m pytest tests/test_x.py::test_y`). "
+        "Registering the same command again updates it (at most 3).",
+        {
+            "command": {"type": "string", "description": "Bash command run at the repository root."},
+            "description": {"type": "string", "description": "What it checks (one line)."},
+        },
+        ["command"],
+    )
     return [
         bash,
         _spec(
@@ -113,6 +127,7 @@ def tool_specs(cfg: ToolsConfig) -> list[ToolSpec]:
             },
             ["id"],
         ),
+        reproduction,
         submit,
     ]
 
@@ -191,7 +206,7 @@ class ToolBox:
     def execute(self, call: ToolCall) -> ToolResult:
         t0 = time.monotonic()
         spec = self.specs.get(call.name)
-        if spec is None or call.name == "submit":
+        if spec is None or call.name in CONTROLLER_TOOLS:
             res = ToolResult(
                 f"Error: unknown tool {call.name!r}. Available tools: {', '.join(self.specs)}.", "error",
                 {"error": "unknown_tool"},

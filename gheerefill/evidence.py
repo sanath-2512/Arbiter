@@ -199,8 +199,10 @@ class VerificationRecord:
     counts: dict[str, int]
     detail: str
     output_id: str | None
-    source: str  # agent | harness_recheck
+    source: str  # agent | harness_recheck | harness_original | harness_candidate
     duration_s: float
+    kind: str = "check"  # check (test runner) | reproduction (registered; exit-code semantics)
+    failing: list[str] | None = None  # failing test names, when the runner lists them
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

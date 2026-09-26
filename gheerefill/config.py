@@ -111,6 +111,17 @@ class PolicyConfig:
     sandbox: str = "key"
     context_reduce_at: float = 0.65
     keep_recent_messages: int = 10
+    # Proof-carrying patches (proof.py): at submit the harness compares the agent's checks and
+    # registered reproductions on the original code, the counterfactual and the candidate.
+    verify_at_submit: bool = True
+    # Adaptive attempts: another attempt (from the original code, with the harness's observations)
+    # when a submitted candidate's evidence is below `retry_below` (default: only when the evidence
+    # refutes it), or when an attempt used its time share without submitting a verified change;
+    # always only if enough time remains.
+    max_attempts: int = 3
+    first_attempt_share: float = 0.6
+    retry_below: str = "unverified"
+    min_attempt_s: float = 120.0
 
 
 @dataclass
@@ -256,6 +267,11 @@ def _validate_rest(profile: Profile) -> None:
         raise ConfigError("limits.finalize_reserve_s must be >= 0 and < time_limit_s")
     if profile.policy.sandbox not in ("off", "key", "confine"):
         raise ConfigError("policy.sandbox must be 'off', 'key' or 'confine'")
+    pol = profile.policy
+    if pol.max_attempts < 1 or not 0.1 <= pol.first_attempt_share <= 1.0 or pol.min_attempt_s < 0:
+        raise ConfigError("policy.max_attempts must be >= 1, first_attempt_share within [0.1, 1], min_attempt_s >= 0")
+    if pol.retry_below not in ("refuted", "unverified", "passing", "fixed", "proven"):
+        raise ConfigError("policy.retry_below must be one of refuted, unverified, passing, fixed, proven")
     if not 0.1 <= profile.policy.context_reduce_at <= 0.95:
         raise ConfigError("policy.context_reduce_at must be within [0.1, 0.95]")
     if m.max_output_tokens <= 0 or m.context_window <= m.max_output_tokens:

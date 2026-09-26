@@ -10,7 +10,7 @@ import unittest
 from tests.fake_openai_server import FakeOpenAIServer
 from tests.helpers import ROOT, TempDirCase
 
-OURS_TOOLS = "bash,edit_file,read_file,read_output,search,submit,write_file"
+OURS_TOOLS = "bash,edit_file,read_file,read_output,register_reproduction,search,submit,write_file"
 SCRIPT = {
     OURS_TOOLS: [
         {"content": "inspect", "tool_calls": [{"name": "read_file", "arguments": {"path": "calc/ops.py"}}]},
@@ -18,6 +18,8 @@ SCRIPT = {
             "path": "calc/ops.py", "old_str": "return a // b", "new_str": "return a / b"}}]},
         {"content": "verify", "tool_calls": [{"name": "bash", "arguments": {"command": "python3 -m unittest discover -s tests"}}]},
         {"content": "done", "tool_calls": [{"name": "submit", "arguments": {"summary": "true division"}}]},
+        # the harness's review (no check fails without the change in the visible tests) -> confirm
+        {"content": "confirm", "tool_calls": [{"name": "submit", "arguments": {"summary": "true division"}}]},
     ],
     "bash,edit,read,write": [
         {"content": "fix", "tool_calls": [{"name": "edit", "arguments": {
@@ -59,7 +61,7 @@ class EvalPipelineTest(TempDirCase):
             self.assertEqual(r["audit"], [])
         ours = recs[0]
         self.assertEqual(ours["verification"], "checks_passed")
-        self.assertEqual(ours["usage"]["requests"], 4)
+        self.assertEqual(ours["usage"]["requests"], 5)  # incl. the confirming submit after the harness review
         self.assertIn("Paired comparison" if len(systems) > 1 else "Records", (self.tmp / "e" / "summary.md").read_text())
         models = {json.loads(json.dumps(r["model"]))["name"] for r in recs}
         self.assertEqual(models, {"scripted-model"})  # identical model settings for every system

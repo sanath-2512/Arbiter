@@ -32,6 +32,7 @@ def card(result: dict[str, Any], *, color: bool, max_diff_lines: int = 120) -> s
         lines.append(f"error         {json.dumps(result['error'])[:300]}")
     vs = v.get("status", "n/a")
     lines.append(f"verification  {_c('32' if vs == 'checks_passed' else '33', vs, color)} — {v.get('detail', '')}"[:400])
+    lines += proof_lines(result.get("proof") or {}, color)
     if d:
         lines.append(f"changes       {d.get('shortstat') or 'no changes'}")
         for f in (d.get("files") or [])[:25]:
@@ -59,6 +60,34 @@ def card(result: dict[str, Any], *, color: bool, max_diff_lines: int = 120) -> s
     return "\n".join(lines) + "\n"
 
 
+LEVEL_COLOR = {"proven": "32", "fixed": "32", "passing": "33", "unverified": "33", "refuted": "31"}
+MARK = {"pass": "pass", "fail": "FAIL", None: "—"}
+
+
+def proof_lines(p: dict[str, Any], color: bool) -> list[str]:
+    """The proof table: each check on the original code (+ the patch's own tests) and on the patch."""
+    if not p:
+        return []
+    level = str(p.get("level"))
+    out = [f"proof         {_c(LEVEL_COLOR.get(level, '33'), level.upper(), color)} — {p.get('summary', '')}"[:400]]
+    comps = p.get("comparisons") or []
+    if comps:
+        out.append(f"  {'check':<52} {'original':>8} {'patched':>8}  result")
+        for c in comps[:8]:
+            name = ("repro " if c.get("kind") == "reproduction" else "") + " ".join(str(c.get("command", "")).split())
+            name = name if len(name) <= 52 else name[:51] + "…"
+            res = c.get("verdict", "").replace("_", " ")
+            if c.get("pass_to_fail"):
+                res += f" · breaks {', '.join(c['pass_to_fail'][:2])}"
+            elif c.get("fail_to_pass"):
+                res += f" · fixes {', '.join(c['fail_to_pass'][:2])}"
+            out.append(f"  {name:<52} {MARK.get(c.get('original')):>8} {MARK.get(c.get('candidate')):>8}  {res}"[:160])
+    attempts = p.get("attempts") or []
+    if len(attempts) > 1:
+        out.append("attempts      " + " · ".join(f"#{a['n']} {a.get('level')} ({a.get('termination')})" for a in attempts))
+    return out
+
+
 def write_report(result: dict[str, Any], task_issue: str) -> Path:
     run_dir = Path(result["run_dir"])
     d = result.get("deliverable") or {}
@@ -77,6 +106,25 @@ def write_report(result: dict[str, Any], task_issue: str) -> Path:
             f"{(result.get('selected_candidate') or {}).get('reason')} (`candidates.json`)"]
     if result.get("submit_summary"):
         out.append(f"- Model's own summary (a claim, not evidence): {result['submit_summary']}")
+    p = result.get("proof") or {}
+    if p:
+        out += ["", "## Proof (computed by the harness, `gheerefill/proof.py`)", "",
+                f"Evidence level: **{p.get('level')}** — {p.get('summary')}", "",
+                "Each check was run on the original code (plus the patch's own test changes, so new tests exist) "
+                "and on the patched code:", "",
+                "| check | original | patched | result | fail→pass | pass→fail |", "|---|---|---|---|---|---|"]
+        for c in p.get("comparisons") or []:
+            out.append(f"| {'reproduction ' if c.get('kind') == 'reproduction' else ''}`{str(c.get('command'))[:70]}` | "
+                       f"{c.get('original') or '—'} | {c.get('candidate') or '—'} | {c.get('verdict')} | "
+                       f"{', '.join(c.get('fail_to_pass') or [])[:120] or '—'} | "
+                       f"{', '.join(c.get('pass_to_fail') or [])[:120] or '—'} |")
+        for r in p.get("reproductions") or []:
+            state = {True: "confirmed: fails on the original code", False: "does not fail on the original code",
+                     None: "unconfirmed"}[r.get("confirmed")]
+            out.append(f"- Reproduction {r['id']} (attempt {r.get('attempt')}): `{r['command'][:100]}` — {state}")
+        for a in p.get("attempts") or []:
+            out.append(f"- Attempt {a['n']}: {a.get('termination')}, {a.get('steps', '?')} steps, "
+                       f"{a.get('elapsed_s', '?')} s, evidence **{a.get('level')}** — {a.get('summary')}")
     if d:
         out += ["", "## Deliverable", "",
                 f"- Patch: `patch.diff`, {d.get('patch_bytes')} bytes, sha256 `{d.get('patch_sha256')}`",

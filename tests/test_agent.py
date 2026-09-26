@@ -133,15 +133,19 @@ class AgentTest(TempDirCase):
                  turn(SUBMIT), turn(SUBMIT)]
         result, _ = run_agent(self.repo, turns, self.run_dir)
         recs = result["verification"]["records_on_selected"]
-        self.assertEqual([r["source"] for r in recs], ["harness_recheck"])
+        self.assertEqual([r["source"] for r in recs], ["harness_candidate"])  # re-run by the harness at submit
         self.assertEqual(result["verification"]["status"], "checks_passed")
+        self.assertEqual(result["proof"]["level"], "proven")  # fails on the original code, passes on the candidate
 
     def test_recheck_evidence_can_restore_earlier_verified_candidate(self):
         # verified fix, then an untested breaking edit, then submit (review), then submit again
-        turns = [turn(FIX), turn(TEST), turn(BREAK), turn(SUBMIT), turn(SUBMIT)]
-        result, _ = run_agent(self.repo, turns, self.run_dir)
+        turns = [turn(FIX), turn(TEST), turn(BREAK), turn(SUBMIT), turn(SUBMIT), turn(SUBMIT)]
+        result, agent = run_agent(self.repo, turns, self.run_dir)
         self.assertEqual(result["termination"], "model_submitted")
-        self.assertTrue(any("changed the selection" in n for n in result["notes"]), result["notes"])
+        reviews = [m["content"] for m in agent.transcript if m["role"] == "tool" and m["name"] == "submit"]
+        self.assertIn("REGRESSION", reviews[0])  # the harness's comparison, shown to the model
+        self.assertIn("REGRESSION", reviews[1])  # refuted twice -> second review, then accepted
+        self.assertTrue(any("restored archived candidate" in n for n in result["notes"]), result["notes"])
         self.assertEqual((self.repo / "calc/ops.py").read_text(), "def divide(a, b):\n    return a / b\n")
         self.assertEqual(result["verification"]["status"], "checks_passed")
         self.assertIn("+    return a / b", self.patch())

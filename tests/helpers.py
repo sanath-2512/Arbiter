@@ -76,6 +76,7 @@ def test_profile(**limits: Any) -> Profile:
     for k, v in limits.items():
         setattr(p.limits, k, v)
     p.retry.base_delay_s = 0.0
+    p.policy.max_attempts = 1  # single-attempt semantics unless a test enables adaptive attempts
     return p
 
 
