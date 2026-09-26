@@ -240,11 +240,13 @@ artifact/export failure · regression introduced · selector failure.
   - A long streamed thinking answer was cut at 300 s total and retried: gap and total are separate.
   - `cargo test` put `Cargo.lock` into the patch: lock-file byproducts are left out.
   - An empty `ISSUE="   "` is treated as no issue (exit 0, "no task supplied", no model call).
-- **Mechanism matrices** (scripted policies on real repositories, harness 084e5d6+dirty): 25/25
-  expectations met plain; 22/22 behind the DeepSeek emulator; 22/22 behind the Qwen emulator.
+- **Mechanism matrices** (scripted policies on real repositories, re-run on clean commit 1b4f978):
+  25/25 expectations met plain; 22/22 behind the DeepSeek emulator; 22/22 behind the Qwen emulator.
 - **Suite:** 282 tests pass; `make chaos N=40`: 0 invariant violations.
-- **Clean machine** (`scripts/clean_machine.sh`, Python 3.9): results in
-  `rehearsal/results/clean_machine-python3.9.23.json`.
+- **Clean machine** (`scripts/clean_machine.sh`: fresh clone, `env -i`, no TTY) on ed372e4: 9/9
+  steps on Python 3.9.23 and 3.13.12 (`rehearsal/results/clean_machine-python*.json`), including
+  `ISSUE=<text> REPO=` and `ISSUE=<GitHub URL>` runs judged solved on a clean base and no key
+  material on disk.
 
 ### 2026-09-26 — rehearsal on commit 3823c1a
 - Procedure: fresh `git clone`, AI_* variables unset.

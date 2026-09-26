@@ -2,7 +2,7 @@
 
 > Mechanism rehearsals: scripted policies drive gheerefill, through its real HTTP transport and tools, on real pinned repositories into one controlled failure mode each; every run is judged exactly like a gauntlet run (export -> clean base -> hidden tests). They test the harness's plumbing under that failure mode. They are not evidence of solve rate: the scripted policy already knows the fix.
 
-Harness 084e5d67e1ab, 084e5d67e1ab+dirty · 31 judged runs · expectations met: 25/25
+Harness 1b4f97810f7c · 31 judged runs · expectations met: 25/25
 
 ## stuck_loop — flask_ipv6_server_name
 
@@ -10,12 +10,12 @@ Same failure signature, same region, no progress: does the harness force a new h
 
 | config | judged solved | valid artifact | failure class | restored | recovery | interventions | fails before / after | advisory | attempts | requests | wall s | expectation |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| A | no | yes | hidden_tests_fail | no | - | 0 | 0 / 0 | 0 | 1 | 25 | 7.0 | met |
-| B | yes | yes | solved | no | - | 1 | 2 / 0 | 0 | 1 | 13 | 3.84 | met |
-| C | no | yes | hidden_tests_fail | no | - | 0 | 0 / 0 | 0 | 1 | 25 | 6.83 | - |
-| D | no | yes | hidden_tests_fail | no | - | 0 | 0 / 0 | 0 | 1 | 25 | 6.9 | - |
-| E | no | yes | hidden_tests_fail | no | - | 0 | 0 / 0 | 0 | 1 | 25 | 6.47 | - |
-| F | yes | yes | solved | no | - | 1 | 2 / 0 | 0 | 1 | 13 | 4.65 | met |
+| A | no | yes | hidden_tests_fail | no | - | 0 | 0 / 0 | 0 | 1 | 25 | 7.24 | met |
+| B | yes | yes | solved | no | - | 1 | 2 / 0 | 0 | 1 | 13 | 4.11 | met |
+| C | no | yes | hidden_tests_fail | no | - | 0 | 0 / 0 | 0 | 1 | 25 | 7.29 | - |
+| D | no | yes | hidden_tests_fail | no | - | 0 | 0 / 0 | 0 | 1 | 25 | 7.25 | - |
+| E | no | yes | hidden_tests_fail | no | - | 0 | 0 / 0 | 0 | 1 | 25 | 7.25 | - |
+| F | yes | yes | solved | no | - | 1 | 2 / 0 | 0 | 1 | 13 | 4.96 | met |
 
 ## late_regression — click_sentinel_copy
 
@@ -23,12 +23,12 @@ Verified candidate A, then an unverified tidy-up B that breaks an existing test:
 
 | config | judged solved | valid artifact | failure class | restored | recovery | interventions | fails before / after | advisory | attempts | requests | wall s | expectation |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| A | no | yes | regression | no | - | 0 | 0 / 0 | 0 | 1 | 7 | 2.88 | met |
-| B | no | yes | regression | no | - | 0 | 0 / 0 | 0 | 1 | 7 | 2.74 | - |
-| C | no | yes | regression | no | - | 0 | 0 / 0 | 0 | 1 | 7 | 2.82 | - |
-| D | no | yes | regression | no | - | 0 | 0 / 0 | 0 | 1 | 8 | 5.51 | - |
-| E | yes | yes | solved | yes | win | 0 | 0 / 0 | 0 | 1 | 7 | 4.28 | met |
-| F | yes | yes | solved | yes | win | 0 | 0 / 0 | 0 | 1 | 8 | 5.59 | met |
+| A | no | yes | regression | no | - | 0 | 0 / 0 | 0 | 1 | 7 | 3.07 | met |
+| B | no | yes | regression | no | - | 0 | 0 / 0 | 0 | 1 | 7 | 2.96 | - |
+| C | no | yes | regression | no | - | 0 | 0 / 0 | 0 | 1 | 7 | 2.91 | - |
+| D | no | yes | regression | no | - | 0 | 0 / 0 | 0 | 1 | 8 | 5.8 | - |
+| E | yes | yes | solved | yes | win | 0 | 0 / 0 | 0 | 1 | 7 | 4.29 | met |
+| F | yes | yes | solved | yes | win | 0 | 0 / 0 | 0 | 1 | 8 | 6.15 | met |
 
 ## wrong_generated_test — click_sentinel_copy
 
@@ -36,12 +36,12 @@ A registered reproduction with a wrong expectation keeps failing after the corre
 
 | config | judged solved | valid artifact | failure class | restored | recovery | interventions | fails before / after | advisory | attempts | requests | wall s | expectation |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| A | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 5 | 2.82 | met |
-| B | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 5 | 2.7 | met |
-| C | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 5 | 2.79 | met |
-| D | yes | yes | solved | no | - | 0 | 0 / 0 | 1 | 1 | 6 | 4.45 | met |
-| E | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 5 | 2.7 | met |
-| F | yes | yes | solved | no | - | 0 | 0 / 0 | 1 | 3 | 18 | 7.92 | met |
+| A | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 5 | 2.89 | met |
+| B | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 5 | 2.94 | met |
+| C | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 5 | 2.85 | met |
+| D | yes | yes | solved | no | - | 0 | 0 / 0 | 1 | 1 | 6 | 4.58 | met |
+| E | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 5 | 2.91 | met |
+| F | yes | yes | solved | no | - | 0 | 0 / 0 | 1 | 3 | 18 | 8.03 | met |
 
 ## stale_edit — click_help_parameter
 
@@ -49,8 +49,8 @@ An edit written against text that has since changed: refused without side effect
 
 | config | judged solved | valid artifact | failure class | restored | recovery | interventions | fails before / after | advisory | attempts | requests | wall s | expectation |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| A | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 12 | 9.99 | met |
-| F | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 13 | 11.36 | met |
+| A | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 12 | 10.15 | met |
+| F | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 13 | 11.63 | met |
 
 `A`: recovered_from_hint=True, stale_edit_refused=True, fails_fast=False, recovered_offline=False
 
@@ -62,8 +62,8 @@ An edit written against text that has since changed: refused without side effect
 
 | config | judged solved | valid artifact | failure class | restored | recovery | interventions | fails before / after | advisory | attempts | requests | wall s | expectation |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| A | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 13 | 45.99 | met |
-| F | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 13 | 47.8 | met |
+| A | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 13 | 46.15 | met |
+| F | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 13 | 47.77 | met |
 
 ## invalid_key — click_sentinel_copy
 
@@ -71,7 +71,7 @@ An edit written against text that has since changed: refused without side effect
 
 | config | judged solved | valid artifact | failure class | restored | recovery | interventions | fails before / after | advisory | attempts | requests | wall s | expectation |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| F | no | yes | empty_patch | no | - | 0 | 0 / 0 | 0 | 1 | 1 | 1.98 | met |
+| F | no | yes | empty_patch | no | - | 0 | 0 / 0 | 0 | 1 | 1 | 2.04 | met |
 
 `F`: fails_fast=True, recovered_offline=False
 
@@ -91,8 +91,8 @@ SIGTERM while a tool subprocess runs, fix already on disk: graceful stop with a 
 
 | config | judged solved | valid artifact | failure class | restored | recovery | interventions | fails before / after | advisory | attempts | requests | wall s | expectation |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| A | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 4 | 26.67 | met |
-| F | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 4 | 26.82 | met |
+| A | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 4 | 27.2 | met |
+| F | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 4 | 26.93 | met |
 
 ## sigkill — click_sentinel_copy
 
@@ -100,7 +100,7 @@ SIGKILL mid-run (partial state on disk): offline finalize recovers a valid artif
 
 | config | judged solved | valid artifact | failure class | restored | recovery | interventions | fails before / after | advisory | attempts | requests | wall s | expectation |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| F | no | yes | infrastructure_error | no | - | 0 | 0 / 0 | 0 | 0 | 4 | 25.25 | met |
+| F | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 4 | 25.48 | met |
 
 `F`: fails_fast=False, recovered_offline=True
 
@@ -110,8 +110,8 @@ Step budget runs out right after the fix was verified: is the verified work expo
 
 | config | judged solved | valid artifact | failure class | restored | recovery | interventions | fails before / after | advisory | attempts | requests | wall s | expectation |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| A | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 4 | 2.58 | met |
-| F | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 4 | 4.32 | met |
+| A | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 4 | 3.07 | met |
+| F | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 4 | 4.79 | met |
 
 ## hostile_tools — click_sentinel_copy
 
@@ -119,6 +119,6 @@ Hung command, 40 MB of stdout, a background sleeper, an ambiguous edit, an edit 
 
 | config | judged solved | valid artifact | failure class | restored | recovery | interventions | fails before / after | advisory | attempts | requests | wall s | expectation |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| A | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 9 | 9.58 | met |
-| F | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 9 | 11.74 | met |
+| A | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 9 | 10.27 | met |
+| F | yes | yes | solved | no | - | 0 | 0 / 0 | 0 | 1 | 9 | 11.47 | met |
 
