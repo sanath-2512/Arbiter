@@ -127,7 +127,7 @@ label = "Groq"
 match = "prefix:gsk_"
 provider = "openai_chat"
 base_url = "https://api.groq.com/openai/v1"
-models = ["moonshotai/kimi-k2-instruct-0905", "openai/gpt-oss-120b", "llama-3.3-70b-versatile"]
+models = ["qwen/qwen3-32b", "moonshotai/kimi-k2-instruct-0905", "openai/gpt-oss-120b", "llama-3.3-70b-versatile"]
 
 [[auto]]
 label = "xAI"

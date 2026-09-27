@@ -439,3 +439,31 @@ class TlsContextTest(unittest.TestCase):
         self.assertTrue(ctx.check_hostname)
         if hasattr(ssl, "VERIFY_X509_STRICT"):
             self.assertFalse(ctx.verify_flags & ssl.VERIFY_X509_STRICT)
+
+
+class UserAgentTest(unittest.TestCase):
+    def test_requests_name_the_harness_not_python_urllib(self):
+        seen = []
+
+        class H(BaseHTTPRequestHandler):
+            def do_POST(self):
+                seen.append(self.headers.get("User-Agent"))
+                body = json.dumps({"choices": [{"message": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            cfg = ModelConfig(name="m", base_url=f"http://127.0.0.1:{srv.server_address[1]}/v1")
+            with mock.patch.dict(os.environ, NO_PROXY_ENV):
+                OpenAIChatClient(cfg, "k").complete(MSGS, [TOOL], timeout_s=5)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        self.assertTrue(seen and seen[0].startswith("gheerefill/"), seen)

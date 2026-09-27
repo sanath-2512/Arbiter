@@ -32,7 +32,7 @@ from typing import Any, Callable
 
 from gheerefill.config import AUTO, ConfigError, ModelConfig, Profile
 from gheerefill.models.base import ErrorClass, ModelError, classify_http_error
-from gheerefill.models.http import _ssl_context
+from gheerefill.models.http import USER_AGENT, _ssl_context
 
 # Messages that mean the key itself is wrong (as opposed to lacking a permission for /models).
 INVALID_KEY = re.compile(r"invalid.{0,20}(api.?key|x-api-key|token|credential)|incorrect api key|api key not valid|"
@@ -73,7 +73,8 @@ def list_models(cfg: ModelConfig, key: str, timeout_s: float = 20.0) -> list[str
     else:
         url = base + "/models"
         headers = {"Authorization": f"Bearer {key}"}
-    req = urllib.request.Request(url, headers={**headers, **cfg.extra_headers, "Accept": "application/json"})
+    req = urllib.request.Request(url, headers={**headers, **cfg.extra_headers, "Accept": "application/json",
+                                                       "User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=timeout_s,
                                     context=_ssl_context() if url.startswith("https://") else None) as r:
@@ -125,7 +126,7 @@ def probe_completion(cfg: ModelConfig, key: str, model: str, timeout_s: float = 
     """For endpoints without a model list: does a 1-token request authenticate? ok | auth | other."""
     body = json.dumps({"model": model, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1}).encode()
     req = urllib.request.Request(cfg.base_url.rstrip("/") + "/chat/completions", data=body, method="POST",
-                                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
+                                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json", "User-Agent": USER_AGENT,
                                           **cfg.extra_headers})
     try:
         with urllib.request.urlopen(req, timeout=timeout_s,

@@ -18,6 +18,10 @@ from typing import Any
 from gheerefill.models.base import ErrorClass, ModelError, classify_http_error
 
 
+# Cloudflare-fronted providers (Groq, OpenRouter, ...) refuse the default "Python-urllib" agent with
+# "error code: 1010"; every request names the harness instead.
+USER_AGENT = "gheerefill/0.1 (+https://github.com/sanath-2512/gheerefill)"
+
 def _ssl_context() -> ssl.SSLContext:
     """Default verification (certificate chain + hostname), minus Python 3.13's VERIFY_X509_STRICT.
     Strict mode rejects CA certificates without a key-usage extension, which many corporate
@@ -48,6 +52,7 @@ def post_json(url: str, headers: dict[str, str], body: dict[str, Any], timeout_s
     deadline = _time.monotonic() + (total_s or timeout_s)
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
+    req.add_header("User-Agent", USER_AGENT)
     req.add_header("Content-Type", "application/json")
     for k, v in headers.items():
         req.add_header(k, v)
@@ -114,6 +119,7 @@ def post_sse(url: str, headers: dict[str, str], body: dict[str, Any], timeout_s:
 
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
+    req.add_header("User-Agent", USER_AGENT)
     req.add_header("Content-Type", "application/json")
     req.add_header("Accept", "text/event-stream")
     for k, v in headers.items():

@@ -65,6 +65,10 @@ def _profile_path(arg: str | None) -> Path:
 
 
 def _repo_spec(value: str | None) -> str | None:
+    if value:  # an issue or pull-request URL given as the repository: clone its repository
+        m = re.match(r"^(https?://github\.com/[\w.-]+/[\w.-]+?)(\.git)?/(issues|pull)/\d+", value.strip())
+        if m:
+            return m.group(1)
     if not value or re.match(r"^(https?://|git@|ssh://|file://)", value):
         return value
     return str(_user_path(value))
