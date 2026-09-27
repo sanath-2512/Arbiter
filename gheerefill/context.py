@@ -7,8 +7,9 @@ Elided tool outputs keep a pointer to their verbatim archive for exact retrieval
 """
 
 from __future__ import annotations
-
+import json
 from typing import Any
+
 
 from gheerefill.models.base import Usage
 
@@ -41,9 +42,13 @@ class ContextManager:
         self.keep_recent = keep_recent
         self.elided: set[int] = set()
         self.truncated_text: set[int] = set()
+        self.elided_tool_args: set[int] = set()
         self.ratio = 1.0  # provider-observed tokens / our estimate
         self.reductions = 0
         self.pressure = 0  # raised after a context-overflow error
+        self.last_estimate = 0
+        self.peak_estimate = 0
+
 
     def observe(self, view: list[dict[str, Any]], usage: Usage) -> None:
         if usage.known and usage.prompt_tokens > 0:
@@ -53,6 +58,20 @@ class ContextManager:
 
     def estimate(self, messages: list[dict[str, Any]]) -> int:
         return int(estimate_tokens(messages) * self.ratio)
+    
+    def stats(self) -> dict[str, int | float]:
+        """Context facts for the result record and token-efficiency evaluation."""
+        return {
+            "limit_tokens": self.limit,
+            "last_estimate_tokens": self.last_estimate,
+            "peak_estimate_tokens": self.peak_estimate,
+            "reductions": self.reductions,
+            "elided_tool_outputs": len(self.elided),
+            "truncated_assistant_messages": len(self.truncated_text),
+            "elided_tool_arguments": len(self.elided_tool_args),
+            "calibration_ratio": round(self.ratio, 3),
+            "overflow_pressure": self.pressure,
+        }
 
     def _render(self, transcript: list[dict[str, Any]]) -> list[dict[str, Any]]:
         out = []
@@ -73,7 +92,16 @@ class ContextManager:
                 text = m.get("content") or ""
                 out.append({**m, "content": text[:600] + ("\n[... earlier reasoning truncated ...]" if len(text) > 600 else "")})
             else:
-                out.append(m)
+                out.append({**m} if i in self.elided_tool_args else m)
+            if i in self.elided_tool_args and out[-1].get("tool_calls"):
+                # Keep a valid assistant/tool exchange for OpenAI-compatible APIs.  The model already
+                # has the resulting tool observation and can inspect the repository or output archive;
+                # replaying a multi-megabyte write_file/search argument buys no information on later turns.
+                out[-1]["tool_calls"] = [
+                    {**call, "arguments": json.dumps({"_context": "Earlier tool arguments elided; inspect the repository or output archive."})}
+                    for call in out[-1]["tool_calls"]
+                ]
+
         return out
 
     def force_reduce(self, rejected_tokens: int | None = None) -> None:
@@ -87,7 +115,10 @@ class ContextManager:
         """Return the request view. `protected` leading messages (system + issue) are never reduced."""
         threshold = self.limit * max(0.2, self.reduce_at - 0.15 * self.pressure)
         view = self._render(transcript)
-        if self.estimate(view) <= threshold:
+        estimate = self.estimate(view)
+        self.last_estimate, self.peak_estimate = estimate, max(self.peak_estimate, estimate)
+        if estimate <= threshold:
+
             return view
         self.reductions += 1
         target = threshold * 0.6
@@ -99,6 +130,7 @@ class ContextManager:
                 self.elided.add(i)
                 view = self._render(transcript)
                 if self.estimate(view) <= target:
+                    self.last_estimate = self.estimate(view)
                     return view
         # pass 2: truncate old assistant reasoning text
         for i in range(protected, recent_start):
@@ -111,4 +143,24 @@ class ContextManager:
         for i in range(recent_start, max(recent_start, n - 2)):
             if transcript[i]["role"] == "tool" and len(transcript[i].get("content") or "") > 300:
                 self.elided.add(i)
-        return self._render(transcript)
+        view = self._render(transcript)
+        # A huge write_file/search argument lives on the assistant message, not the tool result.  As
+        # the last fallback compact stale assistant text and argument payloads too.  This keeps later
+        # model calls inside the working window without corrupting tool_call IDs or JSON syntax.
+        if self.estimate(view) > threshold:
+            for i in range(protected, n):
+                m = transcript[i]
+                if m.get("role") == "assistant":
+                    if len(m.get("content") or "") > 600:
+                        self.truncated_text.add(i)
+                    if any(len(c.get("arguments") or "") > 300 for c in m.get("tool_calls") or []):
+                        self.elided_tool_args.add(i)
+                elif m.get("role") == "tool" and len(m.get("content") or "") > 80:
+                    self.elided.add(i)
+                view = self._render(transcript)
+                if self.estimate(view) <= target:
+                    break
+        self.last_estimate = self.estimate(view)
+        self.peak_estimate = max(self.peak_estimate, self.last_estimate)
+        return view
+
