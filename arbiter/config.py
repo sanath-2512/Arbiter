@@ -134,6 +134,9 @@ class PolicyConfig:
     verify_at_submit: bool = True
     # Deterministic localisation hints in the first prompt (locate.py: issue anchors + BM25).
     localize: bool = True
+    # Whole small files the localisation points to, shown in the first prompt (as read_file shows
+    # them) so the model can edit without first spending a request per file. Total characters; 0 = off.
+    preload_chars: int = 4000
     # Carry execution-verified facts (working test/install commands) to later runs on the same
     # repository (memory.py). Never code, patches or issue text.
     memory: bool = True
@@ -311,6 +314,8 @@ def _validate_rest(profile: Profile) -> None:
         raise ConfigError("policy.retry_below must be one of refuted, unverified, passing, fixed, proven")
     if not 0.1 <= profile.policy.context_reduce_at <= 0.95:
         raise ConfigError("policy.context_reduce_at must be within [0.1, 0.95]")
+    if profile.policy.preload_chars < 0:
+        raise ConfigError("policy.preload_chars must be >= 0")
     if profile.policy.observation_window < 0 or profile.policy.observation_step < 1:
         raise ConfigError("policy.observation_window must be >= 0 and policy.observation_step >= 1")
     if m.max_output_tokens <= 0 or m.context_window <= m.max_output_tokens:

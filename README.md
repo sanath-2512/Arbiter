@@ -27,7 +27,7 @@ git clone https://github.com/sanath-2512/arbiter && cd arbiter
 export AI_API_KEY="<PROVIDED_API_KEY>"
 make setup      # offline, ~1 s: finds Python ≥ 3.9 and git; no packages to install
 make run        # then paste a GitHub issue URL, owner/repo#N, @issue.md, or the issue text
-make test       # 312 deterministic tests: no network, no credentials
+make test       # 314 deterministic tests: no network, no credentials
 ```
 
 Without a terminal (automation), everything is an argument:
@@ -60,7 +60,7 @@ make run TASK=swe_instances.jsonl                                     # SWE-benc
 | **Manage context** | Only the newest tool outputs travel in full; older ones become one-line pointers the model can expand. Build and test noise is folded. Requests always fit the model's window. |
 | **Recover from failures** | Rate limits and server errors are retried within the deadline; long answers stream. Failure memory and fresh attempts break loops, and `.git`, stash and reset damage is undone. It never loses a verified fix: every step is snapshotted and export survives crashes. |
 | **Correct, verified changes** | Every check runs twice: on the original code (with the new tests) and on the fix. Only a change that turns failing into passing, with no regressions, is **PROVEN**. Edits that break syntax are refused. |
-| **Tokens and compute** | About 2.3× fewer input tokens than resending the full history on long tasks; a failing `cargo test` shown in 0.7k chars instead of 2.9k; retries only when evidence says the fix is wrong; a background Rust pre-build. |
+| **Tokens and compute** | About 2.3× fewer input tokens than resending the full history on long tasks; a failing `cargo test` shown in 0.7k chars instead of 2.9k; small files the search pinpoints shown in the first prompt, so no request is spent reading them; retries only when evidence says the fix is wrong; a background Rust pre-build. |
 
 ---
 
@@ -68,7 +68,7 @@ make run TASK=swe_instances.jsonl                                     # SWE-benc
 
 | Evidence | Result |
 |---|---|
-| Deterministic suite | **312 tests pass** (`make test`), including an attack catalogue, provider emulators and real Go/Rust/Node/Ruby toolchains |
+| Deterministic suite | **314 tests pass** (`make test`), including an attack catalogue, provider emulators and real Go/Rust/Node/Ruby toolchains |
 | Fault injection | **0 invariant violations** over 200 seeds with crashes, kills and provider errors (`make chaos`) |
 | Clean-machine rehearsal | **9/9** official steps from a fresh clone, empty environment, no terminal (Python 3.9 and 3.13) |
 | 46-task gauntlet, offline | **46/46** judged by hidden tests behind DeepSeek- and Qwen-like endpoints, with 0 provider-rule violations. The model is scripted, so this checks the pipeline, not model ability. |
@@ -148,7 +148,7 @@ limited to provider sampling and a seeded retry jitter.
 arbiter/      runtime (standard library only): agent, tools, context, proof, locate, workspace,
               models (OpenAI-compatible, Anthropic, quirk repair), intake, prewarm, sandbox, attest
 profiles/     model configuration (default.toml is the submission profile)
-tests/        312 deterministic tests
+tests/        314 deterministic tests
 scripts/      setup, eval, gauntlet generator, provider emulators, chaos, clean-machine rehearsal
 evalsuite/    48 owned tasks with judge-owned hidden tests (never read by the runtime)
 rehearsal/    rehearsal lab: real pinned repositories, results and terminal logs

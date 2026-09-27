@@ -135,6 +135,7 @@ class Agent:
         self.target_git_initial = None
         self.target_stash_initial: str | None = None
         self.prewarm: Prewarm | None = None
+        self._preload_text = ""  # whole small files shown in the first prompt (locate.preload)
         self.target_git_fp_initial = None
         self.sandbox: Sandbox | None = None
         self.base_ignored: set[str] = set()
@@ -380,8 +381,12 @@ class Agent:
                 listing = self.ws.git("ls-tree", "-r", "-z", "--name-only", self.base_tree).stdout
                 loc = locate.localize(self.task.issue, self.tools.repo,
                                       [f for f in listing.decode("utf-8", "replace").split("\0") if f])
-                atomic_write_json(self.run_dir / "localization.json", loc)
                 overview += locate.render(loc)
+                if self.profile.policy.preload_chars:
+                    self._preload_text, loc["preloaded"] = locate.preload(loc, self.tools.repo,
+                                                                          self.profile.policy.preload_chars)
+                    overview += self._preload_text
+                atomic_write_json(self.run_dir / "localization.json", loc)
             except Exception as e:  # noqa: BLE001 - hints are optional
                 self.notes.append(f"localisation hints skipped: {type(e).__name__}: {e}")
         issue = self.task.issue.strip()
@@ -534,7 +539,7 @@ class Agent:
                         continue
                 if e.cls == ErrorClass.CONTENT_FILTER and filter_retries < 3:
                     filter_retries += 1
-                    n = self._withhold_recent_outputs(2 * filter_retries)
+                    n = self._withhold_recent_outputs(2 * filter_retries) + self._withhold_preload()
                     self._quirk("provider content filter: recent tool outputs withheld")
                     self.log(f"provider content filter rejected the request; withheld {n} recent tool output(s), retrying")
                     if n:
@@ -655,6 +660,20 @@ class Agent:
                                 "it. Re-run a narrower command if you still need it.]")
                 done += 1
         return done
+
+    def _withhold_preload(self) -> int:
+        """Remove the file contents shown in the first prompt (repository text, like a tool output, may
+        be what a provider's moderation rejects); returns 1 when there were any."""
+        text, self._preload_text = self._preload_text, ""
+        if not text:
+            return 0
+        note = ("\n[file contents withheld: the model provider's content filter rejected a request containing "
+                "them; use read_file for what you need]\n")
+        self._task_msg = self._task_msg.replace(text, note)
+        for m in self.transcript:
+            if m.get("role") == "user" and text in str(m.get("content") or ""):
+                m["content"] = m["content"].replace(text, note)
+        return 1
 
     def _checked_this_attempt(self) -> bool:
         start = int(self.attempt_start["step"])

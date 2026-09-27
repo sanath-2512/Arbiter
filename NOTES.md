@@ -343,3 +343,23 @@ the emulator's estimate (characters / 4 of the messages). Logs: `rehearsal/resul
 Live: `make gauntlet` with `AI_API_KEY` (and `AI_MODEL` to pick a model on an aggregator key). This
 environment still cannot reach the model providers, so no live run was made in this round.
 
+
+## 14. Preloading the small files the search points to (after the first live DeepSeek logs)
+
+**Finding.** The live DeepSeek logs (NVIDIA NIM, `g-py-merge-intervals`, `g-js-query`) show the model's
+first requests each carrying about 1.7k input tokens and returning about 100 output tokens: one
+`read_file` call per request, for files of a few hundred bytes the localisation had already found.
+Every such request resends the whole context and waits a full provider round trip.
+
+**Change.** When the issue names a file or a definition it mentions is found (`locate.py`), whole files
+that fit `policy.preload_chars` (default 4,000 characters, at most 3 files, never a partial file, never
+a path that resolves outside the repository) are shown in the first prompt exactly as `read_file`
+shows them, so the model can edit on its first request. A provider content-filter rejection withholds
+them like a tool output (`agent._withhold_preload`). `preload_chars = 0` turns it off.
+
+**Measured cost, worst case.** The offline gauntlet's scripted model follows a fixed plan that reads
+the files anyway, so it pays for the preload and saves nothing: 46/46 judged pass on both emulators,
+estimated tokens per task 5,692 → 6,519 (DeepSeek) and 5,551 → 6,370 (Qwen), about +820 per task. A
+live model that uses the preloaded files saves one request per file it would have read (on these
+tasks, about 1.8k input tokens and one round trip each). Not yet measured live. The recorded logs in
+`rehearsal/results/gauntlet46-*` predate this change.

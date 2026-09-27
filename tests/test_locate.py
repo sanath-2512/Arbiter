@@ -31,6 +31,26 @@ class LocateTest(TempDirCase):
         loc = locate.localize("divide", self.repo, self.files, time_budget_s=0.0)
         self.assertFalse(loc["complete"])
 
+    def test_preload_small_files_whole(self):
+        loc = locate.localize("`divide(7, 2)` returns 3 instead of 3.5", self.repo, self.files)
+        text, shown = locate.preload(loc, self.repo, 4000)
+        self.assertEqual(shown[0], "calc/ops.py")
+        self.assertIn("calc/ops.py (", text)
+        self.assertIn("     1\tdef ", text)  # read_file's gutter, which edit_file tolerates in old_str
+        self.assertLessEqual(len(text), 4000 + 200)
+        self.assertEqual(locate.preload(loc, self.repo, 0), ("", []))
+        # a budget below the file's size shows nothing rather than part of a file
+        self.assertNotIn("calc/ops.py", locate.preload(loc, self.repo, 20)[1])
+
+    def test_preload_needs_an_anchor_and_stays_in_the_repo(self):
+        loc = locate.localize("The website is slow on Tuesdays.", self.repo, self.files)
+        self.assertEqual(locate.preload(loc, self.repo, 4000), ("", []))
+        outside = self.tmp / "secret.py"
+        outside.write_text("def divide():\n    pass\n")
+        (self.repo / "calc" / "link.py").symlink_to(outside)
+        loc = {"definitions": [{"name": "divide", "path": "calc/link.py", "line": 1}], "ranked": []}
+        self.assertEqual(locate.preload(loc, self.repo, 4000), ("", []))
+
 
 class ImportGraphTest(TempDirCase):
     def test_python_js_go_importers_and_tests_elsewhere(self):

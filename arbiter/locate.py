@@ -20,6 +20,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from arbiter.outputs import numbered_range
+
 SOURCE_EXT = {
     ".py", ".pyi", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".go", ".rs", ".java", ".kt", ".kts", ".scala",
     ".rb", ".php", ".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".hh", ".cs", ".swift", ".m", ".mm", ".lua", ".ex",
@@ -378,3 +380,45 @@ def render(loc: dict[str, Any]) -> str:
         return ""
     return "\nHints from a deterministic search of the repository for the issue's terms (unverified; use them only " \
            "if they fit):\n" + "\n".join(lines)
+
+
+PRELOAD_MAX_FILES = 3
+
+
+def preload(loc: dict[str, Any], repo: Path, budget_chars: int) -> tuple[str, list[str]]:
+    """Whole small files the localisation points to, rendered as read_file shows them, so the model
+    can edit at once instead of spending a request (and a resend of the context) per file. Only when
+    the issue names a file or a definition it mentions was found; only complete files that fit the
+    budget; never a path that leaves the repository."""
+    if budget_chars <= 0 or not (loc.get("definitions") or loc.get("files_named")):
+        return "", []
+    order = [d["path"] for d in loc.get("definitions") or []] + list(loc.get("files_named") or [])
+    order += [r["path"] for r in loc.get("ranked") or []]
+    for path in list(order):
+        order += ((loc.get("related") or {}).get(path) or {}).get("tests") or []
+    root = repo.resolve()
+    blocks, shown, left = [], [], budget_chars
+    for path in dict.fromkeys(order):
+        if len(shown) >= PRELOAD_MAX_FILES or left < 200:
+            break
+        try:
+            f = (repo / path).resolve()
+            f.relative_to(root)
+            if not f.is_file() or f.stat().st_size > left:
+                continue
+            data = f.read_bytes()
+        except (OSError, ValueError):
+            continue
+        if not data.strip() or b"\x00" in data:
+            continue
+        rendered, _, last, total = numbered_range(data.decode("utf-8", "replace"), 1, None, 100_000, 10 ** 9)
+        block = f"{path} ({total} lines)\n{rendered}"
+        if last < total or len(block) > left:
+            continue
+        blocks.append(block)
+        shown.append(path)
+        left -= len(block) + 2
+    if not blocks:
+        return "", []
+    return ("\nSmall files the search points to, shown whole as read_file would show them (edit them directly; "
+            "no need to read them again):\n" + "\n\n".join(blocks) + "\n"), shown
