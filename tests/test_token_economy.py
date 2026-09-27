@@ -4,12 +4,12 @@ import re
 import shutil
 import unittest
 
-from gheerefill.config import ToolsConfig
-from gheerefill.models.base import ToolCall
-from gheerefill.outputs import OutputArchive, bounded_view
-from gheerefill.records import Redactor
-from gheerefill.shell import tool_environment
-from gheerefill.tools import BUILD_COMMAND, ToolBox
+from arbiter.config import ToolsConfig
+from arbiter.models.base import ToolCall
+from arbiter.outputs import OutputArchive, bounded_view
+from arbiter.records import Redactor
+from arbiter.shell import tool_environment
+from arbiter.tools import BUILD_COMMAND, ToolBox
 from tests.helpers import TempDirCase
 
 CARGO = "\n".join(

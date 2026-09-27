@@ -4,9 +4,9 @@
 exported patch and whose predicate binds it to the base and selected trees, the harness's proof
 (proof.py) and every evidence record it rests on, with SHA-256 digests of the archived outputs.
 It is unsigned: signing would need a key the harness does not have. Integrity comes from the
-digests, and `gheerefill verify` recomputes them.
+digests, and `arbiter verify` recomputes them.
 
-`gheerefill verify --run-dir DIR` checks, without the model or the network:
+`arbiter verify --run-dir DIR` checks, without the model or the network:
   1. the patch file matches the attested digest;
   2. applying the patch to the base tree (from the run's shadow store) reproduces the selected tree;
   3. every evidence record the proof cites exists, is bound to the attested trees, and its archived
@@ -26,9 +26,9 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from gheerefill import __version__
+from arbiter import __version__
 
-PREDICATE = "https://github.com/sanath-2512/gheerefill/blob/main/docs/proof-v1.md"
+PREDICATE = "https://github.com/sanath-2512/arbiter/blob/main/docs/proof-v1.md"
 HARNESS_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -73,7 +73,7 @@ def build(run_dir: Path, result: dict[str, Any], records: list, base_tree: str,
         "subject": [{"name": "patch.diff", "digest": {"sha256": d.get("patch_sha256")}}],
         "predicateType": PREDICATE,
         "predicate": {
-            "harness": {"name": "gheerefill", "version": __version__, "commit": harness_commit()},
+            "harness": {"name": "arbiter", "version": __version__, "commit": harness_commit()},
             "task_id": result.get("task_id"),
             "model": {k: (result.get("model") or {}).get(k) for k in ("provider", "name", "base_url", "live",
                                                                       "profile_id", "resolution")},
@@ -92,9 +92,9 @@ def build(run_dir: Path, result: dict[str, Any], records: list, base_tree: str,
 
 
 def verify(run_dir: Path, *, rerun: bool = False, timeout_s: float = 300.0) -> dict[str, Any]:
-    from gheerefill.evidence import classify_output
-    from gheerefill.proof import classify_reproduction
-    from gheerefill.workspace import Workspace
+    from arbiter.evidence import classify_output
+    from arbiter.proof import classify_reproduction
+    from arbiter.workspace import Workspace
 
     run_dir = Path(run_dir).resolve()
     checks: list[dict[str, Any]] = []

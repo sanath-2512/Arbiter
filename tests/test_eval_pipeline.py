@@ -82,10 +82,10 @@ class StreamingEndToEndTest(TempDirCase):
         with FakeOpenAIServer(SCRIPT) as srv:
             env = {**os.environ, "AI_API_KEY": "sk-fake-000000", "AI_MODEL": "scripted-model", "AI_BASE_URL": srv.base_url,
                    "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
-            p = subprocess.run([sys.executable, "-m", "gheerefill", "run", "--profile", str(prof), "--out",
+            p = subprocess.run([sys.executable, "-m", "arbiter", "run", "--profile", str(prof), "--out",
                                 str(self.tmp / "out")], input=task + "\n", cwd=ROOT, capture_output=True, text=True,
                                env=env, timeout=120)
-            probe = subprocess.run([sys.executable, "-m", "gheerefill", "probe", "--profile", str(prof)], cwd=ROOT,
+            probe = subprocess.run([sys.executable, "-m", "arbiter", "probe", "--profile", str(prof)], cwd=ROOT,
                                    capture_output=True, text=True, env=env, timeout=60)
         rec = json.loads(p.stdout.strip().splitlines()[-1])
         self.assertEqual(rec["termination"], "model_submitted", p.stderr[-2000:])

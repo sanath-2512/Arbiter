@@ -1,6 +1,6 @@
 import json
 
-from gheerefill.prompts import repo_overview, test_command_hints
+from arbiter.prompts import repo_overview, test_command_hints
 from tests.helpers import TempDirCase, make_repo
 
 

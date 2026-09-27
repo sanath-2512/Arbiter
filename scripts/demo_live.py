@@ -7,7 +7,7 @@ Part 1: a normal run on a real task. Shows the repository investigation, the edi
 checks and their classified evidence, the exact exported patch with its clean-reconstruction
 check, and an offline judge label from the suite's hidden tests.
 Part 2: a supported recovery behaviour on a live run. The harness process is hard-killed
-(SIGKILL, no chance to clean up) once it has produced a candidate. `gheerefill finalize` then
+(SIGKILL, no chance to clean up) once it has produced a candidate. `arbiter finalize` then
 rebuilds the deliverable from the checkpoint without any model call, and the recovered patch is judged.
 
 Only dev-partition tasks should be used here (the demo must not consume the holdout).
@@ -71,7 +71,7 @@ def main() -> int:
     ap.add_argument("--out", default=str(ROOT / "runs" / "demo-live"))
     args = ap.parse_args()
     py = sys.executable
-    chk = subprocess.run([py, "-m", "gheerefill", "check-config", "--profile", args.profile], cwd=ROOT,
+    chk = subprocess.run([py, "-m", "arbiter", "check-config", "--profile", args.profile], cwd=ROOT,
                          capture_output=True, text=True)
     if chk.returncode != 0:
         print(chk.stderr.strip(), file=sys.stderr)
@@ -88,7 +88,7 @@ def main() -> int:
     tf.write_text(json.dumps({"task_id": spec["task_id"], "repo_path": str(repo),
                               "issue": (spec["dir"] / "issue.md").read_text(), "limits": spec["limits"]}))
     print((spec["dir"] / "issue.md").read_text())
-    p = subprocess.run([py, "-m", "gheerefill", "run", "--task", str(tf), "--profile", args.profile,
+    p = subprocess.run([py, "-m", "arbiter", "run", "--task", str(tf), "--profile", args.profile,
                         "--out", str(base / "runs")], cwd=ROOT, stdout=subprocess.PIPE, text=True)
     rec = json.loads(p.stdout.strip().splitlines()[-1])
     show_run(Path(rec["run_dir"]), spec)
@@ -100,7 +100,7 @@ def main() -> int:
     tf = base / "task.json"
     tf.write_text(json.dumps({"task_id": spec["task_id"], "repo_path": str(repo),
                               "issue": (spec["dir"] / "issue.md").read_text(), "limits": spec["limits"]}))
-    proc = subprocess.Popen([py, "-m", "gheerefill", "run", "--task", str(tf), "--profile", args.profile,
+    proc = subprocess.Popen([py, "-m", "arbiter", "run", "--task", str(tf), "--profile", args.profile,
                              "--out", str(base / "runs")], cwd=ROOT, stdout=subprocess.PIPE, text=True,
                             start_new_session=True)
     run_dir = None
@@ -118,7 +118,7 @@ def main() -> int:
     proc.wait()
     print(f"SIGKILLed harness process {proc.pid}; result.json present: {(run_dir / 'result.json').exists()}")
     print(f"working tree right now (possibly mid-edit):\n{subprocess.run(['git', 'status', '--short'], cwd=repo, capture_output=True, text=True).stdout}")
-    fin = subprocess.run([py, "-m", "gheerefill", "finalize", "--run-dir", str(run_dir)], cwd=ROOT,
+    fin = subprocess.run([py, "-m", "arbiter", "finalize", "--run-dir", str(run_dir)], cwd=ROOT,
                          capture_output=True, text=True)
     print(fin.stderr[-1500:])
     show_run(run_dir, spec)

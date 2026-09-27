@@ -190,15 +190,15 @@ to the judge.
 | Full-screen TUI, web dashboard | Line console + proof card + `report.md` are enough and work over any terminal or pipe |
 | Docker/containers, egress proxy, confine-by-default | Not needed for the credential property (verified per run) and risky under an unknown evaluator environment |
 | Implicit `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL`, Azure key headers | Implicit routing of the key is risky; only the documented `AI_*` overrides apply |
-| GitHub Enterprise/GitLab intake, PR creation | Outside the official procedure; `GHEEREFILL_GITHUB_API` exists for a GHE API |
+| GitHub Enterprise/GitLab intake, PR creation | Outside the official procedure; `ARBITER_GITHUB_API` exists for a GHE API |
 | Confining the harness process itself | Considered and not pursued in this version; the limitation is documented in §6 |
 
 ## 8. Provenance
 
 | Component | Source | Version | Our changes |
 |---|---|---|---|
-| `gheerefill/shell.py` process-group kill on timeout | mini-swe-agent `environments/local.py` (MIT) | 2.4.6 | Pipe pump with an exact output cap, cancel hook, TERM→KILL, leftover cleanup |
-| `gheerefill/_vendor/tomli` | PyPI `tomli` sdist (MIT) | 2.2.1 (sha256 `cd45e1dc…45ff`) | None (verbatim); imported only without `tomllib` |
+| `arbiter/shell.py` process-group kill on timeout | mini-swe-agent `environments/local.py` (MIT) | 2.4.6 | Pipe pump with an exact output cap, cancel hook, TERM→KILL, leftover cleanup |
+| `arbiter/_vendor/tomli` | PyPI `tomli` sdist (MIT) | 2.2.1 (sha256 `cd45e1dc…45ff`) | None (verbatim); imported only without `tomllib` |
 | Baseline `mini` | PyPI `mini-swe-agent` | 2.4.6 (lock file) | None to upstream code |
 | Baseline `pi` | npm `@mariozechner/pi-coding-agent` | 0.73.1 (lock file) | None to upstream code |
 | Ideas (not code) | CodeT (arXiv 2207.10397); Agentless (2407.01489); TestPrune (2510.18270); SWE-Replay (2601.22129); Risa (2608.22191); harness-design study (2609.20804); LangChain Deep Agents blog; in-toto Statement v1; BM25 | — | Re-implemented from the published descriptions. Their reported numbers are not our evidence. |
@@ -269,7 +269,7 @@ artifact/export failure · regression introduced · selector failure.
   - `make chaos` passes 200 seeds (25 SIGKILL + recovery) with 0 invariant violations, after fixing
     the one bug it found (a non-`ModelError` client exception went uncounted).
   - `make demo` shows `PROVEN`: the reproduction and the unittest suite both fail on the original
-    code and pass on the patch. `gheerefill verify --rerun` reproduces both verdicts.
+    code and pass on the patch. `arbiter verify --rerun` reproduces both verdicts.
 
 ## 11. DeepSeek and Qwen: behaviours handled, and sources
 

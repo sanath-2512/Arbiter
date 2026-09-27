@@ -4,11 +4,11 @@ import json
 import subprocess
 import unittest
 
-from gheerefill.models import quirks
-from gheerefill.models.quirks import normalize_call
-from gheerefill.models.base import ToolCall
-from gheerefill.tools import tool_specs
-from gheerefill.config import ToolsConfig
+from arbiter.models import quirks
+from arbiter.models.quirks import normalize_call
+from arbiter.models.base import ToolCall
+from arbiter.tools import tool_specs
+from arbiter.config import ToolsConfig
 
 SPECS = {s.name: s for s in tool_specs(ToolsConfig())}
 
@@ -148,7 +148,7 @@ if __name__ == "__main__":
 
 class ProviderErrorTest(unittest.TestCase):
     def test_classification(self):
-        from gheerefill.models.base import ErrorClass, classify_http_error, output_token_limit
+        from arbiter.models.base import ErrorClass, classify_http_error, output_token_limit
 
         def cls(status, body):
             return classify_http_error(status, json.dumps(body)).cls
@@ -168,9 +168,9 @@ class ProviderErrorTest(unittest.TestCase):
                                             32768), 8192)
 
     def test_adaptations(self):
-        from gheerefill.config import ModelConfig
-        from gheerefill.models.base import ErrorClass, ModelError
-        from gheerefill.models.openai_chat import OpenAIChatClient
+        from arbiter.config import ModelConfig
+        from arbiter.models.base import ErrorClass, ModelError
+        from arbiter.models.openai_chat import OpenAIChatClient
 
         c = OpenAIChatClient(ModelConfig(name="m", base_url="http://x/v1"), "k")
         passback = ModelError(ErrorClass.MALFORMED_REQUEST,
@@ -187,8 +187,8 @@ class ProviderErrorTest(unittest.TestCase):
         self.assertTrue(c2.cfg.stream)
 
     def test_rendering_rules(self):
-        from gheerefill.config import ModelConfig
-        from gheerefill.models.openai_chat import OpenAIChatClient
+        from arbiter.config import ModelConfig
+        from arbiter.models.openai_chat import OpenAIChatClient
 
         c = OpenAIChatClient(ModelConfig(name="m", base_url="http://x/v1"), "k")
         msgs = c.render_messages([
@@ -202,8 +202,8 @@ class ProviderErrorTest(unittest.TestCase):
         self.assertNotIn("reasoning_content", msgs[2])  # only tool-call turns under "auto"
 
     def test_reasoning_and_cache_fields_are_read(self):
-        from gheerefill.config import ModelConfig
-        from gheerefill.models.openai_chat import OpenAIChatClient, accumulate_openai_stream
+        from arbiter.config import ModelConfig
+        from arbiter.models.openai_chat import OpenAIChatClient, accumulate_openai_stream
 
         c = OpenAIChatClient(ModelConfig(name="m", base_url="http://x/v1"), "k")
         t = c.parse_response({"choices": [{"message": {"content": "x", "reasoning_content": "because"},

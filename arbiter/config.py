@@ -21,7 +21,7 @@ from typing import Any
 try:
     import tomllib
 except ModuleNotFoundError:  # Python 3.9/3.10: the vendored upstream of tomllib
-    from gheerefill._vendor import tomli as tomllib  # type: ignore[no-redef]
+    from arbiter._vendor import tomli as tomllib  # type: ignore[no-redef]
 
 PROVIDERS = ("openai_chat", "anthropic_messages", "fake")
 AUTO = "auto"  # provider resolved from the credential's format via the profile's [[auto]] rules

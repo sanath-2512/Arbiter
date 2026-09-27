@@ -4,9 +4,9 @@ reproductions and adaptive attempts (scripted model; deterministic)."""
 import json
 from unittest import mock
 
-from gheerefill import proof
-from gheerefill.evidence import VerificationRecord
-from gheerefill.workspace import Workspace
+from arbiter import proof
+from arbiter.evidence import VerificationRecord
+from arbiter.workspace import Workspace
 from tests.helpers import CALC, TEST_CMD, TempDirCase, git, make_repo, run_agent, tc, test_profile, turn
 
 FIX = tc("edit_file", path="calc/ops.py", old_str="return a // b", new_str="return a / b")
@@ -258,7 +258,7 @@ class ReproductionFlowTest(TempDirCase):
         profile.policy.max_attempts, profile.policy.min_attempt_s, profile.policy.first_attempt_share = 2, 0.0, 0.5
         idle = turn(tc("bash", command="echo looking"))
         turns = [idle] * 6 + [turn(FIX), turn(TEST), turn(SUBMIT)]
-        with mock.patch("gheerefill.agent.Agent._room_for_another_attempt", return_value=False):
+        with mock.patch("arbiter.agent.Agent._room_for_another_attempt", return_value=False):
             result, _ = run_agent(self.repo, turns, self.run_dir, profile=profile)
         attempts = result["proof"]["attempts"]
         self.assertEqual(len(attempts), 1)
@@ -272,8 +272,8 @@ class ReproductionFlowTest(TempDirCase):
         self.assertEqual(result["proof"]["level"], "proven")
 
     def test_offline_recovery_keeps_every_attempts_candidate(self):
-        from gheerefill.agent import Agent
-        from gheerefill.task import Task
+        from arbiter.agent import Agent
+        from arbiter.task import Task
 
         profile = test_profile()
         profile.policy.max_attempts, profile.policy.min_attempt_s = 3, 0.0
@@ -324,7 +324,7 @@ class AttestationTest(TempDirCase):
         self.assertEqual(st["predicate"]["proof"]["level"], "proven")
 
         def verify(*extra):
-            p = subprocess.run([sys.executable, "-m", "gheerefill", "verify", "--run-dir", str(run_dir), *extra],
+            p = subprocess.run([sys.executable, "-m", "arbiter", "verify", "--run-dir", str(run_dir), *extra],
                                cwd=ROOT, capture_output=True, text=True, timeout=300)
             return p.returncode, json.loads(p.stdout)
 

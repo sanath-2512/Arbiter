@@ -4,11 +4,11 @@ import os
 import shutil
 import time
 
-from gheerefill.outputs import OutputArchive
-from gheerefill.prewarm import Prewarm, plan
-from gheerefill.records import Redactor
-from gheerefill.shell import tool_environment
-from gheerefill.workspace import Workspace
+from arbiter.outputs import OutputArchive
+from arbiter.prewarm import Prewarm, plan
+from arbiter.records import Redactor
+from arbiter.shell import tool_environment
+from arbiter.workspace import Workspace
 from tests.helpers import TempDirCase, make_repo
 
 CRATE = {"Cargo.toml": '[package]\nname = "calc"\nversion = "0.1.0"\nedition = "2021"\n',

@@ -13,10 +13,10 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from gheerefill.intake import IntakeError, compose_issue_text, parse_github_ref, parse_input
-from gheerefill.resolve import choose_model, resolve, rule_matches
-from gheerefill.config import ConfigError, load_profile
-from gheerefill.models.base import ErrorClass, ModelError
+from arbiter.intake import IntakeError, compose_issue_text, parse_github_ref, parse_input
+from arbiter.resolve import choose_model, resolve, rule_matches
+from arbiter.config import ConfigError, load_profile
+from arbiter.models.base import ErrorClass, ModelError
 from tests.fake_openai_server import FakeOpenAIServer
 from tests.helpers import CALC, ROOT, TEST_CMD, TempDirCase, git, make_repo, tc, turn
 
@@ -89,14 +89,14 @@ class IntakeParsingTest(TempDirCase):
         self.assertEqual(parse_input(text, base_dir=self.tmp)[0].issue_text, text)  # a mention is not the task
 
     def test_images_are_announced_not_silently_dropped(self):
-        from gheerefill.intake import image_note
+        from arbiter.intake import image_note
 
         body = "Broken layout:\n![screenshot](https://example.com/a.png)\n<img src='b.png' width=300>\nsee above"
         self.assertIn("2 image(s)", image_note(body))
         self.assertEqual(image_note("no pictures here [link](https://x)"), "")
 
     def test_prepared_checkout_detection_reads_config_only(self):
-        from gheerefill.intake import origin_matches
+        from arbiter.intake import origin_matches
 
         repo = make_repo(self.tmp / "co", CALC)
         for url, ok in (("https://github.com/acme/calc.git", True), ("git@github.com:acme/calc.git", True),
@@ -167,10 +167,10 @@ class OfficialFlowTest(TempDirCase):
         self.ws = self.tmp / "workspace"
 
     def env(self, gh, **extra):
-        e = {k: v for k, v in os.environ.items() if not k.startswith(("AI_", "ISSUE", "REPO", "BASE", "GHEEREFILL_"))}
-        e.update(AI_API_KEY="sk-fake-000000000000", GHEEREFILL_GITHUB_API=gh.url,
-                 GHEEREFILL_GITHUB_CLONE_BASE=f"file://{self.tmp / 'remote'}", GHEEREFILL_WORKSPACE=str(self.ws),
-                 GHEEREFILL_PROFILE=str(self.profile), GHEEREFILL_OUT=str(self.out),
+        e = {k: v for k, v in os.environ.items() if not k.startswith(("AI_", "ISSUE", "REPO", "BASE", "ARBITER_"))}
+        e.update(AI_API_KEY="sk-fake-000000000000", ARBITER_GITHUB_API=gh.url,
+                 ARBITER_GITHUB_CLONE_BASE=f"file://{self.tmp / 'remote'}", ARBITER_WORKSPACE=str(self.ws),
+                 ARBITER_PROFILE=str(self.profile), ARBITER_OUT=str(self.out),
                  no_proxy="127.0.0.1,localhost", NO_PROXY="127.0.0.1,localhost", **extra)
         return e
 
@@ -202,10 +202,10 @@ class OfficialFlowTest(TempDirCase):
                        env={**GIT_ENV, "GIT_COMMITTER_DATE": "2030-01-01T00:00:00Z", "GIT_AUTHOR_DATE": "2030-01-01T00:00:00Z"})
         created = "2029-06-01T00:00:00Z"  # after the base commit (now), before the fix (2030)
         with FakeGitHub({"acme/calc/issues/7": issue_json(state="closed", created=created)}) as gh:
-            p = subprocess.run([sys.executable, "-m", "gheerefill", "run", "--issue", "acme/calc#7"], cwd=ROOT,
+            p = subprocess.run([sys.executable, "-m", "arbiter", "run", "--issue", "acme/calc#7"], cwd=ROOT,
                                env=self.env(gh), capture_output=True, text=True, timeout=180, stdin=subprocess.DEVNULL)
             self.assertIn("issue is CLOSED", p.stderr)  # default branch used, with an explicit warning
-            p = subprocess.run([sys.executable, "-m", "gheerefill", "run", "--issue", "acme/calc#7", "--base",
+            p = subprocess.run([sys.executable, "-m", "arbiter", "run", "--issue", "acme/calc#7", "--base",
                                 "before-issue"], cwd=ROOT, env=self.env(gh), capture_output=True, text=True,
                                timeout=180, stdin=subprocess.DEVNULL)
         rec = json.loads(p.stdout.strip().splitlines()[-1])
@@ -216,11 +216,11 @@ class OfficialFlowTest(TempDirCase):
     def test_plain_text_issue_with_local_repo_and_missing_repo_error(self):
         local = make_repo(self.tmp / "local", CALC)
         with FakeGitHub({}) as gh:
-            p = subprocess.run([sys.executable, "-m", "gheerefill", "run"], input="divide truncates; use true division\n",
+            p = subprocess.run([sys.executable, "-m", "arbiter", "run"], input="divide truncates; use true division\n",
                                cwd=ROOT, env=self.env(gh, REPO=str(local)), capture_output=True, text=True, timeout=180)
             rec = json.loads(p.stdout.strip().splitlines()[-1])
             self.assertEqual(rec["verification"]["status"], "checks_passed", p.stderr[-2000:])
-            p = subprocess.run([sys.executable, "-m", "gheerefill", "run"], input="an issue without a repo\n",
+            p = subprocess.run([sys.executable, "-m", "arbiter", "run"], input="an issue without a repo\n",
                                cwd=ROOT, env=self.env(gh), capture_output=True, text=True, timeout=60)
         self.assertEqual(p.returncode, 1)
         self.assertIn("needs a repository", json.loads(p.stdout)["error"]["message"])
@@ -229,8 +229,8 @@ class OfficialFlowTest(TempDirCase):
         checkout = make_repo(self.tmp / "evaluator-checkout", CALC)
         git(checkout, "remote", "add", "origin", "https://github.com/acme/calc.git")
         with FakeGitHub({"acme/calc/issues/7": issue_json()}) as gh:
-            p = subprocess.run([sys.executable, "-m", "gheerefill", "run", "--issue", "acme/calc#7"], cwd=ROOT,
-                               env=self.env(gh, GHEEREFILL_CALLER_DIR=str(checkout)), capture_output=True, text=True,
+            p = subprocess.run([sys.executable, "-m", "arbiter", "run", "--issue", "acme/calc#7"], cwd=ROOT,
+                               env=self.env(gh, ARBITER_CALLER_DIR=str(checkout)), capture_output=True, text=True,
                                timeout=180, stdin=subprocess.DEVNULL)
         rec = json.loads(p.stdout.strip().splitlines()[-1])
         self.assertTrue(rec["submission_ready"], p.stderr[-2000:])
@@ -250,7 +250,7 @@ class OfficialFlowTest(TempDirCase):
             pid, fd = pty.fork()
             if pid == 0:
                 os.chdir(ROOT)
-                os.execvpe(sys.executable, [sys.executable, "-m", "gheerefill", "run"], self.env(gh, NO_COLOR="1"))
+                os.execvpe(sys.executable, [sys.executable, "-m", "arbiter", "run"], self.env(gh, NO_COLOR="1"))
             out = b""
 
             def read_until(needle: bytes, timeout: float = 60) -> None:
@@ -282,7 +282,7 @@ class OfficialFlowTest(TempDirCase):
         pid, fd = pty.fork()
         if pid == 0:
             os.chdir(ROOT)
-            os.execvpe(sys.executable, [sys.executable, "-m", "gheerefill", "run"], self.env(gh, NO_COLOR="1", **extra_env))
+            os.execvpe(sys.executable, [sys.executable, "-m", "arbiter", "run"], self.env(gh, NO_COLOR="1", **extra_env))
         buf = {"out": b""}
 
         def read_until(needle: bytes, timeout: float = 60) -> None:
@@ -350,7 +350,7 @@ class ParameterAdaptationTest(TempDirCase):
             srv.httpd.RequestHandlerClass.do_POST = picky
             env = {**os.environ, "AI_API_KEY": "sk-fake-0000000000", "AI_BASE_URL": srv.base_url,
                    "no_proxy": "127.0.0.1", "NO_PROXY": "127.0.0.1"}
-            p = subprocess.run([sys.executable, "-m", "gheerefill", "run", "--profile", str(prof), "--no-discover",
+            p = subprocess.run([sys.executable, "-m", "arbiter", "run", "--profile", str(prof), "--no-discover",
                                 "--out", str(self.tmp / "out")],
                                input=json.dumps({"task_id": "a", "repo_path": str(repo), "issue": "fix divide"}) + "\n",
                                cwd=ROOT, env=env, capture_output=True, text=True, timeout=120)
@@ -364,7 +364,7 @@ class CloneTest(TempDirCase):
     def test_partial_clone_only_when_the_server_honours_filters(self):
         """A server that ignores --filter (here: a shallow source) must get a full clone; a blob-less
         clone of it fetches objects one at a time and never finishes."""
-        from gheerefill.intake import prepare_repo, supports_partial_clone
+        from arbiter.intake import prepare_repo, supports_partial_clone
         from tests.helpers import GIT_ENV
 
         src = make_repo(self.tmp / "src", CALC)
@@ -418,7 +418,7 @@ class CredentialFailureTest(TempDirCase):
             srv.httpd.RequestHandlerClass.do_POST = reject
             env = {**os.environ, "AI_API_KEY": "sk-wrong-0000000000", "AI_BASE_URL": srv.base_url,
                    "no_proxy": "127.0.0.1", "NO_PROXY": "127.0.0.1"}
-            p = subprocess.run([sys.executable, "-m", "gheerefill", "run", "--profile", str(prof), "--no-discover",
+            p = subprocess.run([sys.executable, "-m", "arbiter", "run", "--profile", str(prof), "--no-discover",
                                 "--out", str(self.tmp / "out")],
                                input=json.dumps({"task_id": "a", "repo_path": str(repo), "issue": "fix divide"}) + "\n",
                                cwd=ROOT, env=env, capture_output=True, text=True, timeout=120)
@@ -433,7 +433,7 @@ class CredentialFailureTest(TempDirCase):
 
 class DotenvTest(TempDirCase):
     def test_environment_wins_over_dotenv(self):
-        from gheerefill.cli import load_dotenv
+        from arbiter.cli import load_dotenv
 
         f = self.tmp / ".env"
         f.write_text("# local\nAI_API_KEY=from-file\nEMPTY=\nexport OTHER_X='q'\n")
@@ -450,7 +450,7 @@ class DotenvTest(TempDirCase):
 
 class ProviderLimitTest(TempDirCase):
     def test_output_cap_is_parsed_from_provider_errors(self):
-        from gheerefill.models.base import output_token_limit
+        from arbiter.models.base import output_token_limit
 
         cases = [
             ("max_tokens is too large: 32768. This model supports at most 16384 completion tokens, whereas you "
@@ -466,8 +466,8 @@ class ProviderLimitTest(TempDirCase):
         self.assertIsNone(output_token_limit("max_tokens: 9000 > 8192, which is the maximum", 8192))  # not lower
 
     def test_client_adapts_output_cap_without_changing_model(self):
-        from gheerefill.config import ModelConfig
-        from gheerefill.models.openai_chat import OpenAIChatClient
+        from arbiter.config import ModelConfig
+        from arbiter.models.openai_chat import OpenAIChatClient
 
         cfg = ModelConfig(provider="openai_chat", name="m", base_url="https://x/v1", max_output_tokens=32768)
         client = OpenAIChatClient(cfg, "k")

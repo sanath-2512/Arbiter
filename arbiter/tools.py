@@ -23,10 +23,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from gheerefill.config import ToolsConfig
-from gheerefill.models.base import ToolCall, ToolSpec
-from gheerefill.outputs import OutputArchive, bounded_view, clean_terminal_text, numbered_range
-from gheerefill.shell import read_output_file, run_shell
+from arbiter.config import ToolsConfig
+from arbiter.models.base import ToolCall, ToolSpec
+from arbiter.outputs import OutputArchive, bounded_view, clean_terminal_text, numbered_range
+from arbiter.shell import read_output_file, run_shell
 
 LARGE_OUTPUT_BYTES = 8 * 1024 * 1024
 CONTROLLER_TOOLS = ("submit", "register_reproduction")  # interpreted by the controller (agent.py)

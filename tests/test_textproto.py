@@ -1,9 +1,9 @@
 import unittest
 
-from gheerefill.config import ToolsConfig
-from gheerefill.models.fake import FakeClient
-from gheerefill.models.textproto import TextProtocolClient, convert_messages, parse_actions
-from gheerefill.tools import tool_specs
+from arbiter.config import ToolsConfig
+from arbiter.models.fake import FakeClient
+from arbiter.models.textproto import TextProtocolClient, convert_messages, parse_actions
+from arbiter.tools import tool_specs
 
 SPECS = tool_specs(ToolsConfig())
 

@@ -1,6 +1,6 @@
 # Mechanism rehearsals (scripted policies on real repositories)
 
-> Mechanism rehearsals: scripted policies drive gheerefill, through its real HTTP transport and tools, on real pinned repositories into one controlled failure mode each; every run is judged exactly like a gauntlet run (export -> clean base -> hidden tests). They test the harness's plumbing under that failure mode. They are not evidence of solve rate: the scripted policy already knows the fix.
+> Mechanism rehearsals: scripted policies drive arbiter, through its real HTTP transport and tools, on real pinned repositories into one controlled failure mode each; every run is judged exactly like a gauntlet run (export -> clean base -> hidden tests). They test the harness's plumbing under that failure mode. They are not evidence of solve rate: the scripted policy already knows the fix.
 
 Harness 1b4f97810f7c · 22 judged runs · expectations met: 22/22
 

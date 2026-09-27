@@ -30,9 +30,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from gheerefill.models.http import _ssl_context
-from gheerefill.records import safe_name
-from gheerefill.task import Task, TaskInputError, iter_tasks
+from arbiter.models.http import _ssl_context
+from arbiter.records import safe_name
+from arbiter.task import Task, TaskInputError, iter_tasks
 
 ISSUE_URL = re.compile(r"^https?://github\.com/([\w.-]+)/([\w.-]+)/(issues|pull)/(\d+)/?(?:[#?].*)?$")
 SHORTHAND = re.compile(r"^([\w.-]+)/([\w.-]+)#(\d+)$")
@@ -98,12 +98,12 @@ def parse_input(text: str, *, base_dir: Path, source: str = "input", _depth: int
 # ------------------------------------------------------------------------------------ GitHub
 
 def _github_api() -> str:
-    return os.environ.get("GHEEREFILL_GITHUB_API", "https://api.github.com").rstrip("/")
+    return os.environ.get("ARBITER_GITHUB_API", "https://api.github.com").rstrip("/")
 
 
 def _github_get(path: str, token: str | None) -> Any:
     url = _github_api() + path
-    req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "gheerefill",
+    req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "arbiter",
                                                "X-GitHub-Api-Version": "2022-11-28"})
     if token:
         req.add_header("Authorization", f"Bearer {token}")
@@ -190,7 +190,7 @@ def supports_partial_clone(url: str) -> bool:
 
 
 def clone_url(owner: str, repo: str) -> str:
-    base = os.environ.get("GHEEREFILL_GITHUB_CLONE_BASE", "https://github.com").rstrip("/")
+    base = os.environ.get("ARBITER_GITHUB_CLONE_BASE", "https://github.com").rstrip("/")
     return f"{base}/{owner}/{repo}.git" if base.startswith("http") else f"{base}/{owner}/{repo}"
 
 
@@ -213,7 +213,7 @@ def origin_matches(repo_dir: Path, owner: str, repo: str) -> bool:
 def find_prepared_checkout(owner: str, repo: str) -> Path | None:
     """An existing checkout of this repository that the evaluator prepared: the directory `make`
     was started in, or a conventional location such as /testbed. Never the harness itself."""
-    candidates = [os.environ.get("GHEEREFILL_CALLER_DIR", ""), *PREPARED_CHECKOUTS]
+    candidates = [os.environ.get("ARBITER_CALLER_DIR", ""), *PREPARED_CHECKOUTS]
     for c in candidates:
         if not c:
             continue
@@ -310,11 +310,11 @@ def prepare_repo(spec: str | None, *, owner: str | None, repo: str | None, numbe
                 target = r.stdout.strip()
                 if not target:
                     raise IntakeError("no commit precedes the issue's creation time")
-            p = _git(["checkout", "--quiet", "-B", "gheerefill-base", target], cwd=dest)
+            p = _git(["checkout", "--quiet", "-B", "arbiter-base", target], cwd=dest)
             if p.returncode != 0 and re.fullmatch(r"[0-9a-f]{7,40}", target):
                 # not reachable from the cloned branches (e.g. only from a pull-request ref): fetch it by id
                 if _git(["fetch", "--quiet", "origin", target], cwd=dest).returncode == 0:
-                    p = _git(["checkout", "--quiet", "-B", "gheerefill-base", target], cwd=dest)
+                    p = _git(["checkout", "--quiet", "-B", "arbiter-base", target], cwd=dest)
             if p.returncode != 0:
                 raise IntakeError(f"cannot check out BASE {base}: {p.stderr.strip()[:300]}")
             notes.append(f"base: {base} -> {target[:12]}")

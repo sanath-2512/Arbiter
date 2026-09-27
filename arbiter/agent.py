@@ -20,11 +20,11 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable
 
-from gheerefill import __version__
-from gheerefill.budget import Budget
-from gheerefill.config import Profile
-from gheerefill.context import ContextManager, estimate_tokens
-from gheerefill.evidence import (
+from arbiter import __version__
+from arbiter.budget import Budget
+from arbiter.config import Profile
+from arbiter.context import ContextManager, estimate_tokens
+from arbiter.evidence import (
     VerificationRecord,
     classify_output,
     is_check_command,
@@ -32,21 +32,21 @@ from gheerefill.evidence import (
     select_candidate,
     verification_status,
 )
-from gheerefill.models.base import (AttemptRecord, ErrorClass, ModelClient, ModelError, ToolCall, call_with_retry,
+from arbiter.models.base import (AttemptRecord, ErrorClass, ModelClient, ModelError, ToolCall, call_with_retry,
                                     output_token_limit)
-from gheerefill.models import quirks
-from gheerefill.outputs import OutputArchive
-from gheerefill.prewarm import Prewarm
-from gheerefill import attest, locate, memory, prompts, proof, tasktype
-from gheerefill.progress import FailureMemory
-from gheerefill.records import Redactor, append_jsonl, atomic_write_bytes, atomic_write_json
-from gheerefill.sandbox import Sandbox, confine_paths
-from gheerefill.shell import read_output_file, run_shell, tool_environment
-from gheerefill.task import Task, evaluation_tests
-from gheerefill.tools import ToolBox, ToolResult
-from gheerefill.workspace import Workspace, WorkspaceError
+from arbiter.models import quirks
+from arbiter.outputs import OutputArchive
+from arbiter.prewarm import Prewarm
+from arbiter import attest, locate, memory, prompts, proof, tasktype
+from arbiter.progress import FailureMemory
+from arbiter.records import Redactor, append_jsonl, atomic_write_bytes, atomic_write_json
+from arbiter.sandbox import Sandbox, confine_paths
+from arbiter.shell import read_output_file, run_shell, tool_environment
+from arbiter.task import Task, evaluation_tests
+from arbiter.tools import ToolBox, ToolResult
+from arbiter.workspace import Workspace, WorkspaceError
 
-RESULT_SCHEMA = "gheerefill.result/v1"
+RESULT_SCHEMA = "arbiter.result/v1"
 HARNESS_ROOT = Path(__file__).resolve().parent.parent
 TEST_PATH_RE = proof.TEST_PATH_RE
 ISSUE_PROMPT_CHARS = 80_000  # ~25k tokens; longer issue text is truncated in the prompt, kept whole on disk
@@ -191,7 +191,7 @@ class Agent:
         atomic_write_json(
             self.run_dir / "state.json",
             {
-                "schema": "gheerefill.state/v1",
+                "schema": "arbiter.state/v1",
                 "harness_version": __version__,
                 "phase": phase,
                 "task_id": self.task.task_id,
@@ -281,8 +281,8 @@ class Agent:
                 env: dict[str, str] | None = None) -> "Agent":
         """Rebuild controller state from checkpoint files so an interrupted run can be finalised
         without any model call. The caller must have verified task/profile identity."""
-        from gheerefill.workspace import TargetGitState
-        from gheerefill.records import read_jsonl
+        from arbiter.workspace import TargetGitState
+        from arbiter.records import read_jsonl
 
         state = json.loads((Path(run_dir) / "state.json").read_text())
 
@@ -1294,7 +1294,7 @@ class Agent:
                 "attempts": self.attempts,
                 "ranking": [a.to_dict() for a in ranked],
                 "method": "each check is run on the original code (plus the candidate's own test changes) and on the "
-                          "candidate; levels and ranking are defined in gheerefill/proof.py",
+                          "candidate; levels and ranking are defined in arbiter/proof.py",
             }
             step_of = {c["tree"]: c["step"] for c in self.candidate_meta}
             result.update({
@@ -1355,7 +1355,7 @@ class Agent:
                 atomic_write_json(self.run_dir / "attestation.json",
                                   attest.build(self.run_dir, result, self.records, self.base_tree, cf))
                 result["attestation"] = {"path": str(self.run_dir / "attestation.json"),
-                                         "verify": f"python -m gheerefill verify --run-dir {self.run_dir}"}
+                                         "verify": f"python -m arbiter verify --run-dir {self.run_dir}"}
             except Exception as e:  # noqa: BLE001 - the attestation must never break delivery
                 result["notes"].append(f"attestation not written: {type(e).__name__}: {e}")
         self.log(
@@ -1370,7 +1370,7 @@ class Agent:
             "schema": RESULT_SCHEMA,
             "task_id": self.task.task_id,
             "run_dir": str(self.run_dir),
-            "harness": {"name": "gheerefill", "version": __version__},
+            "harness": {"name": "arbiter", "version": __version__},
             "model": {
                 "provider": m.provider, "name": self.client.model_name, "base_url": m.base_url,
                 "tool_protocol": m.tool_protocol, "live": m.provider != "fake",

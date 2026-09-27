@@ -7,10 +7,10 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
-from gheerefill.config import ModelConfig
-from gheerefill.models import make_client, read_api_key
-from gheerefill.models.anthropic import AnthropicClient, normalize_anthropic_usage
-from gheerefill.models.base import (
+from arbiter.config import ModelConfig
+from arbiter.models import make_client, read_api_key
+from arbiter.models.anthropic import AnthropicClient, normalize_anthropic_usage
+from arbiter.models.base import (
     ErrorClass,
     ModelError,
     ToolSpec,
@@ -18,8 +18,8 @@ from gheerefill.models.base import (
     classify_http_error,
     parse_retry_after,
 )
-from gheerefill.models.openai_chat import OpenAIChatClient, normalize_openai_usage
-from gheerefill.config import ConfigError
+from arbiter.models.openai_chat import OpenAIChatClient, normalize_openai_usage
+from arbiter.config import ConfigError
 
 TOOL = ToolSpec("bash", "run", {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]})
 MSGS = [{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}]
@@ -432,7 +432,7 @@ class TlsContextTest(unittest.TestCase):
     def test_verification_kept_but_x509_strict_relaxed(self):
         import ssl
 
-        from gheerefill.models.http import _ssl_context
+        from arbiter.models.http import _ssl_context
 
         ctx = _ssl_context()
         self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
@@ -466,4 +466,4 @@ class UserAgentTest(unittest.TestCase):
         finally:
             srv.shutdown()
             srv.server_close()
-        self.assertTrue(seen and seen[0].startswith("gheerefill/"), seen)
+        self.assertTrue(seen and seen[0].startswith("arbiter/"), seen)

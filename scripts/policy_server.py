@@ -3,7 +3,7 @@
 
 Serves an OpenAI-compatible /chat/completions endpoint whose replies come from a Python policy
 (`rehearsal/policies/<name>.py`, function `respond(messages, tools) -> {"content", "tool_calls"}`).
-gheerefill talks to it through its real HTTP transport (AI_BASE_URL), so a rehearsal exercises the
+arbiter talks to it through its real HTTP transport (AI_BASE_URL), so a rehearsal exercises the
 same code path as a live run. Policies know the reference fix: they exist to drive the harness into
 a specific failure mode (a stubborn loop, a late regression, a wrong reproduction) and are labelled
 "scripted" in every record. They never measure model capability.

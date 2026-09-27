@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any, Iterator
 
-from gheerefill.config import LimitsConfig
+from arbiter.config import LimitsConfig
 
 _ALIASES = {  # in priority order: the first present, non-empty key wins
     "task_id": ("task_id", "id", "instance_id", "name"),

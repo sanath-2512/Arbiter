@@ -6,7 +6,7 @@ import unittest
 from tests.helpers import ROOT
 
 MIN = (3, 9)
-SOURCES = [p for d in ("gheerefill", "tests", "scripts", "baselines") for p in sorted((ROOT / d).rglob("*.py"))
+SOURCES = [p for d in ("arbiter", "tests", "scripts", "baselines") for p in sorted((ROOT / d).rglob("*.py"))
            if "_vendor" not in p.parts]
 
 
@@ -45,8 +45,8 @@ class MinimumPythonTest(unittest.TestCase):
         pys = interpreters()
         if not pys:
             raise unittest.SkipTest("no python3.9/python3.10 on PATH")
-        code = ("import gheerefill.cli, gheerefill.agent, gheerefill.intake, gheerefill.resolve, gheerefill.report; "
-                "from gheerefill.config import load_profile, validate; "
+        code = ("import arbiter.cli, arbiter.agent, arbiter.intake, arbiter.resolve, arbiter.report; "
+                "from arbiter.config import load_profile, validate; "
                 "p = load_profile('profiles/default.toml', env={}); validate(p); print(len(p.auto))")
         for py in pys:
             with self.subTest(python=py):

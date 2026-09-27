@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from gheerefill.records import atomic_write_bytes, read_jsonl
+from arbiter.records import atomic_write_bytes, read_jsonl
 
 
 def _c(code: str, text: str, on: bool) -> str:
@@ -110,7 +110,7 @@ def write_report(result: dict[str, Any], task_issue: str) -> Path:
         out.append(f"- Model's own summary (a claim, not evidence): {result['submit_summary']}")
     p = result.get("proof") or {}
     if p:
-        out += ["", "## Proof (computed by the harness, `gheerefill/proof.py`)", "",
+        out += ["", "## Proof (computed by the harness, `arbiter/proof.py`)", "",
                 f"Evidence level: **{p.get('level')}** — {p.get('summary')}", "",
                 "Each check was run on the original code (plus the patch's own test changes, so new tests exist) "
                 "and on the patched code:", "",

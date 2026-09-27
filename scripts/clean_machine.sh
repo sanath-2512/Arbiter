@@ -6,7 +6,7 @@
 # TTY). Then exactly the documented commands: make setup, make test, make run in every input mode the
 # event document allows, make clean. The model is the lab's scripted policy server behind the real
 # HTTP transport (AI_BASE_URL), so no credential is needed and none is used; the GitHub API for the
-# ISSUE=URL flow is a local stand-in (GHEEREFILL_GITHUB_API / GHEEREFILL_GITHUB_CLONE_BASE). Patches
+# ISSUE=URL flow is a local stand-in (ARBITER_GITHUB_API / ARBITER_GITHUB_CLONE_BASE). Patches
 # made through `make run` are judged by the lab exactly like gauntlet runs (clean base + hidden tests).
 #
 #   scripts/clean_machine.sh                       # interpreter chosen by make setup
@@ -17,7 +17,7 @@ set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 LAB="python3 $ROOT/scripts/rehearsal.py"
 TASK=click_sentinel_copy
-W=$(mktemp -d "${TMPDIR:-/tmp}/ghee-clean.XXXXXX")
+W=$(mktemp -d "${TMPDIR:-/tmp}/arbiter-clean.XXXXXX")
 LOG=$W/log.txt
 RESULTS=()
 PIDS=()
@@ -44,9 +44,9 @@ cleanenv() {
   env -i PATH="$MINPATH" HOME="$W/home" LANG=C.UTF-8 TMPDIR="$W/tmp" ${HP:+HARNESS_PYTHON="$HP"} "$@" < /dev/null
 }
 
-git clone -q "file://$ROOT" "$W/gheerefill" || { echo "clone failed"; exit 1; }
+git clone -q "file://$ROOT" "$W/arbiter" || { echo "clone failed"; exit 1; }
 mkdir -p "$W/home" "$W/tmp"
-G=$W/gheerefill
+G=$W/arbiter
 echo "clean clone of $(git -C "$G" rev-parse --short=12 HEAD) in $G" | tee -a "$LOG"
 ISSUE_TEXT=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["issue"])' "$ROOT/rehearsal/tasks/$TASK/task.json")
 
@@ -116,7 +116,7 @@ printf '%s\n' "$ISSUE_TEXT" > "$W/issue.md"
 GH=$(start_server python3 "$ROOT/scripts/fake_github.py" pallets/click 4242 "$W/issue.md")
 POLICY2=$(start_server python3 "$ROOT/scripts/policy_server.py" click_sentinel_fix)
 t0=$SECONDS; out=$(cleanenv AI_API_KEY=sk-scripted-policy-not-a-key AI_BASE_URL="$POLICY2" "${MODEL_ENV[@]}" \
-  GHEEREFILL_GITHUB_API="$GH" GHEEREFILL_GITHUB_CLONE_BASE="file://$W/github" \
+  ARBITER_GITHUB_API="$GH" ARBITER_GITHUB_CLONE_BASE="file://$W/github" \
   timeout 900 make -C "$G" run ISSUE=https://github.com/pallets/click/issues/4242 2>&1); rc=$?
 verdict=$(judge_run url "$out")
 if [ $rc -eq 0 ] && echo "$verdict" | grep -q '"solved": true'; then
@@ -141,7 +141,7 @@ mkdir -p "$ROOT/rehearsal/results"
 printf '%s\n' "${RESULTS[@]}" | python3 -c '
 import json, sys
 steps = [json.loads(l) for l in sys.stdin if l.strip()]
-print(json.dumps({"schema": "gheerefill.clean-machine/v1", "commit": sys.argv[1], "python": sys.argv[2],
+print(json.dumps({"schema": "arbiter.clean-machine/v1", "commit": sys.argv[1], "python": sys.argv[2],
                   "passed": sum(s["ok"] for s in steps), "total": len(steps), "steps": steps}, indent=2))' \
   "$(git -C "$G" rev-parse --short=12 HEAD)" "$PYV" > "$SUMMARY"
 echo "clean machine (python $PYV): $passed/$total passed; summary: $SUMMARY" | tee -a "$LOG"

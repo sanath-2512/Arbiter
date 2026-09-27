@@ -3,8 +3,8 @@
 The scripted policies below are deliberately stubborn: they repeat one wrong idea until the harness
 intervenes. They test the harness's mechanics, not a real model's behaviour."""
 
-from gheerefill.progress import FailureMemory
-from gheerefill.tasktype import classify
+from arbiter.progress import FailureMemory
+from arbiter.tasktype import classify
 from tests.helpers import CALC, TEST_CMD, TempDirCase, make_repo, run_agent, tc, test_profile, turn
 
 TEST = tc("bash", command=TEST_CMD)

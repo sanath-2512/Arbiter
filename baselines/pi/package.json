@@ -1,5 +1,5 @@
 {
-  "name": "gheerefill-pi-baseline",
+  "name": "arbiter-pi-baseline",
   "private": true,
   "description": "Development-only pinned Pi baseline (never a runtime dependency of the submission).",
   "dependencies": {

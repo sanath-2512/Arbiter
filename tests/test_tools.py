@@ -2,12 +2,12 @@ import json
 import os
 import time
 
-from gheerefill.config import ToolsConfig
-from gheerefill.models.base import ToolCall
-from gheerefill.outputs import OutputArchive, bounded_view
-from gheerefill.records import Redactor
-from gheerefill.shell import tool_environment
-from gheerefill.tools import ToolBox
+from arbiter.config import ToolsConfig
+from arbiter.models.base import ToolCall
+from arbiter.outputs import OutputArchive, bounded_view
+from arbiter.records import Redactor
+from arbiter.shell import tool_environment
+from arbiter.tools import ToolBox
 from tests.helpers import TempDirCase
 
 
@@ -234,10 +234,10 @@ class BoundedViewTest(TempDirCase):
 class EditSafetyTest(TempDirCase):
     def setUp(self):
         super().setUp()
-        from gheerefill.config import ToolsConfig
-        from gheerefill.outputs import OutputArchive
-        from gheerefill.records import Redactor
-        from gheerefill.tools import ToolBox
+        from arbiter.config import ToolsConfig
+        from arbiter.outputs import OutputArchive
+        from arbiter.records import Redactor
+        from arbiter.tools import ToolBox
 
         self.repo = self.tmp / "repo"
         self.repo.mkdir()
@@ -247,7 +247,7 @@ class EditSafetyTest(TempDirCase):
                           dict(os.environ))
 
     def call(self, name, **args):
-        from gheerefill.models.base import ToolCall
+        from arbiter.models.base import ToolCall
 
         return self.tb.execute(ToolCall("c1", name, args, json.dumps(args)))
 

@@ -8,9 +8,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-from gheerefill.config import ConfigError, load_profile
-from gheerefill.models.base import ErrorClass, ModelError, call_with_retry
-from gheerefill.resolve import choose_generic, choose_model, resolve
+from arbiter.config import ConfigError, load_profile
+from arbiter.models.base import ErrorClass, ModelError, call_with_retry
+from arbiter.resolve import choose_generic, choose_model, resolve
 from tests.test_models import MSGS, TOOL, ok_openai  # noqa: F401  (shared fixtures)
 
 
@@ -24,7 +24,7 @@ class _Flaky:
         self.calls += 1
         if self.calls <= self.n:
             raise ModelError(self.cls, f"{self.cls.value} #{self.calls}", status=429)
-        from gheerefill.models.base import ModelTurn, Usage
+        from arbiter.models.base import ModelTurn, Usage
         return ModelTurn(text="ok", tool_calls=[], finish_reason="stop", usage=Usage())
 
 

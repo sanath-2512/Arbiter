@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Run the pinned upstream Pi coding agent (@mariozechner/pi-coding-agent 0.73.1) on one task,
-matched to a gheerefill profile. Development-only baseline (install: `bash baselines/setup_baselines.sh`).
+matched to a arbiter profile. Development-only baseline (install: `bash baselines/setup_baselines.sh`).
 
 Upstream behaviour used unchanged: Pi's default system prompt, default tools (read, bash, edit,
 write), its own retries and context handling, non-interactive print mode.
@@ -34,7 +34,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PI_BIN = ROOT / "baselines" / "pi" / "node_modules" / ".bin" / "pi"
 sys.path.insert(0, str(ROOT))  # same resolver as the harness: identical model for every system
-from gheerefill.config import tomllib  # noqa: E402 - stdlib tomllib, or vendored tomli on 3.9/3.10
+from arbiter.config import tomllib  # noqa: E402 - stdlib tomllib, or vendored tomli on 3.9/3.10
 SECRET_SUFFIXES = ("_API_KEY", "_TOKEN", "_SECRET", "_SECRET_ACCESS_KEY", "_PASSWORD")
 PROMPT = ("Resolve the following issue by changing the repository in the current directory. "
           "Work autonomously; nobody will answer questions.\n\n<issue>\n{issue}\n</issue>")
@@ -58,11 +58,11 @@ def main() -> int:
     if not key:
         print("API key not set", file=sys.stderr)
         return 2
-    from gheerefill.config import load_profile
-    from gheerefill.resolve import resolve
+    from arbiter.config import load_profile
+    from arbiter.resolve import resolve
 
     m = resolve(load_profile(Path(args.profile)), key,
-                discover=os.environ.get("GHEEREFILL_BASELINE_DISCOVER", "1") == "1").model.__dict__
+                discover=os.environ.get("ARBITER_BASELINE_DISCOVER", "1") == "1").model.__dict__
     provider = m["provider"]
     if provider not in ("openai_chat", "anthropic_messages"):
         print("Pi baseline needs a live provider", file=sys.stderr)

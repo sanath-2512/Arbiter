@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from gheerefill.records import Redactor
+from arbiter.records import Redactor
 
 SALIENT_RE = re.compile(
     r"(error|exception|traceback|failed|failure|fail:|assert|fatal|panic|segmentation fault|"

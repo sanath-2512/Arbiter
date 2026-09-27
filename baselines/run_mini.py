@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the pinned upstream mini-swe-agent (2.4.6) on one task, matched to a gheerefill profile.
+"""Run the pinned upstream mini-swe-agent (2.4.6) on one task, matched to a arbiter profile.
 
 Development-only baseline; executed with .venv-baseline/bin/python (see setup_baselines.sh).
 
@@ -32,17 +32,17 @@ SECRET_SUFFIXES = ("_API_KEY", "_TOKEN", "_SECRET", "_SECRET_ACCESS_KEY", "_PASS
 
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))  # gheerefill is stdlib-only: importable from the baseline venv
-from gheerefill.config import tomllib  # noqa: E402 - stdlib tomllib, or vendored tomli on 3.9/3.10
+sys.path.insert(0, str(ROOT))  # arbiter is stdlib-only: importable from the baseline venv
+from arbiter.config import tomllib  # noqa: E402 - stdlib tomllib, or vendored tomli on 3.9/3.10
 
 
 def resolved_model(profile_path: Path, key: str) -> dict:
     """Resolve provider/endpoint/model exactly as the harness does (same code path, same result)."""
-    from gheerefill.config import load_profile as _load
-    from gheerefill.resolve import resolve
+    from arbiter.config import load_profile as _load
+    from arbiter.resolve import resolve
 
     prof = _load(profile_path)
-    r = resolve(prof, key, discover=os.environ.get("GHEEREFILL_BASELINE_DISCOVER", "1") == "1")
+    r = resolve(prof, key, discover=os.environ.get("ARBITER_BASELINE_DISCOVER", "1") == "1")
     return {**r.model.__dict__, "resolution": r.to_dict()}
 
 

@@ -1,7 +1,7 @@
 import io
 import json
 
-from gheerefill.task import Task, TaskInputError, iter_tasks
+from arbiter.task import Task, TaskInputError, iter_tasks
 from tests.helpers import TempDirCase
 
 

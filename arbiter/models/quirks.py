@@ -28,7 +28,7 @@ import shlex
 import uuid
 from typing import Any
 
-from gheerefill.models.base import ToolCall, ToolSpec
+from arbiter.models.base import ToolCall, ToolSpec
 
 # ------------------------------------------------------------------ reasoning inline in content
 _THINK_BLOCK = re.compile(r"<think(?:ing)?>(.*?)</think(?:ing)?>", re.S | re.I)
@@ -198,7 +198,7 @@ def translate_call(name: str, args: dict[str, Any], specs: dict[str, ToolSpec]) 
                     None)
         if code is None:
             return None
-        return "bash", {"command": f"python3 - <<'GHEEREFILL_PY'\n{code}\nGHEEREFILL_PY"}
+        return "bash", {"command": f"python3 - <<'ARBITER_PY'\n{code}\nARBITER_PY"}
     if n in GLOB_TOOLS and "bash" in specs:
         pattern = next((args[k] for k in ("pattern", "glob", "file_pattern", "name", "query") if isinstance(args.get(k), str)),
                        None)

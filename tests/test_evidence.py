@@ -1,6 +1,6 @@
 import unittest
 
-from gheerefill.evidence import (
+from arbiter.evidence import (
     VerificationRecord,
     classify_output,
     is_check_command,

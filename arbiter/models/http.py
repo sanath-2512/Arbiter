@@ -15,12 +15,12 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from gheerefill.models.base import ErrorClass, ModelError, classify_http_error
+from arbiter.models.base import ErrorClass, ModelError, classify_http_error
 
 
 # Cloudflare-fronted providers (Groq, OpenRouter, ...) refuse the default "Python-urllib" agent with
 # "error code: 1010"; every request names the harness instead.
-USER_AGENT = "gheerefill/0.1 (+https://github.com/sanath-2512/gheerefill)"
+USER_AGENT = "arbiter/0.1 (+https://github.com/sanath-2512/arbiter)"
 
 def _ssl_context() -> ssl.SSLContext:
     """Default verification (certificate chain + hostname), minus Python 3.13's VERIFY_X509_STRICT.

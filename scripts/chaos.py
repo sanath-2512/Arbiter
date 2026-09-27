@@ -35,12 +35,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gheerefill.agent import Agent  # noqa: E402
-from gheerefill.attest import verify  # noqa: E402
-from gheerefill.config import Profile  # noqa: E402
-from gheerefill.models.fake import FakeClient  # noqa: E402
-from gheerefill.task import Task  # noqa: E402
-from gheerefill.workspace import Workspace  # noqa: E402
+from arbiter.agent import Agent  # noqa: E402
+from arbiter.attest import verify  # noqa: E402
+from arbiter.config import Profile  # noqa: E402
+from arbiter.models.fake import FakeClient  # noqa: E402
+from arbiter.task import Task  # noqa: E402
+from arbiter.workspace import Workspace  # noqa: E402
 
 GIT_ENV = {**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, "GIT_AUTHOR_NAME": "c",
            "GIT_AUTHOR_EMAIL": "c@c", "GIT_COMMITTER_NAME": "c", "GIT_COMMITTER_EMAIL": "c@c",
@@ -193,8 +193,8 @@ def run_kill_seed(seed: int, work: Path) -> list[str]:
     prof = root / "p.toml"
     prof.write_text(f'[model]\nprovider = "fake"\nscript = "{script}"\n[policy]\nmax_attempts = 1\n')
     task = json.dumps({"task_id": f"kill-{seed}", "repo_path": str(repo), "issue": "fix divide"})
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("AI_", "GHEEREFILL_"))}
-    proc = subprocess.Popen([sys.executable, "-m", "gheerefill", "run", "--profile", str(prof), "--out",
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("AI_", "ARBITER_"))}
+    proc = subprocess.Popen([sys.executable, "-m", "arbiter", "run", "--profile", str(prof), "--out",
                              str(root / "out")], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL, env=env, text=True)
     proc.stdin.write(task + "\n")
@@ -209,7 +209,7 @@ def run_kill_seed(seed: int, work: Path) -> list[str]:
     if (run_dir / "result.json").exists():
         result = json.loads((run_dir / "result.json").read_text())
     else:
-        p = subprocess.run([sys.executable, "-m", "gheerefill", "finalize", "--run-dir", str(run_dir)], cwd=ROOT,
+        p = subprocess.run([sys.executable, "-m", "arbiter", "finalize", "--run-dir", str(run_dir)], cwd=ROOT,
                            capture_output=True, text=True, env=env, timeout=120)
         if p.returncode not in (0, 1) or not p.stdout.strip():
             return [f"I1 finalize failed ({p.returncode}): {p.stderr[-300:]}"]
@@ -226,7 +226,7 @@ def main() -> int:
     seeds = [args.seed] if args.seed is not None else list(range(args.seeds))
     failures = 0
     t0 = time.monotonic()
-    with tempfile.TemporaryDirectory(prefix="ghee-chaos-") as td:
+    with tempfile.TemporaryDirectory(prefix="arbiter-chaos-") as td:
         for s in seeds:
             kill = args.kill_every and s % args.kill_every == args.kill_every - 1
             bad = run_kill_seed(s, Path(td)) if kill else run_seed(s, Path(td))

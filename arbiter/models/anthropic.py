@@ -14,9 +14,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from gheerefill.config import ModelConfig
-from gheerefill.models.base import ErrorClass, ModelError, ModelTurn, ToolCall, ToolSpec, Usage, output_token_limit
-from gheerefill.models.http import post_json, post_sse
+from arbiter.config import ModelConfig
+from arbiter.models.base import ErrorClass, ModelError, ModelTurn, ToolCall, ToolSpec, Usage, output_token_limit
+from arbiter.models.http import post_json, post_sse
 
 
 def normalize_anthropic_usage(usage: Any) -> Usage:

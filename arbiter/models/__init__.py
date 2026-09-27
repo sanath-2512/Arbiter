@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import os
 
-from gheerefill.config import ConfigError, ModelConfig
-from gheerefill.models.base import ModelClient
+from arbiter.config import ConfigError, ModelConfig
+from arbiter.models.base import ModelClient
 
 
 def read_api_key(cfg: ModelConfig, env: dict[str, str] | None = None) -> str:
@@ -18,21 +18,21 @@ def read_api_key(cfg: ModelConfig, env: dict[str, str] | None = None) -> str:
 
 def make_client(cfg: ModelConfig, env: dict[str, str] | None = None) -> ModelClient:
     if cfg.provider == "fake":
-        from gheerefill.models.fake import FakeClient, load_script
+        from arbiter.models.fake import FakeClient, load_script
 
         client: ModelClient = FakeClient(load_script(cfg.script), model_name=cfg.name or "fake-scripted")
     elif cfg.provider == "openai_chat":
-        from gheerefill.models.openai_chat import OpenAIChatClient
+        from arbiter.models.openai_chat import OpenAIChatClient
 
         client = OpenAIChatClient(cfg, read_api_key(cfg, env))
     elif cfg.provider == "anthropic_messages":
-        from gheerefill.models.anthropic import AnthropicClient
+        from arbiter.models.anthropic import AnthropicClient
 
         client = AnthropicClient(cfg, read_api_key(cfg, env))
     else:
         raise ConfigError(f"unknown provider {cfg.provider!r}")
     if cfg.tool_protocol == "text":
-        from gheerefill.models.textproto import TextProtocolClient
+        from arbiter.models.textproto import TextProtocolClient
 
         client = TextProtocolClient(client)
     return client

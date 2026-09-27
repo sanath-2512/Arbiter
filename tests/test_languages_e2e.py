@@ -99,7 +99,7 @@ class RealToolchainTest(TempDirCase):
         with ProviderEmulator(policy_for(spec), family, seed=seed, scale=1.0) as emu:
             env = {**os.environ, "AI_API_KEY": "sk-emulated-0000", "AI_BASE_URL": emu.base_url,
                    "no_proxy": "127.0.0.1", "NO_PROXY": "127.0.0.1"}
-            p = subprocess.run([sys.executable, "-m", "gheerefill", "run", "--profile", str(prof), "--no-discover",
+            p = subprocess.run([sys.executable, "-m", "arbiter", "run", "--profile", str(prof), "--no-discover",
                                 "--out", str(self.tmp / "out")],
                                input=json.dumps({"task_id": lang, "repo_path": str(repo),
                                                  "issue": "divide(7, 2) returns 3; it should return 3.5."}) + "\n",
@@ -126,7 +126,7 @@ class RealToolchainTest(TempDirCase):
     def require_toolchain(self, repo, spec):
         """Skip unless this machine's toolchain runs the test and reports the planted failure (an old
         node without --test, a Ruby without minitest, no network for a toolchain download)."""
-        from gheerefill.evidence import classify_output
+        from arbiter.evidence import classify_output
         try:
             p = subprocess.run(spec["test"], shell=True, cwd=repo, capture_output=True, text=True, timeout=300,
                                env={**os.environ, "GOFLAGS": "-mod=mod", "GOTOOLCHAIN": "local"})

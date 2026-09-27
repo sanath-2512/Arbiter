@@ -89,10 +89,10 @@ def _clean_env() -> dict[str, str]:
     env["GIT_CONFIG_NOSYSTEM"] = "1"
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_TERMINAL_PROMPT"] = "0"
-    env.setdefault("GIT_AUTHOR_NAME", "gheerefill")
-    env.setdefault("GIT_AUTHOR_EMAIL", "gheerefill@localhost")
-    env.setdefault("GIT_COMMITTER_NAME", "gheerefill")
-    env.setdefault("GIT_COMMITTER_EMAIL", "gheerefill@localhost")
+    env.setdefault("GIT_AUTHOR_NAME", "arbiter")
+    env.setdefault("GIT_AUTHOR_EMAIL", "arbiter@localhost")
+    env.setdefault("GIT_COMMITTER_NAME", "arbiter")
+    env.setdefault("GIT_COMMITTER_EMAIL", "arbiter@localhost")
     return env
 
 
@@ -150,7 +150,7 @@ class Workspace:
         self.repo = Path(os.path.realpath(repo))
         self.state_dir = Path(state_dir)
         self.gitdir = self.state_dir / "shadow.git"
-        self.index = self.gitdir / "gheerefill-index"
+        self.index = self.gitdir / "arbiter-index"
         self.base_tree: str | None = None
         self.wrap = None  # optional argv wrapper (sandbox) for target-repo git calls
 

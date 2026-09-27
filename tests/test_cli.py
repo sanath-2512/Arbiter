@@ -14,7 +14,7 @@ FIX = tc("edit_file", path="calc/ops.py", old_str="return a // b", new_str="retu
 
 def base_env(**extra):
     env = {k: v for k, v in os.environ.items() if k not in ("AI_API_KEY", "AI_MODEL", "AI_BASE_URL", "AI_PROVIDER",
-                                                          "GHEEREFILL_PROFILE", "GHEEREFILL_OUT")}
+                                                          "ARBITER_PROFILE", "ARBITER_OUT")}
     env.update(extra)
     return env
 
@@ -37,7 +37,7 @@ class CliTest(TempDirCase):
         return json.dumps({"task_id": task_id, "repo_path": str(self.repo), "issue": "fix divide", **kw}) + "\n"
 
     def run_cli(self, args, stdin="", env=None, timeout=120):
-        return subprocess.run([sys.executable, "-m", "gheerefill", *args], input=stdin, capture_output=True, text=True,
+        return subprocess.run([sys.executable, "-m", "arbiter", *args], input=stdin, capture_output=True, text=True,
                               cwd=ROOT, env=env or base_env(), timeout=timeout)
 
     def records(self, proc):
@@ -85,7 +85,7 @@ class CliTest(TempDirCase):
         self.assertEqual((p.returncode, p.stdout), (0, ""))
         fifo = self.tmp / "tasks.fifo"
         os.mkfifo(fifo)
-        proc = subprocess.Popen([sys.executable, "-m", "gheerefill", "run", "--profile", str(prof), "--out", str(self.out),
+        proc = subprocess.Popen([sys.executable, "-m", "arbiter", "run", "--profile", str(prof), "--out", str(self.out),
                                  "--task", str(fifo)], cwd=ROOT, env=base_env(), stdout=subprocess.PIPE, text=True)
         with open(fifo, "w") as fh:
             fh.write(self.task_line("fifo-task"))
@@ -99,7 +99,7 @@ class CliTest(TempDirCase):
 
     def _start_slow_run(self):
         prof = self.fake_profile([turn(FIX), turn(tc("bash", command="sleep 60")), turn(tc("submit"))])
-        proc = subprocess.Popen([sys.executable, "-m", "gheerefill", "run", "--profile", str(prof), "--out", str(self.out)],
+        proc = subprocess.Popen([sys.executable, "-m", "arbiter", "run", "--profile", str(prof), "--out", str(self.out)],
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                 cwd=ROOT, env=base_env())
         proc.stdin.write(self.task_line())
@@ -151,7 +151,7 @@ class CliTest(TempDirCase):
 
     def test_kill_during_model_call_counts_unknown_usage(self):
         prof = self.fake_profile([turn(FIX), {"sleep_s": 60, "text": "slow", "tool_calls": []}])
-        proc = subprocess.Popen([sys.executable, "-m", "gheerefill", "run", "--profile", str(prof), "--out", str(self.out)],
+        proc = subprocess.Popen([sys.executable, "-m", "arbiter", "run", "--profile", str(prof), "--out", str(self.out)],
                                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True,
                                 cwd=ROOT, env=base_env())
         proc.stdin.write(self.task_line())
@@ -199,7 +199,7 @@ class PromptReaderTest(unittest.TestCase):
     def reader(self, text):
         import io
 
-        from gheerefill.cli import PromptReader
+        from arbiter.cli import PromptReader
 
         return PromptReader(io.StringIO(text), io.StringIO())
 

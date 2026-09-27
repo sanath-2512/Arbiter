@@ -1,4 +1,4 @@
-# gheerefill
+# arbiter
 
 **An autonomous coding-agent harness that does not stop at "done": it proves its fix.**
 
@@ -23,7 +23,7 @@ export        verified: patch applied to a clean base copy reproduces the select
 ## Quick start (the official evaluation procedure)
 
 ```bash
-git clone https://github.com/sanath-2512/gheerefill && cd gheerefill
+git clone https://github.com/sanath-2512/arbiter && cd arbiter
 export AI_API_KEY="<PROVIDED_API_KEY>"
 make setup      # offline, ~1 s: finds Python ≥ 3.9 and git; no packages to install
 make run        # then paste a GitHub issue URL, owner/repo#N, @issue.md, or the issue text
@@ -52,7 +52,7 @@ make run TASK=swe_instances.jsonl                                     # SWE-benc
 
 ## How it meets the brief
 
-| The brief asks for | What gheerefill does |
+| The brief asks for | What arbiter does |
 |---|---|
 | **Understand the issue** | Resolves the issue's own anchors (file paths, stack-trace frames, identifiers) against the repo and ranks files with BM25, with no second model. Supplied tests (`FAIL_TO_PASS`, `test_patch`) are applied and named. |
 | **Navigate the repository** | read, search, outline and list tools; module and test relationships for Python, JS/TS, Go and Rust; the repo layout and test commands up front. |
@@ -93,7 +93,7 @@ Every claim and its evidence: [NOTES.md](NOTES.md).
 5. **Decide by evidence:** `proven` › `fixed` › `passing` › `unverified` › `refuted`. It retries from
    the original code only when the evidence refutes the fix or the attempt stalls.
 6. **Export and attest:** a byte-exact `patch.diff`, verified on a clean copy, plus an in-toto
-   attestation (`python -m gheerefill verify --run-dir DIR`).
+   attestation (`python -m arbiter verify --run-dir DIR`).
 
 Each run writes `runs/<task>/<run>/` with `patch.diff`, `report.md`, `result.json` (tokens, context
 statistics, proof) and the full transcript.
@@ -145,7 +145,7 @@ limited to provider sampling and a seeded retry jitter.
 ## Layout
 
 ```
-gheerefill/   runtime (standard library only): agent, tools, context, proof, locate, workspace,
+arbiter/      runtime (standard library only): agent, tools, context, proof, locate, workspace,
               models (OpenAI-compatible, Anthropic, quirk repair), intake, prewarm, sandbox, attest
 profiles/     model configuration (default.toml is the submission profile)
 tests/        312 deterministic tests
@@ -156,5 +156,5 @@ rehearsal/    rehearsal lab: real pinned repositories, results and terminal logs
 
 ## Licence and provenance
 
-`gheerefill/shell.py` adapts the process-group timeout pattern of mini-swe-agent (MIT).
-`gheerefill/_vendor/tomli` is tomli 2.2.1, verbatim (MIT). Details in [NOTES.md](NOTES.md#8-provenance).
+`arbiter/shell.py` adapts the process-group timeout pattern of mini-swe-agent (MIT).
+`arbiter/_vendor/tomli` is tomli 2.2.1, verbatim (MIT). Details in [NOTES.md](NOTES.md#8-provenance).

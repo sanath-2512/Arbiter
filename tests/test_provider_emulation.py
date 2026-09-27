@@ -36,7 +36,7 @@ class EmulatedProviderTest(TempDirCase):
                         + profile_extra + '\n[limits]\ntime_limit_s = 300\nmax_steps = 40\n')
         env = {**os.environ, "AI_API_KEY": "sk-emulated-0000", "AI_BASE_URL": emu.base_url,
                "no_proxy": "127.0.0.1", "NO_PROXY": "127.0.0.1", **(extra_env or {})}
-        p = subprocess.run([sys.executable, "-m", "gheerefill", "run", "--profile", str(prof), "--no-discover",
+        p = subprocess.run([sys.executable, "-m", "arbiter", "run", "--profile", str(prof), "--no-discover",
                             "--out", str(self.tmp / "out")],
                            input=json.dumps({"task_id": "calc", "repo_path": str(repo),
                                              "issue": "divide(7, 2) returns 3; it should return 3.5."}) + "\n",

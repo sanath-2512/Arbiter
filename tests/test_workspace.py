@@ -1,7 +1,7 @@
 import os
 import subprocess
 
-from gheerefill.workspace import Workspace
+from arbiter.workspace import Workspace
 from tests.helpers import TempDirCase, git, make_repo
 
 

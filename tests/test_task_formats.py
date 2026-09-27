@@ -6,8 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from gheerefill.intake import Request, build_task
-from gheerefill.task import Task, evaluation_tests, iter_tasks, parse_task
+from arbiter.intake import Request, build_task
+from arbiter.task import Task, evaluation_tests, iter_tasks, parse_task
 from tests.helpers import CALC, TempDirCase, git, make_repo
 
 GOLD = "diff --git a/calc/ops.py b/calc/ops.py\n-    return a // b\n+    return a / b  # GOLD-SOLUTION\n"
@@ -87,7 +87,7 @@ class PublishedFormatsTest(TempDirCase):
 
 class ParallelClonesTest(TempDirCase):
     def test_parallel_tasks_of_one_repository_get_separate_clones(self):
-        from gheerefill.intake import prepare_repo, release_workspace
+        from arbiter.intake import prepare_repo, release_workspace
         src = make_repo(self.tmp / "upstream", CALC)
         ws = self.tmp / "ws"
         url = "file://" + str(src)
@@ -97,7 +97,7 @@ class ParallelClonesTest(TempDirCase):
                             issue_created_at=None, log=lambda m: None)
         self.assertNotEqual(a, b)  # a is clean but still held by its (running) task
         # a separate process sees both held
-        code = ("import sys; from pathlib import Path; from gheerefill.intake import claim_workspace; "
+        code = ("import sys; from pathlib import Path; from arbiter.intake import claim_workspace; "
                 "print(claim_workspace(Path(sys.argv[1])), claim_workspace(Path(sys.argv[2])))")
         out = subprocess.run([sys.executable, "-c", code, str(a), str(b)], capture_output=True, text=True,
                              cwd=Path(__file__).resolve().parents[1]).stdout.strip()

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Local stand-in for the GitHub REST API (dev only). Serves one issue so the official
 `make run ISSUE=https://github.com/OWNER/REPO/issues/N` flow can be rehearsed with no network:
-point GHEEREFILL_GITHUB_API at the printed URL and GHEEREFILL_GITHUB_CLONE_BASE at a local directory
+point ARBITER_GITHUB_API at the printed URL and ARBITER_GITHUB_CLONE_BASE at a local directory
 that holds OWNER/REPO as a git repository.
 
     python scripts/fake_github.py OWNER/REPO NUMBER ISSUE_FILE     # first line = title, rest = body

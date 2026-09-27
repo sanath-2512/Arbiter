@@ -35,7 +35,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from gheerefill.evidence import CONCLUSIVE_FAIL, CONCLUSIVE_PASS, CheckOutcome, VerificationRecord, classify_output
+from arbiter.evidence import CONCLUSIVE_FAIL, CONCLUSIVE_PASS, CheckOutcome, VerificationRecord, classify_output
 
 LEVELS = ("refuted", "unverified", "passing", "fixed", "proven")  # ascending strength
 TEST_PATH_RE = re.compile(

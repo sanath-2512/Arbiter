@@ -36,7 +36,7 @@ def tool_environment(base: dict[str, str], scratch: Path, extra_secret_names: tu
     env = {
         k: v
         for k, v in base.items()
-        if k not in drop and not k.upper().endswith(SECRET_NAME_SUFFIXES) and not k.startswith("GHEEREFILL_")
+        if k not in drop and not k.upper().endswith(SECRET_NAME_SUFFIXES) and not k.startswith("ARBITER_")
     }
     env.update(
         {

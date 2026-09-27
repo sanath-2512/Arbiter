@@ -30,9 +30,9 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from gheerefill.config import AUTO, ConfigError, ModelConfig, Profile
-from gheerefill.models.base import ErrorClass, ModelError, classify_http_error
-from gheerefill.models.http import USER_AGENT, _ssl_context
+from arbiter.config import AUTO, ConfigError, ModelConfig, Profile
+from arbiter.models.base import ErrorClass, ModelError, classify_http_error
+from arbiter.models.http import USER_AGENT, _ssl_context
 
 # Messages that mean the key itself is wrong (as opposed to lacking a permission for /models).
 INVALID_KEY = re.compile(r"invalid.{0,20}(api.?key|x-api-key|token|credential)|incorrect api key|api key not valid|"

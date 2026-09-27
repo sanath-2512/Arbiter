@@ -1,10 +1,10 @@
 """Command line entry point (unattended; never prompts, never needs a TTY).
 
-    python -m gheerefill run [--task FILE|-] [--profile FILE] [--out DIR]
-    python -m gheerefill finalize --run-dir DIR       # offline recovery from a checkpoint
-    python -m gheerefill probe [--profile FILE]       # live endpoint compatibility check
-    python -m gheerefill check-config [--profile FILE] [--offline]
-    python -m gheerefill verify --run-dir DIR [--rerun]    # offline check of a run's attestation
+    python -m arbiter run [--task FILE|-] [--profile FILE] [--out DIR]
+    python -m arbiter finalize --run-dir DIR       # offline recovery from a checkpoint
+    python -m arbiter probe [--profile FILE]       # live endpoint compatibility check
+    python -m arbiter check-config [--profile FILE] [--offline]
+    python -m arbiter verify --run-dir DIR [--rerun]    # offline check of a run's attestation
 
 `run` output protocol (LOCAL DEVELOPMENT PROTOCOL): one JSON result record per task on
 stdout, one line each, in input order; human-readable progress on stderr.
@@ -27,9 +27,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from gheerefill import __version__
-from gheerefill.config import ConfigError, Profile, apply_task_limits, load_profile, profile_from_dict, validate
-from gheerefill.records import Redactor, safe_name
+from arbiter import __version__
+from arbiter.config import ConfigError, Profile, apply_task_limits, load_profile, profile_from_dict, validate
+from arbiter.records import Redactor, safe_name
 
 HARNESS_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PROFILE = HARNESS_ROOT / "profiles" / "default.toml"
@@ -46,7 +46,7 @@ def _emit(record: dict[str, Any]) -> None:
 
 def _caller_dir() -> Path:
     """Directory the user started from (`make` exports it; recipes themselves run in the harness)."""
-    return Path(os.environ.get("GHEEREFILL_CALLER_DIR") or os.getcwd())
+    return Path(os.environ.get("ARBITER_CALLER_DIR") or os.getcwd())
 
 
 def _user_path(value: str, *, harness_fallback: bool = False) -> Path:
@@ -60,7 +60,7 @@ def _user_path(value: str, *, harness_fallback: bool = False) -> Path:
 
 
 def _profile_path(arg: str | None) -> Path:
-    value = arg or os.environ.get("GHEEREFILL_PROFILE")
+    value = arg or os.environ.get("ARBITER_PROFILE")
     return _user_path(value, harness_fallback=True) if value else DEFAULT_PROFILE
 
 
@@ -79,7 +79,7 @@ def _redactor(profile: Profile) -> Redactor:
 
 
 def _config_error_record(task_id: str | None, message: str) -> dict[str, Any]:
-    return {"schema": "gheerefill.result/v1", "task_id": task_id, "status": "configuration_error",
+    return {"schema": "arbiter.result/v1", "task_id": task_id, "status": "configuration_error",
             "submission_ready": False, "error": {"message": message}}
 
 
@@ -98,7 +98,7 @@ class PromptReader:
     """
 
     def __init__(self, stdin, out):
-        from gheerefill.report import is_tty
+        from arbiter.report import is_tty
 
         self.stdin, self.out = stdin, out
         self.tty = is_tty(stdin) and is_tty(out)
@@ -125,7 +125,7 @@ class PromptReader:
 
     def read_entry(self, prompt: str) -> str | None:
         """One unit of input; None at end of input."""
-        from gheerefill.intake import parse_github_ref
+        from arbiter.intake import parse_github_ref
 
         line = self._prompt(prompt)
         if not line:
@@ -185,18 +185,18 @@ def _first_env(names: tuple[str, ...]) -> str | None:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    from gheerefill.agent import Agent
-    from gheerefill.credentials import take_credential
-    from gheerefill.intake import IntakeError, Request, build_task, parse_github_ref, parse_input, release_workspace
-    from gheerefill.models import make_client
-    from gheerefill.report import card, is_tty, write_report
-    from gheerefill.resolve import resolve
-    from gheerefill.sandbox import Sandbox
+    from arbiter.agent import Agent
+    from arbiter.credentials import take_credential
+    from arbiter.intake import IntakeError, Request, build_task, parse_github_ref, parse_input, release_workspace
+    from arbiter.models import make_client
+    from arbiter.report import card, is_tty, write_report
+    from arbiter.resolve import resolve
+    from arbiter.sandbox import Sandbox
 
     load_dotenv(HARNESS_ROOT / ".env")
-    out_arg = args.out or os.environ.get("GHEEREFILL_OUT")
+    out_arg = args.out or os.environ.get("ARBITER_OUT")
     out_root = (_user_path(out_arg) if out_arg else HARNESS_ROOT / "runs").resolve()
-    workspace = Path(os.environ.get("GHEEREFILL_WORKSPACE") or HARNESS_ROOT / "workspace").resolve()
+    workspace = Path(os.environ.get("ARBITER_WORKSPACE") or HARNESS_ROOT / "workspace").resolve()
     human = is_tty(sys.stdout)
     color = human and not os.environ.get("NO_COLOR")
     issue_arg = args.issue or _first_env(ISSUE_VARS)
@@ -233,7 +233,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     sandbox_status = Sandbox(profile.policy.sandbox if profile else "key").probe().status
 
     if human or interactive:
-        _err(f"gheerefill {__version__} — autonomous coding harness")
+        _err(f"arbiter {__version__} — autonomous coding harness")
         if resolution:
             _err(f"  model      {resolution.model.provider} · {resolution.model.name} @ {resolution.model.base_url}")
             _err(f"             ({resolution.source}; {resolution.discovery})")
@@ -264,7 +264,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             requests = parse_input(sys.stdin.read(), base_dir=_caller_dir(), source="stdin")
     except IntakeError as e:
         _err(f"invalid input: {e}")
-        emit({"schema": "gheerefill.result/v1", "task_id": None, "status": "invalid_input", "submission_ready": False,
+        emit({"schema": "arbiter.result/v1", "task_id": None, "status": "invalid_input", "submission_ready": False,
               "error": {"message": str(e)}})
         return 1
 
@@ -284,7 +284,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     def process(req: Request, repo_spec: str | None) -> int:
         if req.error is not None:
             _err(f"invalid task input at {req.error.location}: {req.error.message}")
-            emit({"schema": "gheerefill.result/v1", "task_id": req.error.task_id, "status": "invalid_input",
+            emit({"schema": "arbiter.result/v1", "task_id": req.error.task_id, "status": "invalid_input",
                   "submission_ready": False, "error": {"location": req.error.location, "message": req.error.message}})
             return 1
         try:
@@ -292,11 +292,11 @@ def cmd_run(args: argparse.Namespace) -> int:
                               limits={}, log=lambda m: _err(redactor.text(m)))
         except IntakeError as e:
             _err(f"cannot prepare task: {e}")
-            emit({"schema": "gheerefill.result/v1", "task_id": None, "status": "invalid_input",
+            emit({"schema": "arbiter.result/v1", "task_id": None, "status": "invalid_input",
                   "submission_ready": False, "error": {"message": str(e), "source": req.source}})
             return 1
         if current.get("stop"):
-            emit({"schema": "gheerefill.result/v1", "task_id": task.task_id, "status": "cancelled",
+            emit({"schema": "arbiter.result/v1", "task_id": task.task_id, "status": "cancelled",
                   "submission_ready": False, "error": {"message": "interrupted before the task started"}})
             return 1
         try:
@@ -325,7 +325,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             result["model"]["resolution"] = resolution.to_dict()
         if task.metadata.get("intake_notes"):
             result["intake"] = task.metadata["intake_notes"]
-        from gheerefill.records import atomic_write_json
+        from arbiter.records import atomic_write_json
 
         atomic_write_json(run_dir / "result.json", result)
         try:
@@ -409,8 +409,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_finalize(args: argparse.Namespace) -> int:
-    from gheerefill.agent import Agent
-    from gheerefill.task import Task
+    from arbiter.agent import Agent
+    from arbiter.task import Task
 
     run_dir = Path(args.run_dir).resolve()
     try:
@@ -448,7 +448,7 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     agent = Agent.recover(run_dir, profile, task)
     result = agent._finalize()
     result["timing"]["total_s"] = round(agent.budget.elapsed(), 3)
-    from gheerefill.records import atomic_write_json
+    from arbiter.records import atomic_write_json
 
     atomic_write_json(run_dir / "result.json", result)
     _emit(result)
@@ -457,7 +457,7 @@ def cmd_finalize(args: argparse.Namespace) -> int:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     """Check a run's attestation offline: patch digest, clean reconstruction, cited evidence."""
-    from gheerefill.attest import verify
+    from arbiter.attest import verify
 
     report = verify(Path(args.run_dir), rerun=args.rerun)
     print(json.dumps(report, indent=2, default=str))
@@ -465,8 +465,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 
 def _resolved_profile(args: argparse.Namespace, *, discover: bool):
-    from gheerefill.credentials import take_credential
-    from gheerefill.resolve import resolve
+    from arbiter.credentials import take_credential
+    from arbiter.resolve import resolve
 
     load_dotenv(HARNESS_ROOT / ".env")
     profile = load_profile(_profile_path(args.profile))
@@ -485,7 +485,7 @@ def _resolved_profile(args: argparse.Namespace, *, discover: bool):
 def cmd_check_config(args: argparse.Namespace) -> int:
     """Validate the profile, resolve the model and check the key with the provider's model list
     (no tokens are spent). --offline skips the provider call."""
-    from gheerefill.sandbox import Sandbox
+    from arbiter.sandbox import Sandbox
 
     try:
         profile, key, resolution = _resolved_profile(args, discover=not args.offline)
@@ -500,8 +500,8 @@ def cmd_check_config(args: argparse.Namespace) -> int:
 
 def cmd_probe(args: argparse.Namespace) -> int:
     """Live endpoint compatibility: auth, response parsing, native tool call, tool-result turn, usage."""
-    from gheerefill.models import make_client
-    from gheerefill.models.base import ModelError, ToolSpec
+    from arbiter.models import make_client
+    from arbiter.models.base import ModelError, ToolSpec
 
     try:
         profile, key, resolution = _resolved_profile(args, discover=True)
@@ -571,12 +571,12 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(errors="replace")
         except (AttributeError, ValueError):
             pass
-    parser = argparse.ArgumentParser(prog="gheerefill", description=f"gheerefill coding-agent harness {__version__}")
+    parser = argparse.ArgumentParser(prog="arbiter", description=f"arbiter coding-agent harness {__version__}")
     sub = parser.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("run", help="solve tasks (JSON / JSON Lines on stdin or --task FILE)")
     p.add_argument("--task", help="task file (JSON object, array, or JSON Lines); '-' or omitted = stdin")
-    p.add_argument("--profile", help=f"profile TOML (default: $GHEEREFILL_PROFILE or {DEFAULT_PROFILE})")
-    p.add_argument("--out", help="output root for run records (default: $GHEEREFILL_OUT or ./runs)")
+    p.add_argument("--profile", help=f"profile TOML (default: $ARBITER_PROFILE or {DEFAULT_PROFILE})")
+    p.add_argument("--out", help="output root for run records (default: $ARBITER_OUT or ./runs)")
     p.add_argument("--issue", help="GitHub issue URL, owner/repo#N, @file or issue text (or ISSUE=...)")
     p.add_argument("--repo", help="repository path or git URL for the issue (or REPO=...)")
     p.add_argument("--base", help="base commit, or 'before-issue' (or BASE=...)")

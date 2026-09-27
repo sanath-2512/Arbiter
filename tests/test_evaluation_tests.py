@@ -4,7 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from gheerefill.task import evaluation_tests, parse_task
+from arbiter.task import evaluation_tests, parse_task
 from tests.helpers import CALC, TEST_CMD, TempDirCase, git, make_repo, run_agent, tc, turn
 
 TEST_PATCH = """diff --git a/tests/test_half.py b/tests/test_half.py
@@ -101,7 +101,7 @@ class TamperedEvaluationTestsTest(TempDirCase):
 
 class RunHintTest(TempDirCase):
     def test_runner_derived_from_test_name_format(self):
-        from gheerefill import prompts
+        from arbiter import prompts
         repo = self.tmp / "django"
         (repo / "tests").mkdir(parents=True)
         (repo / "tests" / "runtests.py").write_text("")

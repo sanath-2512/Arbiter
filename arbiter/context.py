@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from gheerefill.models.base import Usage
+from arbiter.models.base import Usage
 
 CHARS_PER_TOKEN = 3.2  # conservative for code-heavy text
 ARG_KEEP_CHARS = 300  # string arguments longer than this are elided from old tool calls

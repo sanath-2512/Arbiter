@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 LAUNCHER = Path(__file__).with_name("sandbox_exec.py")
-CANARY_VAR = "GHEEREFILL_SANDBOX_CANARY"
+CANARY_VAR = "ARBITER_SANDBOX_CANARY"
 
 
 @dataclass

@@ -18,7 +18,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Union
 
-from gheerefill.models.base import ErrorClass, ModelError, ModelTurn, ToolCall, ToolSpec, Usage
+from arbiter.models.base import ErrorClass, ModelError, ModelTurn, ToolCall, ToolSpec, Usage
 
 Turn = Union[Dict[str, Any], Callable[[List[Dict[str, Any]]], Dict[str, Any]]]  # typing forms: runtime alias on 3.9
 

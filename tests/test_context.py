@@ -3,7 +3,7 @@
 import unittest
 import json
 
-from gheerefill.context import ContextManager, estimate_tokens
+from arbiter.context import ContextManager, estimate_tokens
 
 
 class ReasoningCacheStabilityTest(unittest.TestCase):
@@ -142,7 +142,7 @@ class ObservationWindowTest(unittest.TestCase):
     """Only the newest tool outputs are shown verbatim, advanced in steps; totals grow linearly."""
 
     def run_session(self, window, steps=40, out_chars=6000):
-        from gheerefill.context import ContextManager
+        from arbiter.context import ContextManager
         cm = ContextManager(1_000_000, 8000, 0.8, 12, observation_window=window, window_step=4)
         transcript = [{"role": "system", "content": "s" * 2000}, {"role": "user", "content": "u" * 4000}]
         total, views = 0, []

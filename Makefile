@@ -1,4 +1,4 @@
-# gheerefill — root targets required by the event: setup, run, test (+ clean).
+# arbiter — root targets required by the event: setup, run, test (+ clean).
 # Runtime needs only Python >= 3.9 (standard library) and git; `make setup` needs no network.
 #
 #   export AI_API_KEY=...                 # the only required configuration
@@ -13,7 +13,7 @@
 # TASK, REPO and OUT are resolved against the directory make was started in.
 HERE := $(if $(filter Makefile,$(lastword $(MAKEFILE_LIST))),.,$(abspath $(dir $(lastword $(MAKEFILE_LIST)))))
 PY := bash scripts/py.sh
-export GHEEREFILL_CALLER_DIR := $(CURDIR)
+export ARBITER_CALLER_DIR := $(CURDIR)
 INPUTS := ISSUE ISSUE_URL ISSUE_FILE GITHUB_ISSUE REPO REPO_PATH REPO_URL BASE TASK PROFILE OUT TIME_LIMIT MAX_STEPS SUITE SYSTEMS
 # Take inputs literally: make would otherwise expand "$(...)" inside a value (an issue that quotes
 # `$(shell ...)` or `$(CC)` would be evaluated or mangled) when exporting or testing it.
@@ -26,27 +26,27 @@ setup:                ## verify toolchain, pick a Python >= 3.9, byte-compile th
 	@cd "$(HERE)" && bash scripts/setup.sh
 
 run:                  ## launch the harness (interactive on a TTY; ISSUE=, REPO=, BASE=, TASK=, TIME_LIMIT=, MAX_STEPS= optional)
-	@cd "$(HERE)" && $(PY) -m gheerefill run $(if $(TASK),--task "$$TASK",) $(if $(PROFILE),--profile "$$PROFILE",) \
+	@cd "$(HERE)" && $(PY) -m arbiter run $(if $(TASK),--task "$$TASK",) $(if $(PROFILE),--profile "$$PROFILE",) \
 		$(if $(OUT),--out "$$OUT",) $(if $(TIME_LIMIT),--time-limit "$$TIME_LIMIT",) $(if $(MAX_STEPS),--max-steps "$$MAX_STEPS",)
 
 test:                 ## deterministic tests (no network, no credentials, no paid calls)
 	@cd "$(HERE)" && $(PY) -m unittest discover -s tests -t . $(if $(V),-v,)
 
 check-config:         ## validate profile, resolve the model, check AI_API_KEY with the provider (no tokens)
-	@cd "$(HERE)" && $(PY) -m gheerefill check-config $(if $(PROFILE),--profile "$$PROFILE",)
+	@cd "$(HERE)" && $(PY) -m arbiter check-config $(if $(PROFILE),--profile "$$PROFILE",)
 
 probe:                ## LIVE: endpoint/tool-calling compatibility check (uses AI_API_KEY)
-	@cd "$(HERE)" && $(PY) -m gheerefill probe $(if $(PROFILE),--profile "$$PROFILE",)
+	@cd "$(HERE)" && $(PY) -m arbiter probe $(if $(PROFILE),--profile "$$PROFILE",)
 
 demo:                 ## offline scripted demo (fake model, clearly labelled non-live)
-	@cd "$(HERE)" && $(PY) scripts/make_example.py calc-divide --work work | $(PY) -m gheerefill run --profile profiles/fake-demo.toml --out runs/demo
+	@cd "$(HERE)" && $(PY) scripts/make_example.py calc-divide --work work | $(PY) -m arbiter run --profile profiles/fake-demo.toml --out runs/demo
 
 chaos:                ## offline fault-injection run: random model/tool faults and kills, checks invariants (N=seeds)
 	@cd "$(HERE)" && $(PY) scripts/chaos.py --seeds $(or $(N),50)
 
 smoke:                ## LIVE: solve the example tasks with the configured model (uses AI_API_KEY)
 	@cd "$(HERE)" && mkdir -p work && $(PY) scripts/make_example.py --work work > work/tasks.jsonl && \
-		$(PY) -m gheerefill run --task work/tasks.jsonl --out runs/smoke $(if $(PROFILE),--profile "$$PROFILE",)
+		$(PY) -m arbiter run --task work/tasks.jsonl --out runs/smoke $(if $(PROFILE),--profile "$$PROFILE",)
 
 baseline-setup:       ## dev only: install pinned mini-swe-agent (.venv-baseline) and Pi (baselines/pi) (network)
 	@cd "$(HERE)" && bash baselines/setup_baselines.sh

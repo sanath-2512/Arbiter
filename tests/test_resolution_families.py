@@ -1,8 +1,8 @@
 """Zero-config resolution for DeepSeek and Qwen keys and for self-hosted OpenAI-compatible servers."""
 
-from gheerefill.config import ConfigError, load_profile
-from gheerefill.models.base import ErrorClass, ModelError
-from gheerefill.resolve import resolve
+from arbiter.config import ConfigError, load_profile
+from arbiter.models.base import ErrorClass, ModelError
+from arbiter.resolve import resolve
 from tests.helpers import ROOT, TempDirCase
 
 HEX_KEY = "sk-" + "0123456789abcdef" * 2

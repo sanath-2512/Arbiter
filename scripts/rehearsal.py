@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Judge Rehearsal Lab: run gheerefill the way a judge would, on pinned real repositories.
+"""Judge Rehearsal Lab: run arbiter the way a judge would, on pinned real repositories.
 
     python scripts/rehearsal.py validate [--tasks a,b]          # labels are sound (base fails, fix passes)
     python scripts/rehearsal.py run --task rehearsal/tasks/ID [--config F] [--policy NAME] [--faults JSON]
@@ -8,12 +8,12 @@
     python scripts/rehearsal.py localize                       # deterministic localisation recall@k
     python scripts/rehearsal.py report RESULTS.jsonl            # tables from recorded runs
 
-One run is: clean base -> launch gheerefill (no TTY, issue supplied like a judge would) -> wait ->
+One run is: clean base -> launch arbiter (no TTY, issue supplied like a judge would) -> wait ->
 collect the patch -> apply it to a *fresh* clean base -> run the hidden verifier -> record. The
 working directory the harness left behind is never inspected: a solved-looking tree whose exported
 patch does not reconstruct is a failed task.
 
-Evaluation boundary. The runtime (gheerefill/) never reads rehearsal/ (enforced by a test). Judge
+Evaluation boundary. The runtime (arbiter/) never reads rehearsal/ (enforced by a test). Judge
 data (hidden tests, reference patches, verify commands) lives in rehearsal/tasks/<id>/label.b64,
 gzip+base64 so a broad grep cannot hit it, decoded only after the harness has exited. Task
 repositories are built outside the harness checkout, with history up to the base commit only (no
@@ -53,7 +53,7 @@ ENVS = REH / "envs"
 RESULTS = REH / "results"
 MANIFEST = REH / "manifests" / "repos.json"
 CONFIGS = REH / "manifests" / "configs.json"
-WORK = Path(os.environ.get("GHEEREFILL_REHEARSAL_WORK") or Path(tempfile.gettempdir()) / "ghee-rehearsal")
+WORK = Path(os.environ.get("ARBITER_REHEARSAL_WORK") or Path(tempfile.gettempdir()) / "arbiter-rehearsal")
 GIT_ENV = {**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, "GIT_AUTHOR_NAME": "rehearsal",
            "GIT_AUTHOR_EMAIL": "rehearsal@localhost", "GIT_COMMITTER_NAME": "rehearsal",
            "GIT_COMMITTER_EMAIL": "rehearsal@localhost", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
@@ -341,7 +341,7 @@ def judge(task: dict, repo: dict, label: dict, patch: bytes, work: Path, log) ->
 # ----------------------------------------------------------------------------- configurations
 def compose_profile(base_profile: Path, overrides: dict[str, dict], model: dict | None, dest: Path) -> Path:
     """Write a complete profile: the submission profile + one ablation's policy/tool overrides."""
-    from gheerefill.config import load_profile
+    from arbiter.config import load_profile
 
     prof = load_profile(base_profile, env={})
     d = prof.to_dict()
@@ -392,7 +392,7 @@ def harness_python() -> str:
 def harness_commit() -> str:
     """The runtime's version: commit, plus "+dirty" when the runtime itself has uncommitted changes."""
     p = subprocess.run(["git", "rev-parse", "--short=12", "HEAD"], cwd=ROOT, capture_output=True, text=True)
-    d = subprocess.run(["git", "status", "--porcelain", "--", "gheerefill", "profiles", "Makefile", "scripts/py.sh"],
+    d = subprocess.run(["git", "status", "--porcelain", "--", "arbiter", "profiles", "Makefile", "scripts/py.sh"],
                        cwd=ROOT, capture_output=True, text=True)
     return (p.stdout.strip() or "unknown") + ("+dirty" if d.stdout.strip() else "")
 
@@ -512,12 +512,12 @@ def _run_one(task: dict, config: str, *, repeat: int = 0, policy: str | None = N
     prof = compose_profile(profile or ROOT / "profiles" / "default.toml", configs[config]["overrides"], model,
                            work / "profile.toml")
     hen.update(ISSUE=task["issue"], REPO=str(repo_dir))
-    cmd = [harness_python(), "-m", "gheerefill", "run", "--profile", str(prof), "--out", str(run_out)]
+    cmd = [harness_python(), "-m", "arbiter", "run", "--profile", str(prof), "--out", str(run_out)]
     if limits.get("time_limit_s"):
         cmd += ["--time-limit", str(limits["time_limit_s"])]
     if limits.get("max_steps"):
         cmd += ["--max-steps", str(limits["max_steps"])]
-    log(f"[{rid}] launching gheerefill ({config}{', policy ' + policy if policy else ', live model'})")
+    log(f"[{rid}] launching arbiter ({config}{', policy ' + policy if policy else ', live model'})")
     t0 = time.monotonic()
     stderr = open(work / "harness.stderr", "w")
     proc = subprocess.Popen(cmd, cwd=ROOT, env=hen, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
@@ -545,13 +545,13 @@ def _run_one(task: dict, config: str, *, repeat: int = 0, policy: str | None = N
     if result is None and sig and sig[0] == "KILL":  # recover offline, exactly as documented
         states = list(run_out.rglob("state.json"))
         if states:
-            p = subprocess.run([harness_python(), "-m", "gheerefill", "finalize", "--run-dir", str(states[0].parent)],
+            p = subprocess.run([harness_python(), "-m", "arbiter", "finalize", "--run-dir", str(states[0].parent)],
                                cwd=ROOT, env=hen, capture_output=True, text=True, timeout=600)
             rl = [l for l in p.stdout.splitlines() if l.strip().startswith("{")]
             result = json.loads(rl[-1]) if rl else None
             recovered = result is not None
     rec: dict[str, Any] = {
-        "schema": "gheerefill.rehearsal/v1", "run_id": rid, "task_id": task["task_id"], "repo": task["repo"],
+        "schema": "arbiter.rehearsal/v1", "run_id": rid, "task_id": task["task_id"], "repo": task["repo"],
         "repo_url": repo["url"], "base_commit": task["base_commit"], "type": task["type"],
         "size_class": task["size_class"], "config": config, "repeat": repeat,
         "model_kind": "scripted-policy" if policy else "live", "policy": policy, "faults": faults or [],
@@ -656,7 +656,7 @@ def transcript(run_dir: Path) -> list[dict]:
 
 def lab_error_record(task: dict, config: str, e: Exception) -> dict[str, Any]:
     """A run the lab itself could not complete (setup, environment): recorded, never counted as a result."""
-    return {"schema": "gheerefill.rehearsal/v1", "task_id": task["task_id"], "repo": task["repo"],
+    return {"schema": "arbiter.rehearsal/v1", "task_id": task["task_id"], "repo": task["repo"],
             "base_commit": task["base_commit"], "type": task["type"], "size_class": task["size_class"],
             "config": config, "repeat": 0, "model_kind": "n/a", "harness_version": harness_commit(), "result": None,
             "failure_class": "lab_error", "lab_error": f"{type(e).__name__}: {e}"[:1000]}
@@ -812,7 +812,7 @@ def validate(tasks: list[dict], log=print, jobs: int = 1) -> list[dict]:
 def localize_recall(tasks: list[dict], log=print) -> list[dict]:
     """Deterministic: do the harness's localisation hints (no model) point at the files the reference
     fix changed? Measures whether the hints help or mislead; uses labels only after computing hints."""
-    from gheerefill import locate
+    from arbiter import locate
 
     manifest = load_json(MANIFEST)
     rows = []

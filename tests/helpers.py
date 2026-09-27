@@ -9,10 +9,10 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from gheerefill.agent import Agent
-from gheerefill.config import Profile
-from gheerefill.models.fake import FakeClient
-from gheerefill.task import Task
+from arbiter.agent import Agent
+from arbiter.config import Profile
+from arbiter.models.fake import FakeClient
+from arbiter.task import Task
 
 ROOT = Path(__file__).resolve().parent.parent
 GIT_ENV = {
@@ -100,7 +100,7 @@ def run_agent(repo: Path, turns: list, run_dir: Path, *, profile: Profile | None
 
 class TempDirCase(unittest.TestCase):
     def setUp(self) -> None:
-        self._td = tempfile.TemporaryDirectory(prefix="ghee-test-")
+        self._td = tempfile.TemporaryDirectory(prefix="arbiter-test-")
         self.tmp = Path(self._td.name)
 
     def tearDown(self) -> None:

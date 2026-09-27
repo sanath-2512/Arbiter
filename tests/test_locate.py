@@ -1,4 +1,4 @@
-from gheerefill import locate
+from arbiter import locate
 from tests.helpers import CALC, TempDirCase, make_repo
 
 
@@ -106,7 +106,7 @@ class ReadOrderTest(TempDirCase):
 
 class RustRelationsTest(TempDirCase):
     def test_users_integration_tests_and_inline_tests(self):
-        from gheerefill.locate import import_graph
+        from arbiter.locate import import_graph
         files = {"Cargo.toml": '[package]\nname = "my-calc"\nversion = "0.1.0"\n',
                  "src/lib.rs": "pub mod ops;\npub mod parse;\n",
                  "src/ops.rs": "pub fn divide(a: f64, b: f64) -> f64 { a / b }\n#[cfg(test)]\nmod tests {}\n",

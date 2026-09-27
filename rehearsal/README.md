@@ -1,12 +1,12 @@
 # Judge Rehearsal Lab (dev only)
 
-This lab rehearses how the organisers will evaluate gheerefill:
+This lab rehearses how the organisers will evaluate arbiter:
 1. a clean checkout of a real repository at a pinned commit;
 2. the harness launched with an issue;
 3. the patch it exports applied to a fresh clean base;
 4. hidden tests run on that base.
 
-The lab never ships with or feeds the runtime. `gheerefill/` contains no reference to `rehearsal/`
+The lab never ships with or feeds the runtime. `arbiter/` contains no reference to `rehearsal/`
 or `evalsuite/`, and `tests/test_rehearsal.py` enforces this.
 
 ```
@@ -34,7 +34,7 @@ has exited.
 The harness never sees the lab:
 - task repositories are built by `git fetch --depth=N` of the base commit into a fresh repository,
   so they have no remote, no future history and no tags;
-- every run happens under `$TMPDIR/ghee-rehearsal`, outside this checkout;
+- every run happens under `$TMPDIR/arbiter-rehearsal`, outside this checkout;
 - after each run, the harness's transcript, tool outputs and patch are audited for references to
   labels, mirrors or task files; those findings go into the `audit` field.
 
@@ -107,7 +107,7 @@ classes, paired sign tests, and failure-memory repeats before and after interven
   a real repository. They show whether a mechanism works on real test output, e.g. whether a
   regressing final state is replaced by the earlier verified candidate. The policy already knows
   the fix, so these runs are **not** evidence of solve rate.
-- **Solve rate, and whether gheerefill beats the baseline config,** can only be measured with the
+- **Solve rate, and whether arbiter beats the baseline config,** can only be measured with the
   prescribed model:
   ```
   AI_API_KEY=... python scripts/rehearsal.py gauntlet --configs A,F --repeats 3

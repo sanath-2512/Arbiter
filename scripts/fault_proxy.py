@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fault-injecting HTTP proxy between gheerefill and a model endpoint (dev only).
+"""Fault-injecting HTTP proxy between arbiter and a model endpoint (dev only).
 
 Every request is forwarded unchanged to UPSTREAM (a live provider root such as
 https://api.anthropic.com, or the policy server), except the POSTs numbered in the schedule, which
@@ -15,7 +15,7 @@ get a fault instead:
   disconnect   connection closed without a response
   garbage      200 with a body that is not JSON
 
-gheerefill is pointed at the proxy with AI_BASE_URL (and AI_PROVIDER for Anthropic keys); the key
+arbiter is pointed at the proxy with AI_BASE_URL (and AI_PROVIDER for Anthropic keys); the key
 passes through unchanged and is never logged.
 
     python scripts/fault_proxy.py UPSTREAM '[{"at": 2, "kind": "429"}, {"at": 4, "kind": "overflow"}]'

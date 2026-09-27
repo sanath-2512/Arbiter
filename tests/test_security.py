@@ -7,7 +7,7 @@ import time
 import unittest
 from unittest import mock
 
-from gheerefill.sandbox import Sandbox
+from arbiter.sandbox import Sandbox
 from tests.helpers import CALC, ROOT, TEST_CMD, TempDirCase, git, make_repo, run_agent, tc, turn
 
 SECRET = "sk-ant-api03-SECRETVALUE-0123456789abcdef"
@@ -57,7 +57,7 @@ class CredentialIsolationTest(TempDirCase):
         prof = self.tmp / f"p-{sandbox}.toml"
         prof.write_text(f'[model]\nprovider = "fake"\nscript = "{script}"\n[policy]\nsandbox = "{sandbox}"\n')
         task = json.dumps({"task_id": "t", "repo_path": str(self.repo), "issue": "fix"})
-        parent = ("import subprocess, sys; r = subprocess.run([sys.executable, '-m', 'gheerefill', 'run', '--profile', "
+        parent = ("import subprocess, sys; r = subprocess.run([sys.executable, '-m', 'arbiter', 'run', '--profile', "
                   f"{str(prof)!r}, '--out', {str(self.tmp / ('out-' + sandbox))!r}], input={task!r} + '\\n', "
                   "capture_output=True, text=True); print(r.stdout)")
         env = {**os.environ, "AI_API_KEY": SECRET}
@@ -85,7 +85,7 @@ class CredentialIsolationTest(TempDirCase):
         self.assertIsNotNone(result["integrity"]["target_git_control_files_changed"])
 
     def test_harness_process_scrubs_its_own_environment(self):
-        code = ("from gheerefill.credentials import take_credential; import sys, time; "
+        code = ("from arbiter.credentials import take_credential; import sys, time; "
                 "v = take_credential('AI_API_KEY'); sys.stdout.write(str(len(v)) + '\\n'); sys.stdout.flush(); time.sleep(5)")
         p = subprocess.Popen([sys.executable, "-c", code], cwd=ROOT, stdout=subprocess.PIPE, text=True,
                              env={**os.environ, "AI_API_KEY": SECRET})
@@ -117,6 +117,6 @@ class SandboxLauncherTest(TempDirCase):
 
     def test_launcher_never_runs_unsandboxed_silently(self):
         # Invalid usage must fail closed (exit 126), not fall through to running the command.
-        p = subprocess.run([sys.executable, "-I", "-S", str(ROOT / "gheerefill" / "sandbox_exec.py"), "{}", "true"],
+        p = subprocess.run([sys.executable, "-I", "-S", str(ROOT / "arbiter" / "sandbox_exec.py"), "{}", "true"],
                            capture_output=True, text=True)
         self.assertEqual(p.returncode, 126)

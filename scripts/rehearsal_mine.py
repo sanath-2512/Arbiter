@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from scripts import rehearsal as R  # noqa: E402
-from gheerefill.proof import is_test_path  # noqa: E402
+from arbiter.proof import is_test_path  # noqa: E402
 
 RUNNERS = {
     # one test module that fails to import must not abort the session and mask every other module

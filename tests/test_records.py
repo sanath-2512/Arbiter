@@ -2,7 +2,7 @@ import json
 import os
 from unittest import mock
 
-from gheerefill.records import Redactor, append_jsonl, atomic_write_json, read_jsonl, safe_name
+from arbiter.records import Redactor, append_jsonl, atomic_write_json, read_jsonl, safe_name
 from tests.helpers import TempDirCase
 
 
@@ -10,7 +10,7 @@ class RecordsTest(TempDirCase):
     def test_atomic_write_survives_interrupted_publication(self):
         p = self.tmp / "state.json"
         atomic_write_json(p, {"v": 1})
-        with mock.patch("gheerefill.records.os.replace", side_effect=KeyboardInterrupt):
+        with mock.patch("arbiter.records.os.replace", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
                 atomic_write_json(p, {"v": 2})
         self.assertEqual(json.loads(p.read_text()), {"v": 1})

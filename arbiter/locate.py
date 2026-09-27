@@ -197,7 +197,7 @@ def _rust_relations(t: str, texts: dict[str, str], repo: Path) -> tuple[list[str
 def import_graph(targets: list[str], texts: dict[str, str], fileset: set[str], repo: Path) -> dict[str, dict]:
     """For each target file: the files that import it, and which of those are tests (tests are often
     not next to the code they cover)."""
-    from gheerefill.proof import is_test_path
+    from arbiter.proof import is_test_path
 
     out: dict[str, dict] = {}
     py_index = {f: _py_imports(f, t) for f, t in texts.items() if f.endswith(".py")}
@@ -246,7 +246,7 @@ def import_graph(targets: list[str], texts: dict[str, str], fileset: set[str], r
 
 def localize(issue: str, repo: Path, files: list[str], *, time_budget_s: float = 3.0,
              byte_budget: int = 40 * 1024 * 1024, top: int = 6) -> dict[str, Any]:
-    from gheerefill.proof import is_test_path
+    from arbiter.proof import is_test_path
 
     t0 = time.monotonic()
     src = [f for f in files if Path(f).suffix.lower() in SOURCE_EXT]

@@ -12,8 +12,8 @@ import time
 from dataclasses import asdict
 from typing import Any, Callable
 
-from gheerefill.config import LimitsConfig
-from gheerefill.models.base import AttemptRecord
+from arbiter.config import LimitsConfig
+from arbiter.models.base import AttemptRecord
 
 
 class Budget:

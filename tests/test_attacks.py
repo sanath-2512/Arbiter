@@ -12,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-from gheerefill.outputs import clean_terminal_text
+from arbiter.outputs import clean_terminal_text
 from scripts.provider_emulator import ProviderEmulator
 from tests.helpers import CALC, ROOT, TEST_CMD, TempDirCase, git, make_repo, run_agent, tc, test_profile, turn
 
@@ -43,9 +43,9 @@ class ProcedureAttackTest(TempDirCase):
     def make_run(self, emu, repo, issue, extra_env=None, timeout=240):
         prof = self.tmp / "p.toml"
         prof.write_text('[model]\nprovider = "openai_chat"\nname = "m"\nbase_url = "http://127.0.0.1:1/v1"\n')
-        env = {k: v for k, v in os.environ.items() if not k.startswith(("AI_", "ISSUE", "REPO", "GHEEREFILL_"))}
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("AI_", "ISSUE", "REPO", "ARBITER_"))}
         env.update(AI_API_KEY="sk-attack-000000000000", AI_BASE_URL=emu.base_url if emu else "http://127.0.0.1:9/v1",
-                   GHEEREFILL_PROFILE=str(prof), GHEEREFILL_OUT=str(self.tmp / "out"), no_proxy="127.0.0.1",
+                   ARBITER_PROFILE=str(prof), ARBITER_OUT=str(self.tmp / "out"), no_proxy="127.0.0.1",
                    NO_PROXY="127.0.0.1")
         env.update(extra_env or {})
         p = subprocess.run(["make", "-s", "run", f"ISSUE={issue}", f"REPO={repo}"], cwd=ROOT, env=env,
@@ -236,7 +236,7 @@ class ModelBehaviourAttackTest(TempDirCase):
 
 class ByproductTest(TempDirCase):
     def test_lock_files_follow_their_manifest(self):
-        from gheerefill.agent import lockfile_byproducts
+        from arbiter.agent import lockfile_byproducts
         files = [{"path": "Cargo.lock", "status": "A"}, {"path": "src/lib.rs", "status": "M"},
                  {"path": "web/package-lock.json", "status": "M"}, {"path": "api/package-lock.json", "status": "M"},
                  {"path": "api/package.json", "status": "M"}, {"path": "go.sum", "status": "D"}]
@@ -252,7 +252,7 @@ class ByproductTest(TempDirCase):
 
 class HugeIssueTest(TempDirCase):
     def test_megabyte_issue_is_truncated_in_the_prompt_and_kept_whole(self):
-        from gheerefill.agent import ISSUE_PROMPT_CHARS
+        from arbiter.agent import ISSUE_PROMPT_CHARS
         repo = make_repo(self.tmp / "repo", CALC)
         log = "".join(f"2026-09-26 12:00:{i % 60:02d} ERROR worker {i}: ZeroDivisionError\n" for i in range(20000))
         issue = "divide(7, 2) returns 3; it should be 3.5.\n\n```\n" + log + "```\nEND-OF-ISSUE"

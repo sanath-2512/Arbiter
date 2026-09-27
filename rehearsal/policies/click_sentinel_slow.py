@@ -1,7 +1,7 @@
 """Scripted policy (interrupted run) for click_sentinel_copy: makes the historical fix, then runs a
 long command, so a SIGTERM/SIGKILL sent by the lab lands while a tool subprocess is running with the
 fix already on disk. SIGTERM must end in a graceful stop with a valid artifact; after SIGKILL,
-`gheerefill finalize` must recover one offline."""
+`arbiter finalize` must recover one offline."""
 import sys
 from pathlib import Path
 

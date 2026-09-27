@@ -13,7 +13,7 @@ from scripts import rehearsal as R  # noqa: E402
 
 class BoundaryTest(TempDirCase):
     def test_runtime_never_references_the_lab_or_eval_data(self):
-        for path in (ROOT / "gheerefill").rglob("*.py"):
+        for path in (ROOT / "arbiter").rglob("*.py"):
             text = path.read_text(encoding="utf-8")
             self.assertIsNone(re.search(r"rehearsal|evalsuite", text), f"{path} references the evaluation lab")
 

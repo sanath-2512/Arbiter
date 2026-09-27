@@ -1,5 +1,5 @@
 {
-  "schema": "gheerefill.clean-machine/v1",
+  "schema": "arbiter.clean-machine/v1",
   "commit": "f57ff6a14ab6",
   "python": "3.13.12",
   "passed": 9,
@@ -9,7 +9,7 @@
       "step": "setup",
       "ok": true,
       "seconds": 1.0,
-      "detail": "make: Leaving directory '/tmp/ghee-clean.g8CRNx/gheerefill'"
+      "detail": "make: Leaving directory '/tmp/arbiter-clean.g8CRNx/arbiter'"
     },
     {
       "step": "test",

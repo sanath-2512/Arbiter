@@ -1,9 +1,9 @@
-# gheerefill proof predicate, version 1
+# arbiter proof predicate, version 1
 
 `attestation.json` in each completed run directory is an
 [in-toto Statement v1](https://github.com/in-toto/attestation/blob/main/spec/v1/statement.md).
 It is **unsigned**, because the harness holds no signing key. Integrity comes from the SHA-256
-digests, which `python -m gheerefill verify --run-dir DIR` recomputes.
+digests, which `python -m arbiter verify --run-dir DIR` recomputes.
 
 - `subject`: `[{"name": "patch.diff", "digest": {"sha256": ...}}]`, the exported deliverable.
 - `predicateType`: this document's URL.

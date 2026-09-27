@@ -21,7 +21,7 @@ import re
 import uuid
 from typing import Any
 
-from gheerefill.models.base import ModelClient, ModelTurn, ToolCall, ToolSpec
+from arbiter.models.base import ModelClient, ModelTurn, ToolCall, ToolSpec
 
 _FUNC_RE = re.compile(r"<function=([A-Za-z0-9_.\-]+)>(.*?)</function>", re.S)
 _PARAM_RE = re.compile(r"<parameter=([A-Za-z0-9_]+)>(.*?)</parameter>", re.S)

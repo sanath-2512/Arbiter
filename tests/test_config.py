@@ -1,4 +1,4 @@
-from gheerefill.config import ConfigError, apply_task_limits, load_profile, profile_from_dict, validate
+from arbiter.config import ConfigError, apply_task_limits, load_profile, profile_from_dict, validate
 from tests.helpers import ROOT, TempDirCase
 
 
@@ -9,7 +9,7 @@ class ConfigTest(TempDirCase):
         return p
 
     def test_default_profile_refuses_unknown_key_format(self):
-        from gheerefill.resolve import resolve
+        from arbiter.resolve import resolve
 
         prof = load_profile(ROOT / "profiles" / "default.toml", env={})
         validate(prof)
@@ -58,7 +58,7 @@ class ConfigTest(TempDirCase):
 
 class CredentialNormalizationTest(TempDirCase):
     def test_copy_paste_artefacts_are_tolerated(self):
-        from gheerefill.credentials import normalize
+        from arbiter.credentials import normalize
 
         for raw in ("sk-abc", " sk-abc\n", "sk-abc\r", '"sk-abc"', "'sk-abc'", ' "sk-abc" '):
             self.assertEqual(normalize(raw), "sk-abc", repr(raw))

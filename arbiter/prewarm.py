@@ -16,8 +16,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from gheerefill.outputs import OutputArchive
-from gheerefill.shell import read_output_file, run_shell
+from arbiter.outputs import OutputArchive
+from arbiter.shell import read_output_file, run_shell
 
 NETWORK_FAILURE = re.compile(
     r"failed to (download|get|fetch|load source|query replaced source|update)|could not resolve host|"
@@ -47,7 +47,7 @@ class Prewarm:
     def start(self) -> bool:
         if not self.commands:
             return False
-        self._thread = threading.Thread(target=self._run, name="gheerefill-prewarm", daemon=True)
+        self._thread = threading.Thread(target=self._run, name="arbiter-prewarm", daemon=True)
         self._thread.start()
         return True
 

@@ -41,7 +41,7 @@
     {"id": "interrupt_term", "kind": "interrupted_run", "task": "express_etag_transfer_encoding", "mode": "live",
      "signal": "TERM@90", "expect": "graceful stop within the grace period with a valid, applicable artifact"},
     {"id": "interrupt_kill", "kind": "interrupted_run", "task": "eslint_labeled_continue", "mode": "live",
-     "signal": "KILL@120", "expect": "no artifact at kill time; `gheerefill finalize` recovers a valid one offline"},
+     "signal": "KILL@120", "expect": "no artifact at kill time; `arbiter finalize` recovers a valid one offline"},
     {"id": "stale_edit", "kind": "stale_edit", "task": "click_help_parameter", "mode": "scripted",
      "policy": "click_help_stale_edit",
      "expect": "the stale edit is refused with the closest matching region, nothing is half-applied, the corrected edit lands"},

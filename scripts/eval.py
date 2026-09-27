@@ -31,8 +31,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gheerefill.config import load_profile  # noqa: E402
-from gheerefill.workspace import Workspace  # noqa: E402
+from arbiter.config import load_profile  # noqa: E402
+from arbiter.workspace import Workspace  # noqa: E402
 
 SUITE = ROOT / "evalsuite"
 GIT_ENV = {"GIT_AUTHOR_NAME": "eval", "GIT_AUTHOR_EMAIL": "eval@localhost", "GIT_COMMITTER_NAME": "eval",
@@ -185,7 +185,7 @@ def run_ours(spec, repo, profile_path, out_dir, limits, env=None, extra_args=())
     tf = out_dir / "task.json"
     tf.parent.mkdir(parents=True, exist_ok=True)
     tf.write_text(json.dumps(task))
-    cmd = [sys.executable, "-m", "gheerefill", "run", "--task", str(tf), "--out", str(out_dir / "runs"), *extra_args]
+    cmd = [sys.executable, "-m", "arbiter", "run", "--task", str(tf), "--out", str(out_dir / "runs"), *extra_args]
     if profile_path:
         cmd += ["--profile", str(profile_path)]
     t0 = time.monotonic()

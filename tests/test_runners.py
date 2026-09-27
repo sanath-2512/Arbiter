@@ -5,8 +5,8 @@ formats. A misread runner turns a failing test run into "inconclusive" or worse 
 import unittest
 from pathlib import Path
 
-from gheerefill.evidence import classify_output
-from gheerefill.proof import failing_tests
+from arbiter.evidence import classify_output
+from arbiter.proof import failing_tests
 
 FIX = Path(__file__).parent / "fixtures" / "runners"
 EXPECT = {  # file: (runner, outcome, failing test names)
@@ -62,7 +62,7 @@ class RunnerOutputTest(unittest.TestCase):
 
 class CheckCommandTest(unittest.TestCase):
     def test_test_commands_across_ecosystems(self):
-        from gheerefill.evidence import is_check_command
+        from arbiter.evidence import is_check_command
 
         for cmd in ("node --test", "ruby test/calc_test.rb", "ruby -Ilib -Itest test/test_calc.rb", "rake test",
                     "deno test", "bats test", "bun test", "php artisan test", "./runtests.py", "hatch test",

@@ -82,7 +82,7 @@ max_tokens_field = "max_completion_tokens"
 max_output_tokens = 32768           # reasoning tokens count against this budget; lowered automatically if capped
 
 # DeepSeek and Alibaba Cloud (Qwen) both issue `sk-` + 32 hex keys: one rule, candidate endpoints tried
-# in order, moving on only when an endpoint answers 401 (see gheerefill/resolve.py).
+# in order, moving on only when an endpoint answers 401 (see arbiter/resolve.py).
 # Thinking models: output budget covers reasoning; the context window is a working budget (tokens
 # cost), not the provider maximum (1M); reasoning is passed back on tool-call turns as required.
 [[auto]]

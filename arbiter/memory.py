@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from gheerefill.records import atomic_write_json
+from arbiter.records import atomic_write_json
 
 INSTALL_RE = re.compile(r"^\s*(?:(?:pip3?|python3?\s+-m\s+pip|uv\s+pip)\s+install|uv\s+sync|poetry\s+install|"
                         r"pipenv\s+install|(?:npm|pnpm)\s+(?:ci|install)|yarn(?:\s+install)?$|bundle\s+install|"
@@ -71,6 +71,6 @@ def update(root: Path, repo: Path, records: list, setup_commands: list[str], red
         [redact(s)[:300] for s in setup_commands]
     root.mkdir(parents=True, exist_ok=True)
     atomic_write_json(root / f"{repo_key(repo)}.json", {
-        "schema": "gheerefill.memory/v1", "runs": int(notes.get("runs") or 0) + 1, "updated_at": time.time(),
+        "schema": "arbiter.memory/v1", "runs": int(notes.get("runs") or 0) + 1, "updated_at": time.time(),
         "checks": list(checks.values())[-MAX_CHECKS:], "setup": list(dict.fromkeys(setup))[-MAX_SETUP:],
     })

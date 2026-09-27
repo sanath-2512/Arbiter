@@ -2,11 +2,11 @@ import json
 import os
 from pathlib import Path
 
-from gheerefill.models.textproto import TextProtocolClient
-from gheerefill.models.fake import FakeClient
-from gheerefill.agent import Agent
-from gheerefill.records import read_jsonl
-from gheerefill.task import Task
+from arbiter.models.textproto import TextProtocolClient
+from arbiter.models.fake import FakeClient
+from arbiter.agent import Agent
+from arbiter.records import read_jsonl
+from arbiter.task import Task
 from tests.helpers import CALC, TEST_CMD, TempDirCase, git, make_repo, run_agent, tc, test_profile, turn
 
 FIX = tc("edit_file", path="calc/ops.py", old_str="return a // b", new_str="return a / b")
@@ -187,7 +187,7 @@ class AgentTest(TempDirCase):
     def test_secret_never_reaches_records(self):
         secret = "sk-supersecret-9876543210"
         env = {**os.environ, "AI_API_KEY": secret}
-        from gheerefill.records import Redactor
+        from arbiter.records import Redactor
 
         result, _ = run_agent(self.repo, [turn(tc("bash", command="env; echo $AI_API_KEY; cat /proc/$PPID/environ | tr '\\0' '\\n'")),
                                           turn(SUBMIT), turn(SUBMIT)],

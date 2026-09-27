@@ -15,7 +15,7 @@ PYEOF
 
 pick_python() {
   local c p
-  # Newest first: 3.11+ ships tomllib; 3.9/3.10 use the vendored copy (gheerefill/_vendor).
+  # Newest first: 3.11+ ships tomllib; 3.9/3.10 use the vendored copy (arbiter/_vendor).
   for c in "${HARNESS_PYTHON:-}" python3.14 python3.13 python3.12 python3.11 python3.10 python3.9 python3 python; do
     [ -n "$c" ] || continue
     p=$(command -v "$c" 2>/dev/null) || continue
@@ -49,7 +49,7 @@ if v < (2, 25):
 PYEOF
 command -v rg >/dev/null || echo "setup: note: ripgrep not found; the search tool falls back to grep"
 
-"$PY" -m compileall -q gheerefill >/dev/null
-"$PY" -c 'import gheerefill.cli'
+"$PY" -m compileall -q arbiter >/dev/null
+"$PY" -c 'import arbiter.cli'
 echo "$PY" > .harness-python
 echo "setup: ok (python: $PY $("$PY" -c 'import platform; print(platform.python_version())'), git $GITV)"
