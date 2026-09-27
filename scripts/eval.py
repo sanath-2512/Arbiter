@@ -157,6 +157,7 @@ def run_ours(spec, repo, profile_path, out_dir, limits) -> dict[str, Any]:
         "live": (rec.get("model") or {}).get("live"), "model": rec.get("model"),
         "usage": {k: usage.get(k) for k in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens",
                                              "total_tokens", "requests", "requests_usage_unknown", "cost_usd")},
+         "context": rec.get("context"),
         "steps": usage.get("steps"), "tool_calls": usage.get("tool_calls"), "timing": rec.get("timing"),
         "wall_s": round(wall, 2), "patch": patch, "trail": trail, "run_dir": str(run_dir) if run_dir else None,
         "error": rec.get("error"), "proof_level": (rec.get("proof") or {}).get("level"),
