@@ -29,7 +29,8 @@ Notes:
 with these rules."""
 
 REPRODUCE_HINT = (" Register the reproduction with register_reproduction: the harness confirms that it fails on "
-                  "the original code and re-runs it on your final code.")
+                  "the original code and re-runs it on your final code (you never need to rebuild the original "
+                  "code yourself).")
 
 TASK = """<issue>
 {issue}

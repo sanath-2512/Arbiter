@@ -212,6 +212,33 @@ class ReproductionFlowTest(TempDirCase):
         self.assertEqual(result["proof"]["level"], "proven")
         self.assertEqual((self.repo / "calc/ops.py").read_text(), "def divide(a, b):\n    return a / b\n")
 
+    def test_attempt_with_a_passing_change_is_not_restarted_at_its_share(self):
+        """Live finding: with a slow provider the first attempt's time share ran out right after its
+        fix passed the tests; the harness reset to the original code and started again. A change whose
+        latest check passes keeps its attempt going instead."""
+        profile = test_profile(max_steps=10)
+        profile.policy.max_attempts, profile.policy.min_attempt_s, profile.policy.first_attempt_share = 2, 0.0, 0.3
+        idle = turn(tc("bash", command="echo looking"))
+        turns = [turn(FIX), turn(TEST), idle, idle, turn(SUBMIT)]
+        result, agent = run_agent(self.repo, turns, self.run_dir, profile=profile)
+        attempts = result["proof"]["attempts"]
+        self.assertEqual(len(attempts), 1, attempts)
+        self.assertEqual(attempts[0]["termination"], "model_submitted")
+        self.assertEqual(result["proof"]["level"], "proven")
+
+    def test_checks_run_on_a_scratch_copy_are_not_compared(self):
+        """Live finding: the model rebuilt the original code in the scratch directory and ran the tests
+        there; the harness then re-ran that command as a check of the repository and reported it as
+        'still failing' in the submit review."""
+        copy = self.run_dir.resolve() / "scratch" / "orig"
+        scratch_run = turn(tc("bash", command=f'd={copy}; mkdir -p "$d" && cp -r calc tests "$d"/ && '
+                                              f'cd "$d" && python3 -m unittest discover -s tests'))
+        result, _ = run_agent(self.repo, [turn(FIX), scratch_run, turn(TEST), turn(SUBMIT)], self.run_dir)
+        commands = [c["command"] for c in result["proof"]["comparisons"]]
+        self.assertTrue(commands)
+        self.assertFalse([c for c in commands if "scratch" in c], commands)
+        self.assertEqual(result["proof"]["level"], "proven")
+
     def test_small_budget_is_not_split_into_attempts_it_cannot_fund(self):
         """4 steps with up to 3 attempts: capping attempt 1 at 60% would end the run after 2 steps with
         nothing, since no fresh attempt fits in the 2 left. The only attempt keeps the whole budget."""
