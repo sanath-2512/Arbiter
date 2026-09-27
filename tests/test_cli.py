@@ -190,7 +190,9 @@ class CliTest(TempDirCase):
                            env=base_env(), timeout=120, stdin=subprocess.DEVNULL)
         self.assertEqual(p.returncode, 0, p.stderr[-2000:])
         (rec,) = self.records(p)
-        self.assertTrue(Path(rec["run_dir"]).is_relative_to(caller / "my runs"))
+        # macOS aliases /var to /private/var, so compare the physical location rather than its
+        # presentation. The functional contract is that OUT remains under the caller's directory.
+        self.assertTrue(Path(rec["run_dir"]).resolve().is_relative_to((caller / "my runs").resolve()))
         limits = json.loads((Path(rec["run_dir"]) / "profile.json").read_text())["limits"]
         self.assertEqual(limits["max_steps"], 7)
 

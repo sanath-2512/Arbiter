@@ -2,6 +2,7 @@
 reproductions and adaptive attempts (scripted model; deterministic)."""
 
 import json
+import shutil
 from unittest import mock
 
 from arbiter import proof
@@ -290,6 +291,8 @@ class ReproductionFlowTest(TempDirCase):
 
 class MemoryTest(TempDirCase):
     def test_second_run_on_the_same_repository_sees_verified_facts_only(self):
+        if shutil.which("pip") is None:
+            self.skipTest("pip is unavailable; failed install commands must not enter repository memory")
         repo = make_repo(self.tmp / "repo", CALC)
         git(repo, "remote", "add", "origin", "https://github.com/acme/calc.git")
         mem = self.tmp / "runs" / ".memory"
