@@ -1,6 +1,6 @@
 {
   "schema": "gheerefill.clean-machine/v1",
-  "commit": "9d09f7f9c82f",
+  "commit": "f57ff6a14ab6",
   "python": "3.13.12",
   "passed": 9,
   "total": 9,
@@ -8,14 +8,14 @@
     {
       "step": "setup",
       "ok": true,
-      "seconds": 0.0,
-      "detail": "make: Leaving directory '/tmp/ghee-clean.i4Wumu/gheerefill'"
+      "seconds": 1.0,
+      "detail": "make: Leaving directory '/tmp/ghee-clean.g8CRNx/gheerefill'"
     },
     {
       "step": "test",
       "ok": true,
-      "seconds": 213.0,
-      "detail": "Ran 282 tests"
+      "seconds": 206.0,
+      "detail": "Ran 310 tests"
     },
     {
       "step": "run: no AI_API_KEY",
@@ -32,13 +32,13 @@
     {
       "step": "run: invalid key",
       "ok": true,
-      "seconds": 1.0,
+      "seconds": 2.0,
       "detail": "rc=2: [issue-ebde4822] model request failed (authentication, attempt 1): invalid_request_error invalid_api_key Incorrect API key provided."
     },
     {
       "step": "run: ISSUE=text REPO=path",
       "ok": true,
-      "seconds": 6.0,
+      "seconds": 8.0,
       "detail": "judged: {\"artifact_valid\": true, \"solved\": true, \"p2p_failed\": [], \"empty_patch\": false, \"reason\": null}"
     },
     {
