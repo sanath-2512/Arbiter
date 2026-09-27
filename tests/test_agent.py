@@ -236,6 +236,21 @@ class AgentTest(TempDirCase):
         self.assertIn("ISSUE_FULL.md", shown)
         self.assertEqual((self.run_dir / "scratch" / "ISSUE_FULL.md").read_text(), issue)
 
+    def test_initial_protected_prompt_reserves_context_before_preloading(self):
+        # System/task messages cannot be compacted later. A narrow model window therefore has to
+        # keep the issue and optional localisation preload within the initial context budget.
+        huge_source = "def divide(a, b):\n    return a // b\n" + "# detail\n" * 1400
+        repo = make_repo(self.tmp / "narrow", {"calc/ops.py": huge_source, "calc/__init__.py": ""})
+        profile = test_profile(max_steps=2)
+        profile.model.context_window, profile.model.max_output_tokens = 5000, 1000
+        profile.policy.preload_chars = 4000
+        issue = "divide returns the wrong result. " * 400
+        _, agent = run_agent(repo, [turn(SUBMIT), turn(SUBMIT)], self.run_dir, profile=profile, issue=issue)
+        initial = agent.ctx.prepare(agent.transcript[:2])
+        self.assertLessEqual(agent.ctx.estimate(initial), agent.ctx.limit)
+        self.assertEqual(agent._preload_text, "")  # a partial source file must never consume the remaining budget
+        self.assertIn("ISSUE_FULL.md", initial[1]["content"])
+
     def test_integrity_observations(self):
         run_dir = self.run_dir
         turns = [turn(tc("bash", command=f"cat {run_dir}/evidence.jsonl; ls {run_dir}/scratch")),

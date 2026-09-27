@@ -23,7 +23,7 @@ from typing import Any, Callable
 from arbiter import __version__
 from arbiter.budget import Budget
 from arbiter.config import Profile
-from arbiter.context import ContextManager, estimate_tokens
+from arbiter.context import CHARS_PER_TOKEN, ContextManager, estimate_tokens
 from arbiter.evidence import (
     VerificationRecord,
     classify_output,
@@ -376,17 +376,13 @@ class Agent:
             overview += "\n" + tasktype.hint(self.task_type)
         if self.memory_root is not None:
             overview += memory.render(memory.load(self.memory_root, self.ws.repo))
+        loc: dict[str, Any] | None = None
         if self.profile.policy.localize:
             try:
                 listing = self.ws.git("ls-tree", "-r", "-z", "--name-only", self.base_tree).stdout
                 loc = locate.localize(self.task.issue, self.tools.repo,
                                       [f for f in listing.decode("utf-8", "replace").split("\0") if f])
                 overview += locate.render(loc)
-                if self.profile.policy.preload_chars:
-                    self._preload_text, loc["preloaded"] = locate.preload(loc, self.tools.repo,
-                                                                          self.profile.policy.preload_chars)
-                    overview += self._preload_text
-                atomic_write_json(self.run_dir / "localization.json", loc)
             except Exception as e:  # noqa: BLE001 - hints are optional
                 self.notes.append(f"localisation hints skipped: {type(e).__name__}: {e}")
         issue = self.task.issue.strip()
@@ -403,6 +399,38 @@ class Agent:
         self._system_msg = prompts.SYSTEM.format(repo=self.tools.repo, scratch=self.tools.scratch, reproduce=hint)
         if self.eval_tests:
             overview += prompts.evaluation_tests(self.eval_tests, self.eval_paths, self.task.repo_path)
+        # The first two messages are protected from context reduction. Keep them below the normal
+        # reduction threshold before adding preloaded source, otherwise a small model window could
+        # start with an oversized request that no later compaction can repair.
+        spec_tokens = estimate_tokens([{"content": json.dumps([s.parameters for s in self.specs])}])
+        usable_tokens = self.profile.model.context_window - min(
+            self.profile.model.max_output_tokens, self.profile.model.context_window // 2
+        ) - spec_tokens - 200
+        protected_chars = int(max(0, usable_tokens) * max(0.2, self.profile.policy.context_reduce_at) * 0.9
+                              * CHARS_PER_TOKEN)
+        task_overhead = len(self._system_msg) + len(prompts.TASK.format(issue="", overview=overview))
+        issue_room = protected_chars - task_overhead - 300
+        if len(issue) > max(0, issue_room):
+            full = self.tools.scratch / "ISSUE_FULL.md"
+            full.write_text(self.task.issue, encoding="utf-8")
+            if issue_room >= 400:
+                issue = (issue[: issue_room // 2] + f"\n\n[... issue shortened to keep the initial request within "
+                         f"the context budget; the complete text is in {full} ...]\n\n" + issue[-issue_room // 4:])
+            else:
+                issue = f"[Issue is in {full}; read it before editing.]"
+            self.notes.append("issue text shortened to keep the initial protected prompt within the context budget")
+        if loc is not None and self.profile.policy.preload_chars:
+            base_task = prompts.TASK.format(issue=issue, overview=overview)
+            preload_room = protected_chars - len(self._system_msg) - len(base_task) - 300
+            if preload_room > 0:
+                self._preload_text, loc["preloaded"] = locate.preload(
+                    loc, self.tools.repo, min(self.profile.policy.preload_chars, preload_room)
+                )
+                overview += self._preload_text
+            else:
+                loc["preloaded"] = []
+        if loc is not None:
+            atomic_write_json(self.run_dir / "localization.json", loc)
         self._task_msg = prompts.TASK.format(issue=issue, overview=overview)
         self._append({"role": "system", "content": self._system_msg})
         self._append({"role": "user", "content": self._task_msg})
