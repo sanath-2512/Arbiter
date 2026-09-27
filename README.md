@@ -11,10 +11,12 @@ running code, that:
 Then it exports a patch that is verified byte-for-byte, with an attestation anyone can re-check
 offline.
 
-> **Status:** implemented and deterministically tested: 282 tests (including an attack catalogue,
+> **Status:** implemented and deterministically tested: 310 tests (including an attack catalogue,
 > DeepSeek- and Qwen-like endpoint emulators, and real Go/Rust/Node/Ruby toolchains), 200
-> fault-injection seeds with 0 invariant violations, and scripted rehearsals on 22 real pinned
-> repository tasks. **First live runs** (free tiers, judged by hidden tests): DeepSeek V4.1-Flash 8/8 owned
+> fault-injection seeds with 0 invariant violations, scripted rehearsals on 22 real pinned
+> repository tasks, and a 46-task gauntlet (16 Rust, 13 JavaScript, 10 Python, 5 Go, 2 Ruby) run end
+> to end behind both emulators: 46/46 judged by hidden tests, ~5.6k tokens per task (scripted fixes:
+> a harness check, not a model result). **First live runs** (free tiers, judged by hidden tests): DeepSeek V4.1-Flash 8/8 owned
 > tasks and 9/10 real-repository tasks; Qwen 3.8-27B 4/4 owned tasks. Direct DeepSeek/DashScope keys
 > are not yet exercised. See [NOTES.md](NOTES.md) §12 and every claim with its evidence.
 
@@ -162,6 +164,9 @@ a self-hosted vLLM/SGLang/Ollama server, and a Qwen or DeepSeek coder is chosen 
 | **Provider tolerance** | Errors are classified and retried within bounds, deadline-aware and honouring Retry-After. The harness adapts to parameter rejections: an output-token cap, `max_tokens` vs `max_completion_tokens`, temperature. Restricted keys that cannot list models still work. Anthropic prompt caching is on. Streaming is optional. |
 | **Repository damage by the model** | `rm -rf .git`, `git init`, commits, branch switches, staging and `git stash` are undone: the target's `.git` is copied at start (objects hard-linked) and put back, HEAD and index are restored, a stash entry created during the run is removed, and a verified fix that was stashed away is still delivered. |
 | **Hostile inputs** | `$(shell ...)`, quotes and `$$` in `ISSUE=` are passed literally. Issues of megabytes are capped in the prompt and kept whole in a file. Tool-call floods are capped at 12 per reply. Terminal control sequences are cleaned. File-system refusals become tool errors. Lock files written by `cargo test` or `npm install` stay out of the patch. See `tests/test_attacks.py`. |
+| **Token economy** | Every request resends the conversation, so old material leaves it: only the 8–11 newest tool outputs are shown verbatim (older ones become a pointer that `read_output` expands), large arguments of old calls shrink to their size, old reasoning becomes a stub. Cut-offs advance in steps so the provider's cached prefix changes rarely. Build progress, passing-test lines, standard-library backtrace frames and repeated compiler warnings are folded out of command output (a failing `cargo test` view: 2.9k → 0.7k chars). A synthetic 40-step session needs 2.3× fewer input tokens than with the full history. |
+| **Context window** | Requests stay inside the model's window: stepped reductions, then compaction, then the newest outputs cut (head and tail kept) only if nothing else fits. A provider's overflow error lowers the working window. Tested behind a provider that rejects anything over 9k tokens while the model reads six large files. |
+| **Rust** | A background `cargo test --no-run` while the model reads (with an `--offline` retry and a one-line note to the model), 600 s default timeouts for build commands, a `rustfmt` parse guard on `.rs` edits (also gofmt, node, ruby), `cargo test -q` and doc-test failure names, workspace-aware hints, module/test relations in localisation, lock files from builds kept out of patches. |
 | **Parallel runs** | Concurrent runs never share a workspace clone (per-clone lock), and each has its own run directory. |
 | **Safe repository memory** | Later runs on the same repository see facts the harness *observed by execution*: test commands that ran, and installs that succeeded. Never code, patches or issue text. |
 
@@ -184,12 +189,14 @@ a self-hosted vLLM/SGLang/Ollama server, and a Qwen or DeepSeek coder is chosen 
 - **Limits:** per-task limits from the evaluator take precedence over the profile. `TIME_LIMIT` and
   `MAX_STEPS` on the command line win over both.
 
-## Development evaluation (dev only; needs live credentials)
+## Development evaluation
 
 ```bash
+python3 scripts/eval.py --validate-suite              # every hidden test fails on base, passes on reference
+make gauntlet                                         # LIVE (AI_API_KEY): 46 tasks, Rust/JS/Python/Go/Ruby
+make gauntlet-offline                                 # offline: the same tasks behind DeepSeek and Qwen emulators
 make baseline-setup                                   # pinned mini-swe-agent 2.4.6 + Pi 0.73.1
-python3 scripts/eval.py --validate-suite              # hidden tests fail on base, pass on reference
-make eval SYSTEMS=ours,mini,pi                         # same model, same limits, same tasks
+make eval SYSTEMS=ours,mini,pi                         # LIVE: same model, same limits, same tasks
 ```
 
 The summary reports:
@@ -198,8 +205,10 @@ The summary reports:
 - a paired sign test against each baseline;
 - a calibration table: how often each proof level was confirmed by the hidden tests.
 
-`evalsuite/` holds 8 owned tasks (Python, JS, Go) with judge-owned hidden tests, split into dev,
-selection and final partitions.
+`evalsuite/` holds 48 owned tasks with judge-owned hidden tests: the 40-task `gauntlet` partition
+(`scripts/make_gauntlet.py`: 16 Rust, 12 JavaScript, 6 Python, 4 Go, 2 Ruby) and 8 earlier tasks split
+into dev, selection and final (holdout). Per-run terminal logs, results and summaries of the offline
+gauntlet are in `rehearsal/results/gauntlet46-{deepseek,qwen}/`.
 
 ## Layout
 

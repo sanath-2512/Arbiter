@@ -308,3 +308,38 @@ Problems observed live and fixed (each with a regression test that fails without
 5. **Scratch copies were compared as checks.** A command that `cd`s into a copy in the run/scratch
    directory is no longer re-run as a check of the repository; the reproduction hint says the harness
    runs it on the original code, so the model need not rebuild the original itself.
+
+## 13. Round 2026-09-27: Rust, the context window, tokens, and a 46-task gauntlet
+
+Integrated first: Aryan Bhargava's context statistics and pressure-time argument compaction, and the
+live-run fixes of §12 (merged from `harness-fixes-live-testing`).
+
+**What changed, and the evidence for each** (all in `make test`, 310 tests):
+
+| Change | Evidence |
+|---|---|
+| Observation window: 8 newest tool outputs verbatim (+ up to 3 until the next step of 4); older ones become a `read_output` pointer; old call arguments keep their keys, long strings shrink to their size | synthetic 40-step session: 2.37M → 1.03M estimated input tokens (`tests/test_context.py`); prefix changes ≤ once per step |
+| Old reasoning: 2 newest turns full, cut-off advancing every 4 turns (was 4 / 8) | cache-stability test bound |
+| Hard window: after the stepped passes, the newest outputs are cut to fit (head and tail kept) instead of the request failing | provider limited to 9k tokens, six large files read: solved, ≤ 1 rejection (`tests/test_provider_emulation.py`) |
+| Output folding: build progress, passing-test lines (cargo, pytest -v, go -v, unittest -v, TAP), std-library backtrace frames, compiler warnings after the first two; line numbers of folded ranges kept for `read_output` | failing `cargo test` view 2,899 → 688 chars (`tests/test_token_economy.py`) |
+| Tool schemas 4.6k → 3.8k chars; system prompt asks for brief replies and batched independent reads | per-request overhead −0.5k chars |
+| Rust: background pre-build (`cargo test --no-run`, `--offline` retry, one note to the model), 600 s build timeouts, `rustfmt` parse guard (also `gofmt -e`, `node --check`, `ruby -c`), cargo `-q`/doc-test failure names, workspace and name-filter hints, module/test relations, `CARGO_TERM_COLOR=never` and fast network failure | `tests/test_prewarm.py`, `tests/test_token_economy.py`, real cargo fixtures in `tests/fixtures/runners/`, `tests/test_locate.py` |
+| New root lock files (Cargo.lock from the first build, package-lock.json, …) are outside every snapshot | a pre-build leaves the snapshot identical to the base (`tests/test_prewarm.py`) |
+| NVIDIA NIM and OpenRouter preference lists: DeepSeek/Qwen only | `tests/test_resolution_families.py` |
+
+**Gauntlet** (`evalsuite/`, 46 non-holdout tasks: 16 Rust, 13 JavaScript, 10 Python, 5 Go, 2 Ruby; every
+hidden test validated to fail on the base and pass on the reference). Offline, the model replays the
+reference fix through the unchanged harness behind each emulator, and each result is judged by the
+hidden tests on a clean base:
+
+| Emulated family | Judged pass | Checks passed | Provider-rule rejections | Quirks repaired | Tokens / task (est.) | Requests / task |
+|---|---|---|---|---|---|---|
+| DeepSeek | 46/46 | 46/46 | 0 | 66 | 5,692 | 5.5 |
+| Qwen | 46/46 | 46/46 | 0 | 238 | 5,551 | 5.0 |
+
+This checks the pipeline (tools, toolchains, pre-build, evidence, export, judge) and measures the
+harness's overhead; the scripted model knows the fix, so it says nothing about solve rate. Tokens are
+the emulator's estimate (characters / 4 of the messages). Logs: `rehearsal/results/gauntlet46-*`.
+Live: `make gauntlet` with `AI_API_KEY` (and `AI_MODEL` to pick a model on an aggregator key). This
+environment still cannot reach the model providers, so no live run was made in this round.
+

@@ -1,0 +1,622 @@
+
+===== calc-divide =====
+[calc-divide] sandbox: active — a sandboxed child could not read a parent process's environment
+[calc-divide] target .git copy: kept
+[calc-divide] base tree 33b2fa77790d · repo <out>/work/calc-divide/ours-0/repo · model emulated (openai_chat) · limits 600s/40 steps
+[calc-divide] step 1 · read_file {"path": "calc/ops.py"} → ok
+[calc-divide] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[calc-divide] step 2 · write_file {"path": "calc/ops.py", "content": "\"\"\"Small arithmetic helpers.\"… → ok
+[calc-divide] step 3 · bash python3 -m unittest discover -s tests → ok exit=0
+[calc-divide] harness check on the original code: python3 -m unittest discover -s tests → passed
+[calc-divide] attempt 1 ended (model_submitted): candidate 7f5c7cbe7a2e · evidence passing
+[calc-divide] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-go-initials =====
+[g-go-initials] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-go-initials] target .git copy: kept
+[g-go-initials] base tree 95a812dd8bf0 · repo <out>/work/g-go-initials/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-go-initials] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-go-initials] step 1 · read_file {"path": "lib.go"} → ok
+[g-go-initials] step 2 · edit_file {"path": "lib.go", "old_str": "\tfor _, w := range strings.Split(name… → ok
+[g-go-initials] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-go-initials] step 3 · bash go test ./... → ok exit=0
+[g-go-initials] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-go-initials] harness check on the original code: go test ./... → passed
+[g-go-initials] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-go-initials] attempt 1 ended (model_submitted): candidate 52eb53ac641b · evidence passing
+[g-go-initials] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-go-max =====
+[g-go-max] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-go-max] target .git copy: kept
+[g-go-max] base tree de853a322d2c · repo <out>/work/g-go-max/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-go-max] step 1 · read_file {"path": "lib.go"} → ok
+[g-go-max] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-go-max] step 2 · edit_file {"path": "lib.go", "old_str": "\tm := xs[0]\n", "new_str": "\tif len(… → ok
+[g-go-max] step 3 · bash go test ./... → ok exit=0
+[g-go-max] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-go-max] harness check on the original code: go test ./... → passed
+[g-go-max] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-go-max] attempt 1 ended (model_submitted): candidate 12e692943d68 · evidence passing
+[g-go-max] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-go-reverse =====
+[g-go-reverse] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-go-reverse] target .git copy: kept
+[g-go-reverse] base tree a3c9b2afb36e · repo <out>/work/g-go-reverse/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-go-reverse] step 1 · read_file {"path": "lib.go"} → ok
+[g-go-reverse] step 2 · edit_file {"path": "lib.go", "old_str": "\tb := []byte(s)\n", "new_str": "\tb :… → ok
+[g-go-reverse] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-go-reverse] step 3 · bash go test ./... → ok exit=0
+[g-go-reverse] harness check on the original code: go test ./... → passed
+[g-go-reverse] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-go-reverse] attempt 1 ended (model_submitted): candidate d2d19b796b3b · evidence passing
+[g-go-reverse] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-go-sum-positive =====
+[g-go-sum-positive] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-go-sum-positive] target .git copy: kept
+[g-go-sum-positive] base tree 845b735e1e6f · repo <out>/work/g-go-sum-positive/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-go-sum-positive] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-go-sum-positive] step 1 · read_file {"path": "lib.go"} → ok
+[g-go-sum-positive] step 2 · edit_file {"path": "lib.go", "old_str": "\t\ttotal += x\n", "new_str": "\t\tif … → ok
+[g-go-sum-positive] step 3 · bash go test ./... → ok exit=0
+[g-go-sum-positive] harness check on the original code: go test ./... → passed
+[g-go-sum-positive] attempt 1 ended (model_submitted): candidate fd8ba4decdb6 · evidence passing
+[g-go-sum-positive] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-js-cents =====
+[g-js-cents] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-js-cents] target .git copy: kept
+[g-js-cents] base tree 100c96997acb · repo <out>/work/g-js-cents/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-js-cents] step 1 · read_file {"path": "src/sum.js"} → ok
+[g-js-cents] step 2 · edit_file {"path": "src/sum.js", "old_str": " return prices.reduce((a, b) => a … → ok
+[g-js-cents] step 3 · bash node --test → ok exit=0
+[g-js-cents] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-js-cents] harness check on the original code: node --test → passed
+[g-js-cents] attempt 1 ended (model_submitted): candidate 67b99d84f335 · evidence passing
+[g-js-cents] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-js-chunk =====
+[g-js-chunk] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-js-chunk] target .git copy: kept
+[g-js-chunk] base tree 1235dce5af1e · repo <out>/work/g-js-chunk/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-js-chunk] step 1 · read_file {"path": "src/chunk.js"} → ok
+[g-js-chunk] step 2 · edit_file {"path": "src/chunk.js", "old_str": " for (let i = 0; i + size <= xs.… → ok
+[g-js-chunk] step 3 · bash node --test → ok exit=0
+[g-js-chunk] harness check on the original code: node --test → passed
+[g-js-chunk] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-js-chunk] attempt 1 ended (model_submitted): candidate 678d5405b5de · evidence passing
+[g-js-chunk] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-js-deep-equal =====
+[g-js-deep-equal] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-js-deep-equal] target .git copy: kept
+[g-js-deep-equal] base tree d2c387afcb1e · repo <out>/work/g-js-deep-equal/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-js-deep-equal] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-js-deep-equal] step 1 · read_file {"path": "src/equal.js"} → ok
+[g-js-deep-equal] step 2 · edit_file {"path": "src/equal.js", "old_str": " for (const k of Object.keys(a))… → ok
+[g-js-deep-equal] step 3 · bash node --test → ok exit=0
+[g-js-deep-equal] harness check on the original code: node --test → passed
+[g-js-deep-equal] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-js-deep-equal] attempt 1 ended (model_submitted): candidate cc33ed3c2910 · evidence passing
+[g-js-deep-equal] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-js-format-time =====
+[g-js-format-time] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-js-format-time] target .git copy: kept
+[g-js-format-time] base tree ffc144a655f9 · repo <out>/work/g-js-format-time/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-js-format-time] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-js-format-time] step 1 · read_file {"path": "src/time.js"} → ok
+[g-js-format-time] step 2 · edit_file {"path": "src/time.js", "old_str": " return `${m}:${s}`;\n", "new_str… → ok
+[g-js-format-time] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-js-format-time] step 3 · bash node --test → ok exit=0
+[g-js-format-time] harness check on the original code: node --test → passed
+[g-js-format-time] attempt 1 ended (model_submitted): candidate 4fd88a224ce5 · evidence passing
+[g-js-format-time] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-js-get-path =====
+[g-js-get-path] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-js-get-path] target .git copy: kept
+[g-js-get-path] base tree 3a54f190073d · repo <out>/work/g-js-get-path/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-js-get-path] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-js-get-path] step 1 · read_file {"path": "src/get.js"} → ok
+[g-js-get-path] step 2 · edit_file {"path": "src/get.js", "old_str": " cur = cur[key];\n", "new_str": " … → ok
+[g-js-get-path] step 3 · bash node --test → ok exit=0
+[g-js-get-path] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-js-get-path] harness check on the original code: node --test → passed
+[g-js-get-path] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-js-get-path] attempt 1 ended (model_submitted): candidate 2caf179672f2 · evidence passing
+[g-js-get-path] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-js-numeric-sort =====
+[g-js-numeric-sort] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-js-numeric-sort] target .git copy: kept
+[g-js-numeric-sort] base tree a490938cf5da · repo <out>/work/g-js-numeric-sort/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-js-numeric-sort] step 1 · read_file {"path": "src/sort.js"} → ok
+[g-js-numeric-sort] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-js-numeric-sort] step 2 · edit_file {"path": "src/sort.js", "old_str": " return [...xs].sort();\n", "new_… → ok
+[g-js-numeric-sort] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-js-numeric-sort] step 3 · bash node --test → ok exit=0
+[g-js-numeric-sort] harness check on the original code: node --test → passed
+[g-js-numeric-sort] attempt 1 ended (model_submitted): candidate f4b7ddc4addd · evidence passing
+[g-js-numeric-sort] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-js-query =====
+[g-js-query] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-js-query] target .git copy: kept
+[g-js-query] base tree 9543d1b19623 · repo <out>/work/g-js-query/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-js-query] step 1 · read_file {"path": "src/query.js"} → ok
+[g-js-query] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-js-query] step 2 · edit_file {"path": "src/query.js", "old_str": " out[k] = v;\n", "new_str": " co… → ok
+[g-js-query] step 3 · bash node --test → ok exit=0
+[g-js-query] harness check on the original code: node --test → passed
+[g-js-query] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-js-query] attempt 1 ended (model_submitted): candidate e3f617032f30 · evidence passing
+[g-js-query] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-js-range =====
+[g-js-range] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-js-range] target .git copy: kept
+[g-js-range] base tree d496b7c25b53 · repo <out>/work/g-js-range/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-js-range] step 1 · read_file {"path": "src/range.js"} → ok
+[g-js-range] step 2 · edit_file {"path": "src/range.js", "old_str": " for (let i = start; i < end; i+… → ok
+[g-js-range] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-js-range] step 3 · bash node --test → ok exit=0
+[g-js-range] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-js-range] harness check on the original code: node --test → passed
+[g-js-range] attempt 1 ended (model_submitted): candidate af4d3c684d0f · evidence passing
+[g-js-range] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-js-retry =====
+[g-js-retry] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-js-retry] target .git copy: kept
+[g-js-retry] base tree 4a63aed4e0e8 · repo <out>/work/g-js-retry/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-js-retry] step 1 · read_file {"path": "src/retry.js"} → ok
+[g-js-retry] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-js-retry] step 2 · edit_file {"path": "src/retry.js", "old_str": " for (let i = 1; i < attempts; i… → ok
+[g-js-retry] step 3 · bash node --test → ok exit=0
+[g-js-retry] harness check on the original code: node --test → passed
+[g-js-retry] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-js-retry] attempt 1 ended (model_submitted): candidate 1ce9d0826234 · evidence passing
+[g-js-retry] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-js-title-case =====
+[g-js-title-case] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-js-title-case] target .git copy: kept
+[g-js-title-case] base tree 8fd6166d95bd · repo <out>/work/g-js-title-case/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-js-title-case] step 1 · read_file {"path": "src/title.js"} → ok
+[g-js-title-case] step 2 · edit_file {"path": "src/title.js", "old_str": " return s.split(' ').filter(Bool… → ok
+[g-js-title-case] step 3 · bash node --test → ok exit=0
+[g-js-title-case] harness check on the original code: node --test → passed
+[g-js-title-case] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-js-title-case] attempt 1 ended (model_submitted): candidate da7dc86c4d72 · evidence passing
+[g-js-title-case] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-js-truncate =====
+[g-js-truncate] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-js-truncate] target .git copy: kept
+[g-js-truncate] base tree 0f9824e6e69f · repo <out>/work/g-js-truncate/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-js-truncate] step 1 · read_file {"path": "src/truncate.js"} → ok
+[g-js-truncate] step 2 · edit_file {"path": "src/truncate.js", "old_str": " return s.slice(0, max) + '..… → ok
+[g-js-truncate] step 3 · bash node --test → ok exit=0
+[g-js-truncate] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-js-truncate] harness check on the original code: node --test → passed
+[g-js-truncate] attempt 1 ended (model_submitted): candidate e49eaa61a256 · evidence passing
+[g-js-truncate] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-js-unique-by =====
+[g-js-unique-by] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-js-unique-by] target .git copy: kept
+[g-js-unique-by] base tree e20e11dc34c4 · repo <out>/work/g-js-unique-by/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-js-unique-by] step 1 · read_file {"path": "src/unique.js"} → ok
+[g-js-unique-by] step 2 · edit_file {"path": "src/unique.js", "old_str": " for (const it of items) m.set(… → ok
+[g-js-unique-by] step 3 · bash node --test → ok exit=0
+[g-js-unique-by] harness check on the original code: node --test → passed
+[g-js-unique-by] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-js-unique-by] attempt 1 ended (model_submitted): candidate 6e70d040dab3 · evidence passing
+[g-js-unique-by] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-py-chunks =====
+[g-py-chunks] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-py-chunks] target .git copy: kept
+[g-py-chunks] base tree 08402e680925 · repo <out>/work/g-py-chunks/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-py-chunks] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-py-chunks] step 1 · read_file {"path": "util/core.py"} → ok
+[g-py-chunks] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-py-chunks] step 2 · edit_file {"path": "util/core.py", "old_str": " return [xs[i:i + n] for i in ra… → ok
+[g-py-chunks] step 3 · bash python3 -m unittest discover -s tests -t . → ok exit=0
+[g-py-chunks] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-py-chunks] harness check on the original code: python3 -m unittest discover -s tests -t . → passed
+[g-py-chunks] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-py-chunks] attempt 1 ended (model_submitted): candidate f575bc855d0e · evidence passing
+[g-py-chunks] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-py-flatten =====
+[g-py-flatten] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-py-flatten] target .git copy: kept
+[g-py-flatten] base tree df3b1eba6f40 · repo <out>/work/g-py-flatten/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-py-flatten] step 1 · read_file {"path": "lists/core.py"} → ok
+[g-py-flatten] step 2 · edit_file {"path": "lists/core.py", "old_str": " out.extend(x)\n", "new_str": "… → ok
+[g-py-flatten] step 3 · bash python3 -m unittest discover -s tests -t . → ok exit=0
+[g-py-flatten] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-py-flatten] harness check on the original code: python3 -m unittest discover -s tests -t . → passed
+[g-py-flatten] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-py-flatten] attempt 1 ended (model_submitted): candidate 32b3798a6196 · evidence passing
+[g-py-flatten] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-py-median =====
+[g-py-median] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-py-median] target .git copy: kept
+[g-py-median] base tree 68301df7340f · repo <out>/work/g-py-median/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-py-median] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-py-median] step 1 · read_file {"path": "stats/core.py"} → ok
+[g-py-median] step 2 · edit_file {"path": "stats/core.py", "old_str": " return v[len(v) // 2]\n", "new… → ok
+[g-py-median] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-py-median] step 3 · bash python3 -m unittest discover -s tests -t . → ok exit=0
+[g-py-median] harness check on the original code: python3 -m unittest discover -s tests -t . → passed
+[g-py-median] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-py-median] attempt 1 ended (model_submitted): candidate 13bc4e5595e0 · evidence passing
+[g-py-median] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-py-merge-intervals =====
+[g-py-merge-intervals] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-py-merge-intervals] target .git copy: kept
+[g-py-merge-intervals] base tree a930890bb831 · repo <out>/work/g-py-merge-intervals/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-py-merge-intervals] step 1 · read_file {"path": "intervals/core.py"} → ok
+[g-py-merge-intervals] step 2 · edit_file {"path": "intervals/core.py", "old_str": " for s, e in intervals:\n",… → ok
+[g-py-merge-intervals] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-py-merge-intervals] step 3 · bash python3 -m unittest discover -s tests -t . → ok exit=0
+[g-py-merge-intervals] harness check on the original code: python3 -m unittest discover -s tests -t . → passed
+[g-py-merge-intervals] attempt 1 ended (model_submitted): candidate 8a59161dd104 · evidence passing
+[g-py-merge-intervals] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-py-percent =====
+[g-py-percent] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-py-percent] target .git copy: kept
+[g-py-percent] base tree 58c02737d381 · repo <out>/work/g-py-percent/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-py-percent] step 1 · read_file {"path": "fmt/core.py"} → ok
+[g-py-percent] step 2 · edit_file {"path": "fmt/core.py", "old_str": " return f'{part * 100 // total:.1… → ok
+[g-py-percent] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-py-percent] step 3 · bash python3 -m unittest discover -s tests -t . → ok exit=0
+[g-py-percent] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-py-percent] harness check on the original code: python3 -m unittest discover -s tests -t . → passed
+[g-py-percent] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-py-percent] attempt 1 ended (model_submitted): candidate 67a77fa4dd11 · evidence passing
+[g-py-percent] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-py-safe-int =====
+[g-py-safe-int] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-py-safe-int] target .git copy: kept
+[g-py-safe-int] base tree b86307a03172 · repo <out>/work/g-py-safe-int/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-py-safe-int] step 1 · read_file {"path": "conv/core.py"} → ok
+[g-py-safe-int] step 2 · edit_file {"path": "conv/core.py", "old_str": " return int(s)\n", "new_str": " … → ok
+[g-py-safe-int] step 3 · bash python3 -m unittest discover -s tests -t . → ok exit=0
+[g-py-safe-int] harness check on the original code: python3 -m unittest discover -s tests -t . → passed
+[g-py-safe-int] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-py-safe-int] attempt 1 ended (model_submitted): candidate 9d1925446e70 · evidence passing
+[g-py-safe-int] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rb-average =====
+[g-rb-average] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rb-average] target .git copy: kept
+[g-rb-average] base tree 7b1fb52d5eab · repo <out>/work/g-rb-average/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rb-average] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rb-average] step 1 · read_file {"path": "lib/lib.rb"} → ok
+[g-rb-average] step 2 · edit_file {"path": "lib/lib.rb", "old_str": " xs.sum / xs.size\n", "new_str": "… → ok
+[g-rb-average] step 3 · bash ruby -Ilib test/test_lib.rb → ok exit=0
+[g-rb-average] harness check on the original code: ruby -Ilib test/test_lib.rb → passed
+[g-rb-average] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rb-average] attempt 1 ended (model_submitted): candidate b97e6e115278 · evidence passing
+[g-rb-average] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rb-pluralize =====
+[g-rb-pluralize] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rb-pluralize] target .git copy: kept
+[g-rb-pluralize] base tree f618f9ae3a2a · repo <out>/work/g-rb-pluralize/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rb-pluralize] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rb-pluralize] step 1 · read_file {"path": "lib/lib.rb"} → ok
+[g-rb-pluralize] step 2 · edit_file {"path": "lib/lib.rb", "old_str": " word + 's'\n", "new_str": " word.… → ok
+[g-rb-pluralize] step 3 · bash ruby -Ilib test/test_lib.rb → ok exit=0
+[g-rb-pluralize] harness check on the original code: ruby -Ilib test/test_lib.rb → passed
+[g-rb-pluralize] attempt 1 ended (model_submitted): candidate 7f2c64f35874 · evidence passing
+[g-rb-pluralize] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rs-bank =====
+[g-rs-bank] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rs-bank] target .git copy: kept
+[g-rs-bank] pre-build started in the background: cargo test --no-run
+[g-rs-bank] base tree 2660ba0675ee · repo <out>/work/g-rs-bank/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rs-bank] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-bank] step 1 · read_file {"path": "src/lib.rs"} → ok
+[g-rs-bank] step 2 · edit_file {"path": "src/lib.rs", "old_str": " self.balance -= amount;\n", "new_… → ok
+[g-rs-bank] pre-build: cargo test --no-run → exit 0 in 0.2s
+[g-rs-bank] step 3 · bash cargo test --offline → ok exit=0
+[g-rs-bank] harness check on the original code: cargo test --offline → passed
+[g-rs-bank] attempt 1 ended (model_submitted): candidate 7e09b29f467c · evidence passing
+[g-rs-bank] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rs-checked-ratio =====
+[g-rs-checked-ratio] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rs-checked-ratio] target .git copy: kept
+[g-rs-checked-ratio] pre-build started in the background: cargo test --no-run
+[g-rs-checked-ratio] base tree 31fb5d1e9eab · repo <out>/work/g-rs-checked-ratio/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rs-checked-ratio] step 1 · read_file {"path": "src/lib.rs"} → ok
+[g-rs-checked-ratio] step 2 · edit_file {"path": "src/lib.rs", "old_str": " Some(a / b)\n", "new_str": " if b… → ok
+[g-rs-checked-ratio] pre-build: cargo test --no-run → exit 0 in 0.2s
+[g-rs-checked-ratio] step 3 · bash cargo test --offline → ok exit=0
+[g-rs-checked-ratio] harness check on the original code: cargo test --offline → passed
+[g-rs-checked-ratio] attempt 1 ended (model_submitted): candidate 6acd1a4ff91b · evidence passing
+[g-rs-checked-ratio] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rs-clamp =====
+[g-rs-clamp] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rs-clamp] target .git copy: kept
+[g-rs-clamp] pre-build started in the background: cargo test --no-run
+[g-rs-clamp] base tree a48180dad3ff · repo <out>/work/g-rs-clamp/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rs-clamp] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-clamp] step 1 · read_file {"path": "src/lib.rs"} → ok
+[g-rs-clamp] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-rs-clamp] step 2 · edit_file {"path": "src/lib.rs", "old_str": " } else if v > hi {\n lo\n", "new_… → ok
+[g-rs-clamp] pre-build: cargo test --no-run → exit 0 in 0.2s
+[g-rs-clamp] step 3 · bash cargo test --offline → ok exit=0
+[g-rs-clamp] harness check on the original code: cargo test --offline → passed
+[g-rs-clamp] attempt 1 ended (model_submitted): candidate 94128700ad73 · evidence passing
+[g-rs-clamp] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rs-duration =====
+[g-rs-duration] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rs-duration] target .git copy: kept
+[g-rs-duration] pre-build started in the background: cargo test --no-run
+[g-rs-duration] base tree 94f3c6c7252f · repo <out>/work/g-rs-duration/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rs-duration] step 1 · read_file {"path": "src/lib.rs"} → ok
+[g-rs-duration] step 2 · edit_file {"path": "src/lib.rs", "old_str": " 'm' => n * 3600,\n", "new_str": "… → ok
+[g-rs-duration] pre-build: cargo test --no-run → exit 0 in 0.3s
+[g-rs-duration] step 3 · bash cargo test --offline → ok exit=0
+[g-rs-duration] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-rs-duration] harness check on the original code: cargo test --offline → passed
+[g-rs-duration] attempt 1 ended (model_submitted): candidate 8ba1c404eb00 · evidence passing
+[g-rs-duration] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rs-fahrenheit =====
+[g-rs-fahrenheit] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rs-fahrenheit] target .git copy: kept
+[g-rs-fahrenheit] pre-build started in the background: cargo test --no-run
+[g-rs-fahrenheit] base tree 98519e75996d · repo <out>/work/g-rs-fahrenheit/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rs-fahrenheit] step 1 · read_file {"path": "src/lib.rs"} → ok
+[g-rs-fahrenheit] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-rs-fahrenheit] step 2 · edit_file {"path": "src/lib.rs", "old_str": " (c as i64 * 9 / 5 + 32) as f64\n"… → ok
+[g-rs-fahrenheit] pre-build: cargo test --no-run → exit 0 in 0.2s
+[g-rs-fahrenheit] step 3 · bash cargo test --offline → ok exit=0
+[g-rs-fahrenheit] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-fahrenheit] harness check on the original code: cargo test --offline → passed
+[g-rs-fahrenheit] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-fahrenheit] attempt 1 ended (model_submitted): candidate d4be6174f3e8 · evidence passing
+[g-rs-fahrenheit] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rs-fields =====
+[g-rs-fields] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rs-fields] target .git copy: kept
+[g-rs-fields] pre-build started in the background: cargo test --no-run
+[g-rs-fields] base tree d3c5e71f9b67 · repo <out>/work/g-rs-fields/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rs-fields] step 1 · read_file {"path": "src/lib.rs"} → ok
+[g-rs-fields] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-fields] step 2 · edit_file {"path": "src/lib.rs", "old_str": " line.split(',').map(|f| f.to_stri… → ok
+[g-rs-fields] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-rs-fields] pre-build: cargo test --no-run → exit 0 in 0.3s
+[g-rs-fields] step 3 · bash cargo test --offline → ok exit=0
+[g-rs-fields] harness check on the original code: cargo test --offline → passed
+[g-rs-fields] attempt 1 ended (model_submitted): candidate 017d27c47ee9 · evidence passing
+[g-rs-fields] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rs-fizzbuzz =====
+[g-rs-fizzbuzz] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rs-fizzbuzz] target .git copy: kept
+[g-rs-fizzbuzz] pre-build started in the background: cargo test --no-run
+[g-rs-fizzbuzz] base tree 9fd4e84efe9c · repo <out>/work/g-rs-fizzbuzz/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rs-fizzbuzz] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-fizzbuzz] step 1 · read_file {"path": "src/lib.rs"} → ok
+[g-rs-fizzbuzz] step 2 · edit_file {"path": "src/lib.rs", "old_str": " (1..n)\n", "new_str": " (1..=n)\n… → ok
+[g-rs-fizzbuzz] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-rs-fizzbuzz] pre-build: cargo test --no-run → exit 0 in 0.3s
+[g-rs-fizzbuzz] step 3 · bash cargo test --offline → ok exit=0
+[g-rs-fizzbuzz] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-rs-fizzbuzz] harness check on the original code: cargo test --offline → passed
+[g-rs-fizzbuzz] attempt 1 ended (model_submitted): candidate 4b3a58e3eecb · evidence passing
+[g-rs-fizzbuzz] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rs-leap =====
+[g-rs-leap] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rs-leap] target .git copy: kept
+[g-rs-leap] pre-build started in the background: cargo test --no-run
+[g-rs-leap] base tree 441751204953 · repo <out>/work/g-rs-leap/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rs-leap] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-leap] step 1 · read_file {"path": "src/lib.rs"} → ok
+[g-rs-leap] step 2 · edit_file {"path": "src/lib.rs", "old_str": " year % 4 == 0 && year % 100 != 0\… → ok
+[g-rs-leap] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-leap] pre-build: cargo test --no-run → exit 0 in 0.2s
+[g-rs-leap] step 3 · bash cargo test --offline → ok exit=0
+[g-rs-leap] harness check on the original code: cargo test --offline → passed
+[g-rs-leap] attempt 1 ended (model_submitted): candidate 76c41e1db5aa · evidence passing
+[g-rs-leap] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rs-median =====
+[g-rs-median] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rs-median] target .git copy: kept
+[g-rs-median] pre-build started in the background: cargo test --no-run
+[g-rs-median] base tree 3795228dd9f6 · repo <out>/work/g-rs-median/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rs-median] step 1 · read_file {"path": "src/lib.rs"} → ok
+[g-rs-median] step 2 · edit_file {"path": "src/lib.rs", "old_str": " Some(v[n / 2])\n", "new_str": " i… → ok
+[g-rs-median] pre-build: cargo test --no-run → exit 0 in 0.3s
+[g-rs-median] step 3 · bash cargo test --offline → ok exit=0
+[g-rs-median] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-median] harness check on the original code: cargo test --offline → passed
+[g-rs-median] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-median] attempt 1 ended (model_submitted): candidate 1d7c97460500 · evidence passing
+[g-rs-median] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rs-roman =====
+[g-rs-roman] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rs-roman] target .git copy: kept
+[g-rs-roman] pre-build started in the background: cargo test --no-run
+[g-rs-roman] base tree 6b8168d00174 · repo <out>/work/g-rs-roman/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rs-roman] step 1 · read_file {"path": "src/lib.rs"} → ok
+[g-rs-roman] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-roman] step 2 · edit_file {"path": "src/lib.rs", "old_str": " let table = [(1000, \"M\"), (500,… → ok
+[g-rs-roman] pre-build: cargo test --no-run → exit 0 in 0.2s
+[g-rs-roman] step 3 · bash cargo test --offline → ok exit=0
+[g-rs-roman] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-roman] harness check on the original code: cargo test --offline → passed
+[g-rs-roman] attempt 1 ended (model_submitted): candidate 9f924e96b6b7 · evidence passing
+[g-rs-roman] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rs-slug =====
+[g-rs-slug] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rs-slug] target .git copy: kept
+[g-rs-slug] pre-build started in the background: cargo test --no-run
+[g-rs-slug] base tree 5a9c4320d443 · repo <out>/work/g-rs-slug/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rs-slug] step 1 · read_file {"path": "src/lib.rs"} → ok
+[g-rs-slug] step 2 · edit_file {"path": "src/lib.rs", "old_str": " s.to_lowercase().replace(' ', \"-… → ok
+[g-rs-slug] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-rs-slug] pre-build: cargo test --no-run → exit 0 in 0.3s
+[g-rs-slug] step 3 · bash cargo test --offline → ok exit=0
+[g-rs-slug] harness check on the original code: cargo test --offline → passed
+[g-rs-slug] attempt 1 ended (model_submitted): candidate e12762a9c780 · evidence passing
+[g-rs-slug] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rs-stack-pop =====
+[g-rs-stack-pop] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rs-stack-pop] target .git copy: kept
+[g-rs-stack-pop] pre-build started in the background: cargo test --no-run
+[g-rs-stack-pop] base tree b6794f7ed462 · repo <out>/work/g-rs-stack-pop/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rs-stack-pop] step 1 · read_file {"path": "src/lib.rs"} → ok
+[g-rs-stack-pop] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-stack-pop] step 2 · edit_file {"path": "src/lib.rs", "old_str": " Some(self.items.pop().unwrap())\n… → ok
+[g-rs-stack-pop] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-rs-stack-pop] pre-build: cargo test --no-run → exit 0 in 0.2s
+[g-rs-stack-pop] step 3 · bash cargo test --offline → ok exit=0
+[g-rs-stack-pop] harness check on the original code: cargo test --offline → passed
+[g-rs-stack-pop] attempt 1 ended (model_submitted): candidate 97172b6b64cc · evidence passing
+[g-rs-stack-pop] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rs-transpose =====
+[g-rs-transpose] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rs-transpose] target .git copy: kept
+[g-rs-transpose] pre-build started in the background: cargo test --no-run
+[g-rs-transpose] base tree 97665bdcb3cf · repo <out>/work/g-rs-transpose/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rs-transpose] step 1 · read_file {"path": "src/lib.rs"} → ok
+[g-rs-transpose] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-transpose] step 2 · edit_file {"path": "src/lib.rs", "old_str": " (0..rows).map(|c| (0..rows).map(|… → ok
+[g-rs-transpose] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-transpose] pre-build: cargo test --no-run → exit 0 in 0.3s
+[g-rs-transpose] step 3 · bash cargo test --offline → ok exit=0
+[g-rs-transpose] harness check on the original code: cargo test --offline → passed
+[g-rs-transpose] attempt 1 ended (model_submitted): candidate 7a16991654ac · evidence passing
+[g-rs-transpose] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rs-unique =====
+[g-rs-unique] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rs-unique] target .git copy: kept
+[g-rs-unique] pre-build started in the background: cargo test --no-run
+[g-rs-unique] base tree b3a875830ad1 · repo <out>/work/g-rs-unique/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rs-unique] step 1 · read_file {"path": "src/lib.rs"} → ok
+[g-rs-unique] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-unique] step 2 · edit_file {"path": "src/lib.rs", "old_str": " let mut v = values.to_vec();\n v.… → ok
+[g-rs-unique] pre-build: cargo test --no-run → exit 0 in 0.4s
+[g-rs-unique] step 3 · bash cargo test --offline → ok exit=0
+[g-rs-unique] harness check on the original code: cargo test --offline → passed
+[g-rs-unique] attempt 1 ended (model_submitted): candidate 807ca3fdc098 · evidence passing
+[g-rs-unique] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rs-version =====
+[g-rs-version] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rs-version] target .git copy: kept
+[g-rs-version] pre-build started in the background: cargo test --no-run
+[g-rs-version] base tree be3aa8181049 · repo <out>/work/g-rs-version/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rs-version] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-version] step 1 · read_file {"path": "src/version.rs"} → ok
+[g-rs-version] step 2 · edit_file {"path": "src/version.rs", "old_str": " a > b\n", "new_str": " let pa… → ok
+[g-rs-version] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[g-rs-version] pre-build: cargo test --no-run → exit 0 in 0.3s
+[g-rs-version] step 3 · bash cargo test --offline → ok exit=0
+[g-rs-version] harness check on the original code: cargo test --offline → passed
+[g-rs-version] recovered 1 tool call(s) the model wrote as text (hermes-json)
+[g-rs-version] attempt 1 ended (model_submitted): candidate d2694e7207fd · evidence passing
+[g-rs-version] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== g-rs-word-count =====
+[g-rs-word-count] sandbox: active — a sandboxed child could not read a parent process's environment
+[g-rs-word-count] target .git copy: kept
+[g-rs-word-count] pre-build started in the background: cargo test --no-run
+[g-rs-word-count] base tree c2759d300932 · repo <out>/work/g-rs-word-count/ours-0/repo · model emulated (openai_chat) · limits 900s/40 steps
+[g-rs-word-count] step 1 · read_file {"path": "src/lib.rs"} → ok
+[g-rs-word-count] step 2 · edit_file {"path": "src/lib.rs", "old_str": " if text.is_empty() {\n return 0;\… → ok
+[g-rs-word-count] pre-build: cargo test --no-run → exit 0 in 0.3s
+[g-rs-word-count] step 3 · bash cargo test --offline → ok exit=0
+[g-rs-word-count] harness check on the original code: cargo test --offline → passed
+[g-rs-word-count] attempt 1 ended (model_submitted): candidate 116c0c0587c5 · evidence passing
+[g-rs-word-count] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== go-wordfreq =====
+[go-wordfreq] sandbox: active — a sandboxed child could not read a parent process's environment
+[go-wordfreq] target .git copy: kept
+[go-wordfreq] base tree 06e991a5ebb0 · repo <out>/work/go-wordfreq/ours-0/repo · model emulated (openai_chat) · limits 600s/40 steps
+[go-wordfreq] step 1 · read_file {"path": "wordfreq.go"} → ok
+[go-wordfreq] step 2 · write_file {"path": "wordfreq.go", "content": "// Package wordfreq counts word f… → ok
+[go-wordfreq] step 3 · bash go test ./... → ok exit=0
+[go-wordfreq] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[go-wordfreq] harness check on the original code: go test ./... → passed
+[go-wordfreq] attempt 1 ended (model_submitted): candidate a195739dba7b · evidence passing
+[go-wordfreq] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== js-duration =====
+[js-duration] sandbox: active — a sandboxed child could not read a parent process's environment
+[js-duration] target .git copy: kept
+[js-duration] base tree 10b4dfb02cdf · repo <out>/work/js-duration/ours-0/repo · model emulated (openai_chat) · limits 600s/40 steps
+[js-duration] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[js-duration] step 1 · read_file {"path": "src/duration.js"} → ok
+[js-duration] step 2 · write_file {"path": "src/duration.js", "content": "'use strict';\n\nconst UNIT_S… → ok
+[js-duration] step 3 · bash node --test → ok exit=0
+[js-duration] harness check on the original code: node --test → passed
+[js-duration] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[js-duration] attempt 1 ended (model_submitted): candidate 2ed857f79701 · evidence passing
+[js-duration] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== py-deep-merge =====
+[py-deep-merge] sandbox: active — a sandboxed child could not read a parent process's environment
+[py-deep-merge] target .git copy: kept
+[py-deep-merge] base tree a6a7ebb88848 · repo <out>/work/py-deep-merge/ours-0/repo · model emulated (openai_chat) · limits 600s/40 steps
+[py-deep-merge] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[py-deep-merge] step 1 · read_file {"path": "confmerge/merge.py"} → ok
+[py-deep-merge] step 2 · write_file {"path": "confmerge/merge.py", "content": "\"\"\"Merging of configura… → ok
+[py-deep-merge] step 3 · bash python3 -m unittest discover -s tests → ok exit=0
+[py-deep-merge] harness check on the original code: python3 -m unittest discover -s tests → passed
+[py-deep-merge] attempt 1 ended (model_submitted): candidate 31f7ec376df0 · evidence passing
+[py-deep-merge] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== py-slugify =====
+[py-slugify] sandbox: active — a sandboxed child could not read a parent process's environment
+[py-slugify] target .git copy: kept
+[py-slugify] base tree 07f2488b5f66 · repo <out>/work/py-slugify/ours-0/repo · model emulated (openai_chat) · limits 600s/40 steps
+[py-slugify] step 1 · read_file {"path": "textkit/slug.py"} → ok
+[py-slugify] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[py-slugify] step 2 · write_file {"path": "textkit/slug.py", "content": "\"\"\"URL slug helpers.\"\"\"… → ok
+[py-slugify] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[py-slugify] step 3 · bash python3 -m unittest discover -s tests → ok exit=0
+[py-slugify] harness check on the original code: python3 -m unittest discover -s tests → passed
+[py-slugify] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[py-slugify] attempt 1 ended (model_submitted): candidate 35932efe0af1 · evidence passing
+[py-slugify] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True
+
+===== py-ttl-cache =====
+[py-ttl-cache] sandbox: active — a sandboxed child could not read a parent process's environment
+[py-ttl-cache] target .git copy: kept
+[py-ttl-cache] base tree 93dc0b3e24f0 · repo <out>/work/py-ttl-cache/ours-0/repo · model emulated (openai_chat) · limits 900s/50 steps
+[py-ttl-cache] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[py-ttl-cache] step 1 · read_file {"path": "cachekit/cache.py"} → ok
+[py-ttl-cache] recovered 1 tool call(s) the model wrote as text (qwen-xml)
+[py-ttl-cache] step 2 · write_file {"path": "cachekit/cache.py", "content": "\"\"\"A small least-recentl… → ok
+[py-ttl-cache] step 3 · bash python3 -m unittest discover -s tests → ok exit=0
+[py-ttl-cache] harness check on the original code: python3 -m unittest discover -s tests → passed
+[py-ttl-cache] attempt 1 ended (model_submitted): candidate 2e5c2502d531 · evidence passing
+[py-ttl-cache] done · termination=model_submitted · verification=checks_passed · files=1 · submission_ready=True

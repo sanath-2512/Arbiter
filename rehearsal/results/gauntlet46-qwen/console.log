@@ -1,0 +1,118 @@
+calc-divide              ours                         rep=0 judge=PASS termination=model_submitted wall=0.95s
+g-go-initials            ours                         rep=0 judge=PASS termination=model_submitted wall=1.05s
+g-go-max                 ours                         rep=0 judge=PASS termination=model_submitted wall=1.07s
+g-go-reverse             ours                         rep=0 judge=PASS termination=model_submitted wall=1.2s
+g-go-sum-positive        ours                         rep=0 judge=PASS termination=model_submitted wall=1.01s
+g-js-cents               ours                         rep=0 judge=PASS termination=model_submitted wall=1.24s
+g-js-chunk               ours                         rep=0 judge=PASS termination=model_submitted wall=1.23s
+g-js-deep-equal          ours                         rep=0 judge=PASS termination=model_submitted wall=1.19s
+g-js-format-time         ours                         rep=0 judge=PASS termination=model_submitted wall=1.21s
+g-js-get-path            ours                         rep=0 judge=PASS termination=model_submitted wall=1.33s
+g-js-numeric-sort        ours                         rep=0 judge=PASS termination=model_submitted wall=1.21s
+g-js-query               ours                         rep=0 judge=PASS termination=model_submitted wall=1.22s
+g-js-range               ours                         rep=0 judge=PASS termination=model_submitted wall=1.18s
+g-js-retry               ours                         rep=0 judge=PASS termination=model_submitted wall=1.15s
+g-js-title-case          ours                         rep=0 judge=PASS termination=model_submitted wall=1.22s
+g-js-truncate            ours                         rep=0 judge=PASS termination=model_submitted wall=1.2s
+g-js-unique-by           ours                         rep=0 judge=PASS termination=model_submitted wall=1.21s
+g-py-chunks              ours                         rep=0 judge=PASS termination=model_submitted wall=0.91s
+g-py-flatten             ours                         rep=0 judge=PASS termination=model_submitted wall=0.93s
+g-py-median              ours                         rep=0 judge=PASS termination=model_submitted wall=1.01s
+g-py-merge-intervals     ours                         rep=0 judge=PASS termination=model_submitted wall=0.95s
+g-py-percent             ours                         rep=0 judge=PASS termination=model_submitted wall=0.98s
+g-py-safe-int            ours                         rep=0 judge=PASS termination=model_submitted wall=0.98s
+g-rb-average             ours                         rep=0 judge=PASS termination=model_submitted wall=1.05s
+g-rb-pluralize           ours                         rep=0 judge=PASS termination=model_submitted wall=1.04s
+g-rs-bank                ours                         rep=0 judge=PASS termination=model_submitted wall=1.2s
+g-rs-checked-ratio       ours                         rep=0 judge=PASS termination=model_submitted wall=1.21s
+g-rs-clamp               ours                         rep=0 judge=PASS termination=model_submitted wall=1.15s
+g-rs-duration            ours                         rep=0 judge=PASS termination=model_submitted wall=1.27s
+g-rs-fahrenheit          ours                         rep=0 judge=PASS termination=model_submitted wall=1.16s
+g-rs-fields              ours                         rep=0 judge=PASS termination=model_submitted wall=1.31s
+g-rs-fizzbuzz            ours                         rep=0 judge=PASS termination=model_submitted wall=1.26s
+g-rs-leap                ours                         rep=0 judge=PASS termination=model_submitted wall=1.18s
+g-rs-median              ours                         rep=0 judge=PASS termination=model_submitted wall=1.28s
+g-rs-roman               ours                         rep=0 judge=PASS termination=model_submitted wall=1.21s
+g-rs-slug                ours                         rep=0 judge=PASS termination=model_submitted wall=1.31s
+g-rs-stack-pop           ours                         rep=0 judge=PASS termination=model_submitted wall=1.25s
+g-rs-transpose           ours                         rep=0 judge=PASS termination=model_submitted wall=1.22s
+g-rs-unique              ours                         rep=0 judge=PASS termination=model_submitted wall=1.44s
+g-rs-version             ours                         rep=0 judge=PASS termination=model_submitted wall=1.24s
+g-rs-word-count          ours                         rep=0 judge=PASS termination=model_submitted wall=1.25s
+go-wordfreq              ours                         rep=0 judge=PASS termination=model_submitted wall=1.09s
+js-duration              ours                         rep=0 judge=PASS termination=model_submitted wall=1.21s
+py-deep-merge            ours                         rep=0 judge=PASS termination=model_submitted wall=0.98s
+py-slugify               ours                         rep=0 judge=PASS termination=model_submitted wall=0.96s
+py-ttl-cache             ours                         rep=0 judge=PASS termination=model_submitted wall=1.0s
+> Offline scripted replay behind the qwen emulator: each run's model replays the task's reference fix through the unchanged harness (real tools, toolchains, evidence, export, judge). It checks the harness end to end and measures its overhead; it says nothing about a model's ability.
+
+# Evaluation summary
+
+Records: 46 (every scheduled run is listed; failures included)
+
+Model calls live: [True] — fake/scripted runs are pipeline checks, not capability results.
+
+| task | ours |
+|---|---|
+| calc-divide | PASS |
+| g-go-initials | PASS |
+| g-go-max | PASS |
+| g-go-reverse | PASS |
+| g-go-sum-positive | PASS |
+| g-js-cents | PASS |
+| g-js-chunk | PASS |
+| g-js-deep-equal | PASS |
+| g-js-format-time | PASS |
+| g-js-get-path | PASS |
+| g-js-numeric-sort | PASS |
+| g-js-query | PASS |
+| g-js-range | PASS |
+| g-js-retry | PASS |
+| g-js-title-case | PASS |
+| g-js-truncate | PASS |
+| g-js-unique-by | PASS |
+| g-py-chunks | PASS |
+| g-py-flatten | PASS |
+| g-py-median | PASS |
+| g-py-merge-intervals | PASS |
+| g-py-percent | PASS |
+| g-py-safe-int | PASS |
+| g-rb-average | PASS |
+| g-rb-pluralize | PASS |
+| g-rs-bank | PASS |
+| g-rs-checked-ratio | PASS |
+| g-rs-clamp | PASS |
+| g-rs-duration | PASS |
+| g-rs-fahrenheit | PASS |
+| g-rs-fields | PASS |
+| g-rs-fizzbuzz | PASS |
+| g-rs-leap | PASS |
+| g-rs-median | PASS |
+| g-rs-roman | PASS |
+| g-rs-slug | PASS |
+| g-rs-stack-pop | PASS |
+| g-rs-transpose | PASS |
+| g-rs-unique | PASS |
+| g-rs-version | PASS |
+| g-rs-word-count | PASS |
+| go-wordfreq | PASS |
+| js-duration | PASS |
+| py-deep-merge | PASS |
+| py-slugify | PASS |
+| py-ttl-cache | PASS |
+
+| system | judged pass | runs | submission_ready | tokens (sum) | wall s (sum) | audit flags |
+|---|---|---|---|---|---|---|
+| ours | 46 | 46 | 46 | 255350 | 53 | 0 |
+
+| system | pass@1 | pass^k (k = repeats) | tokens / solved | wall s / solved | cost / solved |
+|---|---|---|---|---|---|
+| ours | 1.000 | 1.000 (k=1) | 5551 | 1 | n/a |
+
+Proof level vs hidden-test outcome (does the harness's own evidence predict correctness?):
+
+| system | proof level | runs | judged pass |
+|---|---|---|---|
+| ours | passing | 46 | 46 |
+
+rc=0
