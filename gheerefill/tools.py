@@ -43,33 +43,30 @@ def _spec(name: str, description: str, props: dict[str, Any], required: list[str
 def tool_specs(cfg: ToolsConfig) -> list[ToolSpec]:
     bash = _spec(
         "bash",
-        "Run a bash command at the repository root in a fresh non-interactive shell (no state persists "
-        f"between calls; stdin is closed; background processes are stopped when it returns). Default timeout "
-        f"{int(cfg.bash_timeout_s)}s. Returns exit code and output (long output is truncated with retrieval hints).",
+        "Run a bash command at the repository root in a fresh non-interactive shell (no state persists between "
+        f"calls). Default timeout {int(cfg.bash_timeout_s)}s ({int(BUILD_TIMEOUT_S)}s for builds such as cargo/go "
+        "test). Returns exit code and output.",
         {
-            "command": {"type": "string", "description": "The bash command to run."},
-            "timeout": {"type": "integer", "description": "Optional timeout in seconds."},
+            "command": {"type": "string"},
+            "timeout": {"type": "integer", "description": "Seconds."},
         },
         ["command"],
     )
     submit = _spec(
         "submit",
-        "Finish the task. Call only when the change is complete and verified (or when you cannot do better). "
-        "Your current working-tree changes are the submission.",
-        {"summary": {"type": "string", "description": "One or two sentences on what was changed and how it was verified."}},
+        "Finish: your working-tree changes are the submission. Call when the change is complete and verified.",
+        {"summary": {"type": "string", "description": "What changed and how it was verified (1-2 sentences)."}},
         [],
     )
     if cfg.set == "bash_only":
         return [bash, submit]
     reproduction = _spec(
         "register_reproduction",
-        "Register a command that reproduces the issue: it must FAIL (non-zero exit, or failing tests) while the bug "
-        "is present and PASS (exit 0) once it is fixed. The harness runs it on the original code right away to "
-        "confirm it reproduces the problem, and again on your final code. Keep throwaway scripts in the scratch "
-        "directory; a new test inside the repository also works (e.g. `python -m pytest tests/test_x.py::test_y`). "
-        "Registering the same command again updates it (at most 3).",
+        "Register a command that FAILS while the bug is present and PASSES once fixed (exit code or test "
+        "results). The harness runs it on the original code now to confirm, and on your final code. Use a test in "
+        "the repository or a script in the scratch directory. Re-registering the same command updates it (max 3).",
         {
-            "command": {"type": "string", "description": "Bash command run at the repository root."},
+            "command": {"type": "string"},
             "description": {"type": "string", "description": "What it checks (one line)."},
         },
         ["command"],
@@ -78,35 +75,33 @@ def tool_specs(cfg: ToolsConfig) -> list[ToolSpec]:
         bash,
         _spec(
             "read_file",
-            f"Read a text file with line numbers (at most {cfg.read_max_lines} lines per call), or list a directory. "
-            "Paths are relative to the repository root unless absolute.",
+            f"Read a file with line numbers (max {cfg.read_max_lines} lines per call), or list a directory. Paths "
+            "are relative to the repository root.",
             {
                 "path": {"type": "string"},
-                "start_line": {"type": "integer", "description": "1-based first line (default 1)."},
-                "end_line": {"type": "integer", "description": "1-based last line, inclusive."},
-                "outline": {"type": "boolean", "description": "List the file's classes/functions with line numbers "
-                                                              "instead of its text (useful for large files)."},
+                "start_line": {"type": "integer", "description": "1-based (default 1)."},
+                "end_line": {"type": "integer", "description": "1-based, inclusive."},
+                "outline": {"type": "boolean", "description": "Only the classes/functions with line numbers."},
             },
             ["path"],
         ),
         _spec(
             "search",
-            "Search file contents (ripgrep syntax regex; respects .gitignore). Returns path:line:text matches.",
+            "Regex search of file contents (ripgrep syntax; respects .gitignore). Returns path:line:text.",
             {
                 "pattern": {"type": "string"},
-                "path": {"type": "string", "description": "File or directory to search (default: repository root)."},
-                "glob": {"type": "string", "description": "Only search files matching this glob, e.g. '*.py'."},
-                "fixed_strings": {"type": "boolean", "description": "Treat pattern as a literal string."},
+                "path": {"type": "string", "description": "File or directory (default: repository root)."},
+                "glob": {"type": "string", "description": "e.g. '*.rs'"},
+                "fixed_strings": {"type": "boolean"},
                 "case_insensitive": {"type": "boolean"},
-                "context": {"type": "integer", "description": "Lines of context around each match (0-5)."},
+                "context": {"type": "integer", "description": "Context lines (0-5)."},
             },
             ["pattern"],
         ),
         _spec(
             "edit_file",
-            "Replace an exact, unique occurrence of old_str with new_str in an existing file. old_str must match the "
-            "file exactly (including indentation). Fails without changing anything if old_str is missing or "
-            "ambiguous (unless replace_all is true).",
+            "Replace an exact, unique occurrence of old_str with new_str. old_str must match the file exactly, "
+            "indentation included; nothing changes if it is missing or ambiguous (unless replace_all).",
             {
                 "path": {"type": "string"},
                 "old_str": {"type": "string"},
@@ -117,13 +112,13 @@ def tool_specs(cfg: ToolsConfig) -> list[ToolSpec]:
         ),
         _spec(
             "write_file",
-            "Create a file or overwrite it entirely with the given content (parent directories are created).",
+            "Create or overwrite a file with the given content.",
             {"path": {"type": "string"}, "content": {"type": "string"}},
             ["path", "content"],
         ),
         _spec(
             "read_output",
-            "Retrieve lines of an earlier, truncated tool output by its id (e.g. o12).",
+            "Lines of an earlier shortened or elided tool output, by id (e.g. o12).",
             {
                 "id": {"type": "string"},
                 "start_line": {"type": "integer"},
@@ -320,6 +315,54 @@ def lenient_match(text: str, old: str, new: str) -> tuple[str, str, str] | None:
     return "\n".join(region), "\n".join(new_lines), note
 
 
+# Parse-only checks that read the source on stdin; the edition placeholder is filled per crate.
+EXTERNAL_PARSERS = {
+    ".rs": ("rustfmt", "--edition", "2021", "--emit", "stdout"),
+    ".go": ("gofmt", "-e"),
+    ".js": ("node", "--check", "-"),
+    ".mjs": ("node", "--check", "-"),
+    ".cjs": ("node", "--check", "-"),
+    ".rb": ("ruby", "-c", "-"),
+}
+
+
+def rust_edition(path: Path, repo: Path) -> str:
+    """The `edition` of the nearest Cargo.toml above `path` (2015 when a manifest names none)."""
+    d = path.parent
+    while True:
+        manifest = d / "Cargo.toml"
+        if manifest.is_file():
+            text = manifest.read_text(errors="replace")
+            m = re.search(r'^\s*edition\s*=\s*"(\d{4})"', text, re.M)
+            if m:
+                return m.group(1)
+            if re.search(r"^\s*edition\.workspace\s*=\s*true", text, re.M) and d != repo:
+                d = d.parent  # inherited from the workspace root
+                continue
+            return "2015" if "[package]" in text else "2021"
+        if d == repo or d.parent == d:
+            return "2021"
+        d = d.parent
+
+
+def js_module_package(path: Path, repo: Path) -> bool:
+    d = path.parent
+    while True:
+        pkg = d / "package.json"
+        if pkg.is_file():
+            return bool(re.search(r'"type"\s*:\s*"module"', pkg.read_text(errors="replace")))
+        if d == repo or d.parent == d:
+            return False
+        d = d.parent
+
+
+# Build and test commands of compiled toolchains: a cold first build can take minutes.
+BUILD_COMMAND = re.compile(r"(^|[\s;&|(])(cargo\s+(test|build|check|run|nextest|clippy|bench)|go\s+(test|build|vet)|"
+                           r"mvn|\./mvnw|gradle|\./gradlew|dotnet\s+(test|build)|swift\s+(test|build)|cmake\s+--build|"
+                           r"ctest|bazel|sbt|mix\s+test)\b")
+BUILD_TIMEOUT_S = 600.0
+
+
 class ToolBox:
     def __init__(
         self,
@@ -421,6 +464,8 @@ class ToolBox:
                 return None
             except ValueError as e:
                 return f"invalid JSON: {e}"
+        if suffix in EXTERNAL_PARSERS:
+            return self._external_syntax_error(path, suffix, text)
         if suffix not in (".py", ".pyi"):
             return None
         try:
@@ -442,6 +487,31 @@ class ToolBox:
             except (OSError, subprocess.TimeoutExpired):
                 pass
         return err
+
+    def _external_syntax_error(self, path: Path, suffix: str, text: str) -> str | None:
+        """Parse-only check with the language's own formatter/interpreter reading stdin (rustfmt,
+        gofmt, node --check, ruby -c). None when it parses, or when the tool is not installed."""
+        argv = list(EXTERNAL_PARSERS[suffix])
+        if shutil.which(argv[0], path=self.env.get("PATH")) is None:
+            return None
+        if argv[0] == "rustfmt":
+            argv[2] = rust_edition(path, self.repo)
+        elif argv[0] == "node" and (suffix == ".mjs" or (suffix == ".js" and js_module_package(path, self.repo))):
+            argv.insert(1, "--input-type=module")
+        try:
+            p = subprocess.run(self.wrap(argv) if self.wrap else argv, input=text.encode("utf-8", "surrogateescape"),
+                               env=self.env, cwd=self.repo, capture_output=True, timeout=20)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if p.returncode == 0:
+            return None
+        err = p.stderr.decode("utf-8", "replace")
+        if re.search(r"error\[internal\]|internal error", err):  # a formatter's own failure, not a parse error
+            return None
+        line = re.search(r"(?:<stdin>|standard input>|^-|\[stdin\]):(\d+)", err, re.M) or re.search(r":(\d+):", err)
+        msg = next((l.strip() for l in err.splitlines() if re.search(r"error|SyntaxError|syntax error|expected", l)),
+                   err.strip().splitlines()[0] if err.strip() else "does not parse")
+        return f"line {line.group(1) if line else 1}: {msg[:200]}"
 
     def _guard(self, path: Path, shown: str, old_text: str | None, new_text: str) -> ToolResult | None:
         """Refuse a change that makes an existing, parseable file unparseable. None = allowed. New
@@ -472,7 +542,9 @@ class ToolBox:
             raise ToolArgumentError("command is empty")
         if self.time_budget() < 1.0:
             return ToolResult("Error: no time budget left to run commands. Submit now.", "error", {"error": "no_budget"})
-        timeout = self._timeout(args.get("timeout"), self.cfg.bash_timeout_s)
+        default = max(self.cfg.bash_timeout_s, BUILD_TIMEOUT_S) if BUILD_COMMAND.search(command) \
+            else self.cfg.bash_timeout_s
+        timeout = self._timeout(args.get("timeout"), default)
         oid, out_path = self.archive.allocate()
         r = run_shell(
             command,

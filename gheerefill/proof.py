@@ -65,7 +65,10 @@ def failing_tests(text: str, runner: str | None) -> list[str] | None:
     elif runner == "go":
         names = re.findall(r"^\s*--- FAIL: (\S+)", text, re.M)
     elif runner == "cargo":
-        names = re.findall(r"^test (\S+) \.\.\. FAILED", text, re.M)
+        names = re.findall(r"^test (.+?) \.\.\. FAILED", text, re.M)
+        # `cargo test -q` prints no per-test lines: the "failures:" list closing each binary names them
+        for block in re.findall(r"^failures:\n((?:    \S.*\n)+)", text, re.M):
+            names += [l.strip() for l in block.splitlines() if l.strip()]
     elif runner == "jest/vitest":
         names = [n.strip() for n in re.findall(r"^\s*● (.+?)\s*$", text, re.M) if "Test suite failed to run" not in n]
         names += [re.sub(r"\s+\(?\d+(?:\.\d+)? ?m?s\)?$", "", n.strip())

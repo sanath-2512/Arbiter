@@ -118,6 +118,12 @@ class TargetGitState:
         return {"head_commit": self.head_commit, "head_ref": self.head_ref, "index_matches_head": self.index_matches_head}
 
 
+ROOT_LOCKFILES = (("Cargo.lock", "Cargo.toml"), ("package-lock.json", "package.json"), ("yarn.lock", "package.json"),
+                  ("pnpm-lock.yaml", "package.json"), ("Gemfile.lock", "Gemfile"), ("composer.lock", "composer.json"),
+                  ("go.sum", "go.mod"), ("Pipfile.lock", "Pipfile"), ("poetry.lock", "pyproject.toml"),
+                  ("uv.lock", "pyproject.toml"))
+
+
 class _GitCopier:
     """copytree copy_function for a .git directory: hard-link objects, copy everything else."""
 
@@ -208,6 +214,11 @@ class Workspace:
         excludes = list(CACHE_EXCLUDES) + [f"/{d}/" for d in self.environment_dirs()]
         if (self.repo / "Cargo.toml").is_file():
             excludes.append("/target/")
+        # A lock file the first build or install writes (Cargo.lock from `cargo test`, package-lock.json
+        # from `npm install`) is not part of any fix: keep it out of every snapshot, so it neither
+        # changes tree ids mid-check nor reaches the patch.
+        excludes += [f"/{lock}" for lock, manifest in ROOT_LOCKFILES
+                     if (self.repo / manifest).is_file() and not (self.repo / lock).exists()]
         target_exclude = self.repo / ".git" / "info" / "exclude"
         if target_exclude.is_file():
             excludes.append(target_exclude.read_text(errors="replace"))

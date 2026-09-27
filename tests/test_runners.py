@@ -12,6 +12,9 @@ FIX = Path(__file__).parent / "fixtures" / "runners"
 EXPECT = {  # file: (runner, outcome, failing test names)
     "cargo_fail": ("cargo", "failed", ["tests::half"]),
     "cargo_pass": ("cargo", "passed", []),
+    "cargo_q_fail": ("cargo", "failed", ["tests::halves"]),  # -q: names only in the failures list
+    "cargo_nff_doctest_fail": ("cargo", "failed", ["src/lib.rs - half (line 3)", "tests::halves"]),
+    "cargo_compile_error": ("cargo", "collection_error", []),  # does not compile: no test verdict
     "go_fail": ("go", "failed", ["TestHalf"]),
     "go_v_fail": ("go", "failed", ["TestHalf"]),
     "go_pass": ("go", "passed", []),

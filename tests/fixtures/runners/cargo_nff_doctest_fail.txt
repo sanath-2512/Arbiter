@@ -1,0 +1,93 @@
+   Compiling rc v0.1.0 (/work/rc)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running unittests src/lib.rs (target/debug/deps/rc-24bc4b2230fc526a)
+
+running 2 tests
+test tests::twice_ok ... ok
+test tests::halves ... FAILED
+
+failures:
+
+---- tests::halves stdout ----
+
+thread 'tests::halves' (14280) panicked at src/lib.rs:12:27:
+assertion `left == right` failed
+  left: 3.0
+ right: 3.5
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/panicking.rs:80:14
+   2: core::panicking::assert_failed_inner
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/panicking.rs:439:17
+   3: core::panicking::assert_failed
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/panicking.rs:394:5
+   4: rc::tests::halves
+             at ./src/lib.rs:12:27
+   5: rc::tests::halves::{{closure}}
+             at ./src/lib.rs:12:24
+   6: core::ops::function::FnOnce::call_once
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/ops/function.rs:250:5
+   7: core::ops::function::FnOnce::call_once
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+failures:
+    tests::halves
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+error: test failed, to rerun pass `--lib`
+     Running tests/it.rs (target/debug/deps/it-922753445176d32a)
+
+running 1 test
+test integ ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests rc
+
+running 1 test
+test src/lib.rs - half (line 3) ... FAILED
+
+failures:
+
+---- src/lib.rs - half (line 3) stdout ----
+Test executable failed (exit status: 101).
+
+stderr:
+
+thread 'main' (14310) panicked at /tmp/rustdoctest2aGOPq/doctest_bundle_2024.rs:6:1:
+assertion `left == right` failed
+  left: 3.0
+ right: 3.5
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/panicking.rs:80:14
+   2: core::panicking::assert_failed_inner
+             at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/panicking.rs:439:17
+   3: core::panicking::assert_failed
+   4: doctest_bundle_2024::__doctest_0::main
+   5: doctest_bundle_2024::__doctest_0::__main_fn
+   6: doctest_runner_2024::__doctest_0::TEST::{closure#0}
+   7: <doctest_runner_2024::__doctest_0::TEST::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+   8: doctest_runner_2024::main
+   9: <fn() -> std::process::ExitCode as core::ops::function::FnOnce<()>>::call_once
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+
+
+failures:
+    src/lib.rs - half (line 3)
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+all doctests ran in 0.29s; merged doctests compilation took 0.22s
+error: doctest failed, to rerun pass `--doc`
+error: 2 targets failed:
+    `--lib`
+    `--doc`

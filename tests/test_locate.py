@@ -102,3 +102,20 @@ class ReadOrderTest(TempDirCase):
         self.assertEqual(loc["files_named"], ["src/_pytest/config/__init__.py"])
         loc = locate.localize("`app.run` and `os.path` are attribute access, not module paths", repo, sorted(files))
         self.assertEqual(loc["files_named"], [])
+
+
+class RustRelationsTest(TempDirCase):
+    def test_users_integration_tests_and_inline_tests(self):
+        from gheerefill.locate import import_graph
+        files = {"Cargo.toml": '[package]\nname = "my-calc"\nversion = "0.1.0"\n',
+                 "src/lib.rs": "pub mod ops;\npub mod parse;\n",
+                 "src/ops.rs": "pub fn divide(a: f64, b: f64) -> f64 { a / b }\n#[cfg(test)]\nmod tests {}\n",
+                 "src/parse.rs": "use crate::ops::divide;\n",
+                 "tests/ops_test.rs": "use my_calc::ops::divide;\n#[test] fn t() {}\n",
+                 "tests/other.rs": "use my_calc::parse;\n"}
+        for k, v in files.items():
+            (self.tmp / k).parent.mkdir(parents=True, exist_ok=True)
+            (self.tmp / k).write_text(v)
+        g = import_graph(["src/ops.rs"], {k: v for k, v in files.items() if k.endswith(".rs")}, set(files), self.tmp)
+        self.assertEqual(g["src/ops.rs"]["imported_by"], ["src/parse.rs"])
+        self.assertEqual(g["src/ops.rs"]["tests"][:2], ["src/ops.rs (inline #[cfg(test)] module)", "tests/ops_test.rs"])

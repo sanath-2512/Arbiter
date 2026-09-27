@@ -88,55 +88,143 @@ def _omission(a: int, b: int, oid: str | None) -> str:
     return f"[... {n} line{'s' if n != 1 else ''} omitted (lines {a}-{b}){ref} ...]"
 
 
-def bounded_view(text: str, max_chars: int, oid: str | None) -> tuple[str, bool]:
-    """Return (view, truncated). Keeps head, tail, and error-like lines from the middle."""
+# Output that costs tokens and carries no information for the model: build/download progress and
+# runs of passing-test lines (cargo, pytest -v, go -v, unittest -v, TAP, jest/mocha ticks). Runs of at
+# least FOLD_MIN such lines are folded into one marker that names the line range, so read_output can
+# still retrieve them. Failures, errors and summaries are never folded.
+FOLD_MIN = 6
+FOLD_RULES = (
+    ("build/download progress", re.compile(
+        r"^\s*(Compiling|Checking|Downloaded|Downloading|Fresh|Updating|Locking|Adding|Blocking|Unpacking|Fetching|"
+        r"Documenting|Collecting|Using cached|Requirement already satisfied|Obtaining|Preparing metadata|"
+        r"Building wheel|Created wheel|Stored in directory|go: downloading|go: finding|go: extracting|"
+        r"npm (WARN|notice|http))\b")),
+    ("passing test lines", re.compile(
+        r"^(test \S.* \.\.\. (ok|ignored)\s*$|\S+::\S+ PASSED\b|\s*--- PASS: |\s*=== (RUN|PAUSE|CONT) |"
+        r"\s*(✓|✔|√) |ok \d+ |.*\) \.\.\. ok\s*$)")),
+    # RUST_BACKTRACE frames inside the standard library (the project's own frames stay visible)
+    ("standard-library backtrace frames", re.compile(
+        r"^\s+(\d+: (core|std|alloc|test|__rust|rust_begin_unwind|<\w+ as core::)|at /rustc/[0-9a-f]+/library/)")),
+)
+_WARNING = re.compile(r"^warning(\[[\w-]+\])?: (?!`[^`]*` \(.*\) generated \d+ warning)")
+WARNINGS_SHOWN = 2
+
+
+def fold_runs(lines: list[str]) -> list[tuple[int, int, str]]:
+    """(first, last, label) ranges of foldable lines, 0-based inclusive, non-overlapping."""
+    folds: list[tuple[int, int, str]] = []
+    n, i = len(lines), 0
+    while i < n:
+        rule = next((label for label, rx in FOLD_RULES if rx.search(lines[i])), None)
+        if rule is None:
+            i += 1
+            continue
+        rx = dict(FOLD_RULES)[rule]
+        j = i
+        while j + 1 < n and rx.search(lines[j + 1]):
+            j += 1
+        if j - i + 1 >= FOLD_MIN:
+            folds.append((i, j, rule))
+        i = j + 1
+    # compiler warnings (rustc/cargo style blocks ending at a blank line): keep the first few
+    blocks, i = [], 0
+    while i < n:
+        if _WARNING.match(lines[i]):
+            j = i
+            while j + 1 < n and lines[j + 1].strip() and not _WARNING.match(lines[j + 1]) \
+                    and not lines[j + 1].startswith("error"):
+                j += 1
+            if j + 1 < n and not lines[j + 1].strip():
+                j += 1
+            blocks.append((i, j))
+            i = j + 1
+        else:
+            i += 1
+    group: list[tuple[int, int]] = []
+    for b in blocks + [(-1, -1)]:
+        if group and b[0] == group[-1][1] + 1:
+            group.append(b)
+            continue
+        if len(group) > WARNINGS_SHOWN:
+            a, z = group[WARNINGS_SHOWN][0], group[-1][1]
+            if not any(f[0] <= z and a <= f[1] for f in folds):
+                folds.append((a, z, f"{len(group) - WARNINGS_SHOWN} more compiler warnings"))
+        group = [b]
+    return sorted(folds)
+
+
+def _fold_marker(a: int, b: int, label: str, oid: str | None) -> str:
+    ref = f'; read_output(id="{oid}", start_line={a}, end_line={b})' if oid else ""
+    return f"[... {b - a + 1} lines folded: {label} (lines {a}-{b}){ref} ...]"
+
+
+def bounded_view(text: str, max_chars: int, oid: str | None, fold: bool = True) -> tuple[str, bool]:
+    """Return (view, truncated). Folds noise (see FOLD_RULES), then keeps head, tail, and error-like
+    lines from the middle."""
     lines = text.split("\n")
     if text.endswith("\n"):
         lines = lines[:-1]
     capped = [_cap_line(l, i + 1, oid) for i, l in enumerate(lines)]
-    joined = "\n".join(capped)
-    if len(joined) <= max_chars:
-        return joined, joined != "\n".join(lines)
     n = len(capped)
+    folds = fold_runs(lines) if fold else []
+    marker = {a: (a, b, label) for a, b, label in folds}
+    hidden = {i for a, b, _ in folds for i in range(a, b + 1)}
+
+    def render(keep: set[int]) -> str:
+        out: list[str] = []
+        k = 0
+        while k < n:
+            if k in marker:
+                a, b, label = marker[k]
+                out.append(_fold_marker(a + 1, b + 1, label, oid))
+                k = b + 1
+            elif k in keep:
+                out.append(capped[k])
+                k += 1
+            else:
+                start = k
+                while k < n and k not in keep and k not in marker:
+                    k += 1
+                out.append(_omission(start + 1, k, oid))
+        return "\n".join(out)
+
+    visible = [i for i in range(n) if i not in hidden]
+    if not folds:
+        joined = "\n".join(capped)
+        if len(joined) <= max_chars:
+            return joined, joined != "\n".join(lines)
+    else:
+        view = render(set(visible))
+        if len(view) <= max_chars:
+            return view, True
     head_budget, tail_budget = int(max_chars * 0.30), int(max_chars * 0.45)
     mid_budget = max_chars - head_budget - tail_budget
     keep: set[int] = set()
     used = 0
-    i = 0
-    while i < n and used + len(capped[i]) + 1 <= head_budget:
-        keep.add(i)
-        used += len(capped[i]) + 1
-        i += 1
-    head_end = i
+    p = 0
+    while p < len(visible) and used + len(capped[visible[p]]) + 1 <= head_budget:
+        keep.add(visible[p])
+        used += len(capped[visible[p]]) + 1
+        p += 1
+    head_end = p
     used = 0
-    j = n - 1
-    while j >= head_end and used + len(capped[j]) + 1 <= tail_budget:
-        keep.add(j)
-        used += len(capped[j]) + 1
-        j -= 1
-    tail_start = j + 1
+    q = len(visible) - 1
+    while q >= head_end and used + len(capped[visible[q]]) + 1 <= tail_budget:
+        keep.add(visible[q])
+        used += len(capped[visible[q]]) + 1
+        q -= 1
+    tail_start = q + 1
     used = 0
-    for k in range(head_end, tail_start):
+    for r in range(head_end, tail_start):
         if used >= mid_budget:
             break
-        if SALIENT_RE.search(lines[k]):
-            for w in range(max(head_end, k - 1), min(tail_start, k + 3)):
+        if SALIENT_RE.search(lines[visible[r]]):
+            for w in visible[max(head_end, r - 1):min(tail_start, r + 3)]:
                 if w not in keep and used + len(capped[w]) + 1 <= mid_budget:
                     keep.add(w)
                     used += len(capped[w]) + 1
-    out: list[str] = []
-    k = 0
-    while k < n:
-        if k in keep:
-            out.append(capped[k])
-            k += 1
-        else:
-            start = k
-            while k < n and k not in keep:
-                k += 1
-            out.append(_omission(start + 1, k, oid))
     header = f"[output truncated: {n} lines, {len(text)} chars in total; showing {len(keep)} lines]"
-    return header + "\n" + "\n".join(out), True
+    return header + "\n" + render(keep), True
 
 
 def numbered_range(text: str, start: int, end: int | None, max_lines: int, max_chars: int) -> tuple[str, int, int, int]:

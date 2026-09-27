@@ -157,6 +157,43 @@ def _js_resolve(importer: str, spec: str, fileset: set[str]) -> str | None:
     return None
 
 
+def _rust_relations(t: str, texts: dict[str, str], repo: Path) -> tuple[list[str], list[str]]:
+    """(files using the module, test files for it) for a Rust source file: `crate::a::b` / `<crate>::a::b`
+    / `super::b` paths, integration tests in the crate's tests/, and the file itself when it has an
+    inline #[cfg(test)] module."""
+    parts = Path(t).parts
+    crate_root = next((Path(*parts[:i]) for i in range(len(parts) - 1, -1, -1)
+                       if (repo / Path(*parts[:i]) / "Cargo.toml").is_file()), None)
+    if crate_root is None:
+        return [], []
+    rel = Path(t).relative_to(crate_root) if str(crate_root) != "." else Path(t)
+    if rel.parts[:1] != ("src",):
+        return [], []
+    mod = [p for p in rel.with_suffix("").parts[1:] if p not in ("lib", "main", "mod")]
+    try:
+        m = re.search(r'^\s*name\s*=\s*"([^"]+)"', (repo / crate_root / "Cargo.toml").read_text(errors="replace"), re.M)
+    except OSError:
+        m = None
+    crate = m.group(1).replace("-", "_") if m else None
+    root = "" if str(crate_root) == "." else str(crate_root) + "/"
+    in_crate = {f: txt for f, txt in texts.items() if f.endswith(".rs") and f.startswith(root) and f != t}
+    importers: list[str] = []
+    if mod:
+        path = "::".join(mod)
+        pats = [rf"\bcrate::{re.escape(path)}\b", rf"\bsuper::{re.escape(mod[-1])}\b"]
+        if crate:
+            pats.append(rf"\b{re.escape(crate)}::{re.escape(path)}\b")
+        rx = re.compile("|".join(pats))
+        importers = [f for f, txt in in_crate.items() if rx.search(txt)]
+    tests = [f for f in in_crate if f.startswith(root + "tests/")
+             and (crate is None or crate in in_crate[f] or not mod)]
+    if mod:  # integration tests naming the module first
+        tests.sort(key=lambda f: (mod[-1] not in in_crate[f], f))
+    if "#[cfg(test)]" in texts.get(t, ""):
+        tests.insert(0, t)
+    return importers, tests
+
+
 def import_graph(targets: list[str], texts: dict[str, str], fileset: set[str], repo: Path) -> dict[str, dict]:
     """For each target file: the files that import it, and which of those are tests (tests are often
     not next to the code they cover)."""
@@ -189,6 +226,12 @@ def import_graph(targets: list[str], texts: dict[str, str], fileset: set[str], r
             path = go_module if pkg_dir == "." else f"{go_module}/{pkg_dir}"
             importers = [f for f, txt in texts.items() if f.endswith(".go") and path in GO_IMPORT.findall(txt)]
             importers += [f for f in texts if f.endswith("_test.go") and str(Path(f).parent) == pkg_dir and f != t]
+        elif t.endswith(".rs"):
+            users, rs_tests = _rust_relations(t, texts, repo)
+            named = [f"{f} (inline #[cfg(test)] module)" if f == t else f for f in rs_tests]
+            out[t] = {"imported_by": sorted(f for f in set(users) if not is_test_path(f))[:8],
+                      "tests": list(dict.fromkeys(named + sorted(f for f in users if is_test_path(f))))[:8]}
+            continue
         importers = sorted(set(importers))
         stem = Path(t).stem.lower().replace("__init__", Path(t).parent.name.lower())
         # tests reaching the module only through its package: those named after the module first

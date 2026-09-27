@@ -119,11 +119,16 @@ class PolicyConfig:
     budget_notices: bool = True
     repetition_notice: bool = True
     git_hygiene: bool = True
+    prewarm: bool = True  # pre-build a Rust crate's tests in the background at the start
     # Model commands and target-repo git calls run in a Landlock domain: "key" isolates the
     # credential (no file-system restriction), "confine" also limits writes, "off" disables.
     sandbox: str = "key"
     context_reduce_at: float = 0.65
     keep_recent_messages: int = 10
+    # tool outputs shown verbatim (newest first); older ones become pointers, advanced in steps of
+    # observation_step so the cached prompt prefix changes once per step (0 = keep all)
+    observation_window: int = 8
+    observation_step: int = 4
     # Proof-carrying patches (proof.py): at submit the harness compares the agent's checks and
     # registered reproductions on the original code, the counterfactual and the candidate.
     verify_at_submit: bool = True
@@ -306,6 +311,8 @@ def _validate_rest(profile: Profile) -> None:
         raise ConfigError("policy.retry_below must be one of refuted, unverified, passing, fixed, proven")
     if not 0.1 <= profile.policy.context_reduce_at <= 0.95:
         raise ConfigError("policy.context_reduce_at must be within [0.1, 0.95]")
+    if profile.policy.observation_window < 0 or profile.policy.observation_step < 1:
+        raise ConfigError("policy.observation_window must be >= 0 and policy.observation_step >= 1")
     if m.max_output_tokens <= 0 or m.context_window <= m.max_output_tokens:
         raise ConfigError("model.context_window must exceed model.max_output_tokens (> 0)")
 

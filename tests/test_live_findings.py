@@ -95,7 +95,11 @@ class ModelResolutionTest(unittest.TestCase):
         nim = ["01-ai/yi-large", "deepseek-ai/deepseek-coder-6.7b-instruct", "deepseek-ai/deepseek-v4.1-flash",
                "meta/llama-guard-4-12b", "openai/gpt-oss-20b"]
         r = resolve(self.profile, "nvapi-" + "x" * 60, lister=lambda c, k: nim)
-        self.assertEqual(r.model.name, "deepseek-ai/deepseek-v4.1-flash")
+        self.assertEqual(r.model.name, "deepseek-ai/deepseek-v4.1-flash")  # now the rule's first preference
+        # when the provider lists none of the preferences, a served Qwen/DeepSeek coder is taken, with a note
+        later = ["01-ai/yi-large", "meta/llama-guard-4-12b", "qwen/qwen3.9-coder-plus", "openai/gpt-oss-20b"]
+        r = resolve(self.profile, "nvapi-" + "x" * 60, lister=lambda c, k: later)
+        self.assertEqual(r.model.name, "qwen/qwen3.9-coder-plus")
         self.assertTrue(any("none of the preferred models" in n for n in r.notes))
 
     def test_no_suitable_model_still_refuses(self):

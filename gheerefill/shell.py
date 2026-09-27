@@ -56,6 +56,11 @@ def tool_environment(base: dict[str, str], scratch: Path, extra_secret_names: tu
             "HARNESS_SCRATCH": str(scratch),
         }
     )
+    # Cargo: no colour or progress bars (noise in every output), and fail fast when the registry is
+    # unreachable instead of retrying each download for minutes. Values the evaluator set are kept.
+    for k, v in (("CARGO_TERM_COLOR", "never"), ("CARGO_TERM_PROGRESS_WHEN", "never"), ("CARGO_NET_RETRY", "1"),
+                 ("CARGO_HTTP_TIMEOUT", "30")):
+        env.setdefault(k, v)
     return env
 
 

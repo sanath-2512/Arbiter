@@ -114,3 +114,34 @@ class EmulatedProviderTest(TempDirCase):
         with emu:
             rec, p = self.run_harness(emu, repo)
         self.assert_solved(rec, p, repo, emu)
+
+
+class SmallContextWindowTest(TempDirCase):
+    """A provider with a small input limit (its own token count): the harness keeps every request
+    inside it while the model reads far more than fits, and still solves the task."""
+    run_harness = EmulatedProviderTest.run_harness
+    assert_solved = EmulatedProviderTest.assert_solved
+
+    def test_reads_exceeding_the_window_many_times_over(self):
+        files = dict(CALC)
+        for i in range(6):
+            files[f"calc/big{i}.py"] = "".join(f"def helper_{i}_{k}(x):\n    return x + {k}  # padding padding\n"
+                                               for k in range(600))
+        repo = make_repo(self.tmp / "big", files)
+        plan = [("read_file", {"path": f"calc/big{i}.py"}) for i in range(6)] + PLAN
+
+        def policy(messages, tools):
+            i = sum(1 for m in messages if m.get("role") == "assistant")
+            if i < len(plan):
+                name, args = plan[i]
+                return {"content": f"step {i + 1}", "tool_calls": [{"name": name, "arguments": args}]}
+            return {"content": "done", "tool_calls": [{"name": "submit", "arguments": {"summary": "true division"}}]}
+
+        with ProviderEmulator(policy, "qwen", seed=2, scale=0.0, overrides={"input_limit": 9000}) as emu:
+            rec, p = self.run_harness(emu, repo, profile_extra="context_window = 9000\nmax_output_tokens = 1500\n")
+        self.assert_solved(rec, p, repo, emu)
+        self.assertLessEqual(emu.rejections.get("input_length", 0), 1, emu.stats())
+        ctx = rec["context"]
+        self.assertGreater(ctx["peak_estimate_tokens"], 0)
+        self.assertLess(ctx["last_estimate_tokens"], 9000)
+

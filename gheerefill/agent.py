@@ -36,6 +36,7 @@ from gheerefill.models.base import (AttemptRecord, ErrorClass, ModelClient, Mode
                                     output_token_limit)
 from gheerefill.models import quirks
 from gheerefill.outputs import OutputArchive
+from gheerefill.prewarm import Prewarm
 from gheerefill import attest, locate, memory, prompts, proof, tasktype
 from gheerefill.progress import FailureMemory
 from gheerefill.records import Redactor, append_jsonl, atomic_write_bytes, atomic_write_json
@@ -133,6 +134,7 @@ class Agent:
         self.repetition_warned: set[tuple[str, str]] = set()
         self.target_git_initial = None
         self.target_stash_initial: str | None = None
+        self.prewarm: Prewarm | None = None
         self.target_git_fp_initial = None
         self.sandbox: Sandbox | None = None
         self.base_ignored: set[str] = set()
@@ -401,6 +403,11 @@ class Agent:
         self._append({"role": "user", "content": self._task_msg})
         self._new_context()
         self._checkpoint("solving")
+        if self.profile.policy.prewarm:
+            self.prewarm = Prewarm(self.tools.repo, self.tools.env, self.tools.wrap, self.archive,
+                                   min(900.0, 0.4 * self.profile.limits.time_limit_s), self.log)
+            if self.prewarm.start():
+                self.log(f"pre-build started in the background: {self.prewarm.commands[0]}")
         self.log(f"base tree {self.base_tree[:12]} · repo {self.task.repo_path} · model {self.client.model_name} "
                  f"({self.client.provider}) · limits {self.profile.limits.time_limit_s:.0f}s/{self.profile.limits.max_steps} steps")
 
@@ -434,7 +441,8 @@ class Agent:
         self.ctx = ContextManager(
             self.profile.model.context_window, self.profile.model.max_output_tokens,
             self.profile.policy.context_reduce_at, self.profile.policy.keep_recent_messages,
-            fixed_overhead_tokens=spec_tokens + 200,
+            fixed_overhead_tokens=spec_tokens + 200, observation_window=self.profile.policy.observation_window,
+            window_step=self.profile.policy.observation_step,
         )
 
     def _on_attempt(self, rec: AttemptRecord) -> None:
@@ -677,6 +685,9 @@ class Agent:
                 res.content += ("\n[harness] This command removed or replaced the repository's .git; the harness put "
                                 "the original back (your files are unchanged). Do not delete or re-initialise .git.")
         self.budget.record_tool(call.name, float(res.meta.get("duration_s", 0.0)))
+        note = self.prewarm.take_note() if self.prewarm is not None else None
+        if note:
+            res.content += "\n" + note
         self._tool_message(call, res.content, res.meta)
         append_jsonl(self.run_dir / "actions.jsonl", self.redactor.obj({
             "step": self.budget.steps, "tool": call.name, "arguments": call.raw_arguments[:4000],
@@ -1198,6 +1209,8 @@ class Agent:
 
     def _finalize(self) -> dict[str, Any]:
         fin_notes: list[str] = []
+        if self.prewarm is not None:
+            self.prewarm.stop()
         result: dict[str, Any] = self._result_skeleton()
         if self.ws is None or self.base_tree is None:
             result["status"] = "infrastructure_error"
@@ -1374,6 +1387,7 @@ class Agent:
             "error": self.error,
             "model_quirks": dict(self.model_quirks),
             "context": self.ctx.stats() if hasattr(self, "ctx") else None,
+            "prewarm": self.prewarm.summary() if self.prewarm is not None else None,
             "usage": self.budget.summary(),
             "timing": {
                 "total_s": round(self.budget.elapsed(), 3),

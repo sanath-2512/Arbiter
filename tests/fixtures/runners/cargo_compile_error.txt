@@ -1,0 +1,10 @@
+   Compiling rc v0.1.0 (/work/rc)
+error: expected expression, found `}`
+ --> src/lib.rs:6:40
+  |
+6 | pub fn half(a: f64) -> f64 { a / 2.0 + }
+  |                                        ^ expected expression
+
+error: could not compile `rc` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `rc` (lib test) due to 1 previous error
