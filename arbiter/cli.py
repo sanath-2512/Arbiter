@@ -195,7 +195,9 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     load_dotenv(HARNESS_ROOT / ".env")
     out_arg = args.out or os.environ.get("ARBITER_OUT")
-    out_root = (_user_path(out_arg) if out_arg else HARNESS_ROOT / "runs").resolve()
+    # Keep a supplied absolute path stable where the caller exposes one; relative paths are made
+    # absolute against ARBITER_CALLER_DIR without resolving symlinks.
+    out_root = (_user_path(out_arg) if out_arg else HARNESS_ROOT / "runs").absolute()
     workspace = Path(os.environ.get("ARBITER_WORKSPACE") or HARNESS_ROOT / "workspace").resolve()
     human = is_tty(sys.stdout)
     color = human and not os.environ.get("NO_COLOR")
@@ -310,7 +312,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         run_id = time.strftime("%Y%m%dT%H%M%S", time.gmtime()) + "-" + uuid.uuid4().hex[:6]
         run_dir = out_root / safe_name(task.task_id) / run_id
         repo = task.repo_path.resolve()
-        if run_dir == repo or repo in run_dir.parents:
+        # Compare canonical paths for the safety boundary: macOS may spell the same directory as
+        # /var/... and /private/var/.... Keep the original spelling in records, but never permit
+        # generated state inside the target checkout.
+        safe_run_dir = run_dir.resolve()
+        if safe_run_dir == repo or repo in safe_run_dir.parents:
             emit(_config_error_record(task.task_id, f"output directory {run_dir} is inside the target repository"))
             return 1
         client = make_client(tp_profile.model, env={tp_profile.model.api_key_env: key})
