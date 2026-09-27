@@ -75,6 +75,18 @@ class EmulatedProviderTest(TempDirCase):
                 self.assertEqual(emu.rejections, {}, emu.stats())
                 self.assertTrue(rec["model_quirks"], emu.stats())
 
+    def test_streaming_both_families(self):
+        """The auto rules stream (thinking answers take minutes): passback, leaked calls and usage still work."""
+        for family in ("deepseek", "qwen"):
+            for seed in range(2):
+                with self.subTest(family=family, seed=seed):
+                    repo = make_repo(self.tmp / f"st-{family}{seed}", CALC)
+                    with ProviderEmulator(calc_policy, family, seed=seed, scale=2.0) as emu:
+                        rec, p = self.run_harness(emu, repo, profile_extra="stream = true\n")
+                    self.assert_solved(rec, p, repo, emu)
+                    self.assertEqual(emu.rejections, {}, emu.stats())
+                    self.assertGreater(rec["usage"]["input_tokens"], 0)
+
     def test_qwen_moderation_rejection_is_survived(self):
         files = dict(CALC)
         files["calc/ops.py"] = "# MODERATION-TRIGGER (text a provider's filter dislikes)\ndef divide(a, b):\n    return a // b\n"
