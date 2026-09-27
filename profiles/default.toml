@@ -47,6 +47,7 @@ final_recheck = true
 budget_notices = true
 repetition_notice = true
 git_hygiene = true
+max_attempts = 1
 
 # ---------------------------------------------------------------------------------------------
 # Credential-format rules for provider = "auto" (first match wins). `models` is an ordered

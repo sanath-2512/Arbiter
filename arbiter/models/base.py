@@ -168,6 +168,15 @@ _UNSUPPORTED_PATTERNS = re.compile(
 )
 _QUOTA_PATTERNS = re.compile(r"insufficient_quota|quota|billing|credit|payment required|spend limit|"
                              r"insufficient (account )?balance|arrearage|overdue", re.I)
+_RATE_LIMIT_PATTERNS = re.compile(
+    r"rate[_ ]?limit(?:ed)?|too many requests|(?:input|output|total )?tokens per minute|"
+    r"\b(?:itpm|otpm|tpm|rpm)\b|(?:please )?try again in",
+    re.I,
+)
+_RETRY_AFTER_TEXT = re.compile(
+    r"(?:retry|try again)\s+(?:after|in)\s*(\d+(?:\.\d+)?)\s*(?:s|sec(?:ond)?s?)?\b",
+    re.I,
+)
 _CONTENT_FILTER = re.compile(r"data_?inspection_?failed|inappropriate content|content exists risk|content_filter|"
                              r"content management policy|sensitive content|safety (system|check) (rejected|blocked)", re.I)
 _OUTPUT_PARAM = re.compile(r"max[_ ]?(completion_|output_|new_)?tokens|output tokens|completion tokens", re.I)
@@ -214,6 +223,17 @@ def parse_retry_after(headers: dict[str, str], now: float | None = None) -> floa
     return None
 
 
+def parse_retry_after_text(message: str) -> float | None:
+    """Return a provider's retry delay when it is present only in its error text."""
+    match = _RETRY_AFTER_TEXT.search(message or "")
+    if not match:
+        return None
+    try:
+        return max(0.0, float(match.group(1)))
+    except ValueError:
+        return None
+
+
 def classify_http_error(status: int, body: str, headers: dict[str, str] | None = None) -> ModelError:
     headers = headers or {}
     retry_after = parse_retry_after(headers)
@@ -228,13 +248,20 @@ def classify_http_error(status: int, body: str, headers: dict[str, str] | None =
     except (json.JSONDecodeError, AttributeError):
         pass
     msg = (msg or f"HTTP {status}").strip()[:1000]
+    retry_after = retry_after if retry_after is not None else parse_retry_after_text(msg)
     if status == 403 and _CONTENT_FILTER.search(msg):
         return ModelError(ErrorClass.CONTENT_FILTER, msg, status=status, body=body)
     if status in (401, 403):
         return ModelError(ErrorClass.AUTH, msg, status=status, body=body)
-    if status == 402 or (status == 429 and _QUOTA_PATTERNS.search(msg)):
+    if status == 402:
         return ModelError(ErrorClass.QUOTA, msg, status=status, body=body)
     if status == 429:
+        # Some providers append a billing upgrade link to a temporary token-rate error.
+        # Rate signals must win over that incidental wording so the retry window is used.
+        if _RATE_LIMIT_PATTERNS.search(msg):
+            return ModelError(ErrorClass.RATE_LIMIT, msg, status=status, retry_after_s=retry_after, body=body)
+        if _QUOTA_PATTERNS.search(msg):
+            return ModelError(ErrorClass.QUOTA, msg, status=status, body=body)
         return ModelError(ErrorClass.RATE_LIMIT, msg, status=status, retry_after_s=retry_after, body=body)
     if status in (400, 403, 422, 451) and _CONTENT_FILTER.search(msg):
         return ModelError(ErrorClass.CONTENT_FILTER, msg, status=status, body=body)

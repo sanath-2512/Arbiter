@@ -149,6 +149,17 @@ class ClassificationTest(unittest.TestCase):
                                                  now=1445412480.0), 10.0)
         self.assertIsNone(parse_retry_after({}))
 
+    def test_rate_limit_with_billing_link_stays_retryable(self):
+        # Groq puts a billing invitation after a temporary token-per-minute limit.
+        error = classify_http_error(
+            429,
+            '{"error":{"code":"rate_limit_exceeded","message":"input tokens per minute (ITPM): '
+            'Limit 7000, Used 2456, Requested 6361. Please try again in 15.5s. '
+            'Need more tokens? Upgrade at billing."}}',
+        )
+        self.assertEqual(error.cls, ErrorClass.RATE_LIMIT)
+        self.assertAlmostEqual(error.retry_after_s, 15.5)
+
     def test_usage_normalisation_does_not_double_count(self):
         u = normalize_openai_usage({"prompt_tokens": 100, "completion_tokens": 20,
                                     "prompt_tokens_details": {"cached_tokens": 60}})
