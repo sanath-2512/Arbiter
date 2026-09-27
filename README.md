@@ -1,4 +1,4 @@
-# arbiter
+# Arbiter
 
 **An autonomous coding-agent harness that does not stop at "done": it proves its fix.**
 
