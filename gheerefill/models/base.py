@@ -37,6 +37,9 @@ class ErrorClass(str, Enum):
 
 
 TRANSIENT = {ErrorClass.RATE_LIMIT, ErrorClass.SERVER, ErrorClass.TIMEOUT, ErrorClass.NETWORK, ErrorClass.BAD_RESPONSE}
+# transient classes that are retried for a time window, not only a fixed number of times: the provider
+# answered, so it is reachable but busy (a wrong or unreachable endpoint still fails after max_attempts)
+WINDOWED = {ErrorClass.RATE_LIMIT, ErrorClass.SERVER}
 
 
 class ModelError(Exception):
@@ -283,6 +286,7 @@ def call_with_retry(
     rng: random.Random,
     sleep: Callable[[float], None] = time.sleep,
     min_call_s: float = 5.0,
+    transient_window_s: float = 0.0,
 ) -> ModelTurn:
     """Bounded, deadline-aware retries for transient failures only.
 
@@ -290,9 +294,16 @@ def call_with_retry(
     finalisation reserve). Permanent failures raise immediately. A provider retry hint is
     honoured when it fits inside the remaining time; otherwise the call gives up with
     ErrorClass.DEADLINE rather than sleeping past the deadline.
+
+    Rate limits and server errors (overloaded, 5xx) are retried beyond `max_attempts` while
+    less than `transient_window_s` has passed since the first attempt: a provider rate-limiting a
+    shared key for a few minutes should not end a task that has most of its budget left.
     """
-    last: ModelError | None = None
-    for attempt in range(1, max_attempts + 1):
+    first = time.monotonic()
+    waited = 0.0  # time slept between attempts (counts even when `sleep` is simulated)
+    attempt = 0
+    while True:
+        attempt += 1
         remaining = time_left()
         if remaining < min_call_s:
             raise ModelError(ErrorClass.DEADLINE, f"insufficient time for a model call ({remaining:.1f}s left)")
@@ -309,10 +320,10 @@ def call_with_retry(
             on_attempt(
                 AttemptRecord(attempt, started, latency, e.cls.value, e.status, None, e.usage_uncertain, e.message[:300])
             )
-            if not e.transient or attempt == max_attempts:
+            if not e.transient or (attempt >= max_attempts and not (
+                    e.cls in WINDOWED and max(time.monotonic() - first, waited) < transient_window_s)):
                 raise
-            last = e
-            delay = min(max_delay_s, base_delay_s * (2 ** (attempt - 1)))
+            delay = min(max_delay_s, base_delay_s * (2 ** min(attempt - 1, 16)))
             delay = delay * (0.5 + rng.random() * 0.5)
             if e.retry_after_s is not None:
                 delay = max(delay, e.retry_after_s)
@@ -322,6 +333,7 @@ def call_with_retry(
                     f"retry after {delay:.1f}s would exceed the deadline; last error: {e}",
                 ) from e
             sleep(delay)
+            waited += delay
             continue
         except Exception as e:  # a client bug or an unexpected library error: the request may have been billed
             if not getattr(e, "recorded_by_caller", False):
@@ -332,5 +344,3 @@ def call_with_retry(
         turn.latency_s = latency
         on_attempt(AttemptRecord(attempt, started, latency, "ok", 200, turn.usage.to_dict(), False))
         return turn
-    assert last is not None
-    raise last

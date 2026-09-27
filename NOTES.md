@@ -282,3 +282,29 @@ artifact/export failure · regression introduced · selector failure.
 | Qwen function calling; Qwen3-Coder trained on XML `<function=...>` and `str_replace_editor` | [Qwen function calling](https://www.alibabacloud.com/help/en/model-studio/qwen-function-calling), [Qwen Code](https://www.alibabacloud.com/help/en/model-studio/qwen-code) | XML/Hermes recovery; `str_replace_editor` and Qwen Code tool names translated |
 | Error codes: `data_inspection_failed` (moderation), "Range of input length should be [1, N]" (overflow), Arrearage | [Model Studio error codes](https://www.alibabacloud.com/help/en/model-studio/error-code) | Content-filter retry with recent output withheld; overflow reduces context; quota exits 3 |
 | Coding Plan keys (`sk-sp-`) and endpoints | [Coding Plan FAQ](https://www.alibabacloud.com/help/en/model-studio/coding-plan-faq) | Separate rule |
+
+## 12. First live runs (2026-09-27) and the fixes they forced
+
+Models: DeepSeek V4.1-Flash through NVIDIA NIM (free tier, 30–300 s per request), Qwen 3.8-27B
+through OpenRouter's free pool (frequent upstream 429s). Judged by hidden tests the harness never sees.
+
+| Suite | DeepSeek V4.1-Flash | Qwen 3.8-27B |
+|---|---|---|
+| `evalsuite/` (8 owned tasks) | 8/8 pass | 4/4 run, 4/4 pass (free daily quota) |
+| Rehearsal tasks, 45 min limit (provider ~5x slower than direct APIs) | 9/10 solved (django_ipaddress_field: hidden tests fail) | not run (quota) |
+
+Problems observed live and fixed (each with a regression test that fails without the fix):
+1. **Rate limits ended the task.** Six fixed retries (~48 s) of 429 ended a run with 14 of 15 minutes
+   left. Rate limits and server errors are now retried for `retry.transient_window_s` (600 s) within
+   the deadline; network errors still fail after `max_attempts` (`tests/test_live_findings.py`).
+2. **A passing change was thrown away.** When attempt 1's time share ran out right after its fix
+   passed the tests, the harness reset to the original code. An attempt whose latest check on the
+   current change passed now keeps the budget (`test_attempt_with_a_passing_change_is_not_restarted_at_its_share`).
+3. **Stale preference lists refused to start.** NVIDIA NIM no longer serves the NIM rule's models;
+   without a pinned model the harness now takes a Qwen/DeepSeek/coder model the provider lists (never
+   when a model is pinned; still refuses when nothing suitable is listed).
+4. **OpenRouter `-MMDD` ids** (`qwen/qwen3.8-max-0902`) are recognised as variants of the preference,
+   so an OpenRouter key no longer falls through from Qwen to DeepSeek.
+5. **Scratch copies were compared as checks.** A command that `cd`s into a copy in the run/scratch
+   directory is no longer re-run as a check of the repository; the reproduction hint says the harness
+   runs it on the original code, so the model need not rebuild the original itself.

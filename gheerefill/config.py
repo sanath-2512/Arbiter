@@ -79,6 +79,9 @@ class RetryConfig:
     base_delay_s: float = 2.0
     max_delay_s: float = 60.0
     seed: int = 0
+    # Rate limits and overloaded servers often last minutes (shared evaluation keys, provider peaks).
+    # They are retried beyond max_attempts for up to this long, within the deadline.
+    transient_window_s: float = 600.0
 
 
 @dataclass

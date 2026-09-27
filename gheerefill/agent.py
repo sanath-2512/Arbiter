@@ -460,7 +460,12 @@ class Agent:
                 return
             caps = self.attempt_caps
             if caps and (self.budget.elapsed() >= caps[0] or self.budget.steps >= caps[1]):
-                if self._room_for_another_attempt():
+                if self._current_change_passes():
+                    # a restart from the original code would throw away a change whose checks pass; this
+                    # attempt keeps the rest of the budget to finish and submit it
+                    self.attempt_caps = caps = None
+                    self.log("attempt share used, but the current change passes its checks; continuing this attempt")
+                elif self._room_for_another_attempt():
                     self.termination = "attempt_budget"
                     return
                 # a fresh attempt could not run on what is left: this attempt keeps the rest of the budget
@@ -501,6 +506,7 @@ class Agent:
                         on_attempt=self._on_attempt,
                         rng=self.rng,
                         sleep=self._sleep,
+                        transient_window_s=self.profile.retry.transient_window_s,
                     )
                 except Cancelled:
                     self.in_model_call = False
@@ -883,7 +889,10 @@ class Agent:
         commands on this exact tree (or, if none ran on it, its most recent ones)."""
         out = [(r["check_key"], r["command"], "reproduction") for r in self.reproductions]
         seen = {k for k, _, _ in out}
-        agent = [r for r in self.records if r.source == "agent" and r.kind == "check"]
+        # a command that changes into a copy in the scratch/run directory does not test the repository's code
+        run_dir = str(self.run_dir.resolve())
+        agent = [r for r in self.records if r.source == "agent" and r.kind == "check"
+                 and not (run_dir in r.command and re.search(r"(^|[\s;&|(])cd\s", r.command))]
         pool = [r for r in agent if r.tree == tree and r.binding == "exact"] or agent
         for r in reversed(pool):
             if len(out) >= len(self.reproductions) + 3:
@@ -1035,6 +1044,17 @@ class Agent:
             self.attempt_caps = None  # the budget cannot fund another attempt: this one may use all of it
             return
         self.attempt_caps = (self.budget.elapsed() + secs, self.budget.steps + steps)
+
+    def _current_change_passes(self) -> bool:
+        """The working tree differs from the start and the latest check the agent ran on exactly this
+        tree passed (or a registered reproduction passes on it)."""
+        if self.ws is None or self.base_tree is None:
+            return False
+        tree = self.last_tree  # captured after every step
+        if tree is None or tree in (self.base_tree, self.start_tree):
+            return False
+        on_tree = [r for r in self.records if r.tree == tree and r.binding == "exact" and r.source == "agent"]
+        return bool(on_tree) and on_tree[-1].outcome == "passed"
 
     def _room_for_another_attempt(self) -> bool:
         """Enough budget left for a fresh attempt from the original code (same bar as `_next_attempt_worthwhile`)."""

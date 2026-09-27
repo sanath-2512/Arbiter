@@ -25,6 +25,7 @@ max_attempts = 6
 base_delay_s = 2.0
 max_delay_s = 60.0
 seed = 0
+transient_window_s = 600.0    # rate limits / overloaded provider: keep retrying this long (within the deadline)
 
 [limits]                          # defaults; per-task limits from the evaluator take precedence
 time_limit_s = 1800

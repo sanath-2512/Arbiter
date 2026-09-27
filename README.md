@@ -14,9 +14,9 @@ offline.
 > **Status:** implemented and deterministically tested: 282 tests (including an attack catalogue,
 > DeepSeek- and Qwen-like endpoint emulators, and real Go/Rust/Node/Ruby toolchains), 200
 > fault-injection seeds with 0 invariant violations, and scripted rehearsals on 22 real pinned
-> repository tasks. **Not yet live-validated.** No result here comes from a real model call: this
-> environment could not reach DeepSeek or Alibaba Cloud endpoints and no key was used. See
-> [NOTES.md](NOTES.md) for every claim and its evidence.
+> repository tasks. **First live runs** (free tiers, judged by hidden tests): DeepSeek V4.1-Flash 8/8 owned
+> tasks and 9/10 real-repository tasks; Qwen 3.8-27B 4/4 owned tasks. Direct DeepSeek/DashScope keys
+> are not yet exercised. See [NOTES.md](NOTES.md) §12 and every claim with its evidence.
 
 ```text
 ━━ Result: calc-divide ━━                              (make demo: scripted model, not live)

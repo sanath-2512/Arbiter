@@ -38,7 +38,7 @@ from gheerefill.models.http import _ssl_context
 INVALID_KEY = re.compile(r"invalid.{0,20}(api.?key|x-api-key|token|credential)|incorrect api key|api key not valid|"
                          r"no api key|unauthenticated|authentication (failed|error)|invalid authentication|"
                          r"expired|revoked|not a valid key", re.I)
-DATE_SUFFIX = re.compile(r"^(?P<base>.+?)(-\d{8}|-\d{4}-\d{2}-\d{2}|-latest)$")
+DATE_SUFFIX = re.compile(r"^(?P<base>.+?)(-\d{8}|-\d{4}-\d{2}-\d{2}|-\d{4}|-latest)$")  # -MMDD: OpenRouter, DeepSeek
 
 
 @dataclass
@@ -112,13 +112,13 @@ RULE_PARAMS = ("max_tokens_field", "context_window", "max_output_tokens", "promp
                "extra_body", "reasoning_passback", "request_timeout_s", "stream")
 
 
-def choose_generic(available: list[str]) -> str | None:
+def choose_generic(available: list[str], first_as_last_resort: bool = True) -> str | None:
     for pat in GENERIC_PREFS:
-        hits = [a for a in available if re.search(pat, a, re.I) and not re.search(r"embed|rerank|vl|audio|omni|tts|asr",
-                                                                                     a, re.I)]
+        hits = [a for a in available if re.search(pat, a, re.I) and not re.search(
+            r"embed|rerank|vl|audio|omni|tts|asr|guard|reward|safety", a, re.I)]
         if hits:
             return hits[0]
-    return available[0] if available else None
+    return available[0] if available and first_as_last_resort else None
 
 
 def probe_completion(cfg: ModelConfig, key: str, model: str, timeout_s: float = 30.0) -> str:
@@ -240,6 +240,13 @@ def resolve(profile: Profile, key: str, *, discover: bool = True,
             chosen = choose_generic(available)
             if chosen:
                 notes.append(f"model {chosen!r} chosen from the server's list {sorted(available)[:6]}")
+        if chosen is None and available and prefs and rule:
+            # the provider renamed or retired every listed preference: take a Qwen/DeepSeek/coder model it
+            # does serve rather than refuse to start (no model is pinned, so nothing is substituted)
+            chosen = choose_generic(available, first_as_last_resort=False)
+            if chosen:
+                notes.append(f"none of the preferred models {prefs} is listed by the provider; using {chosen!r} "
+                             "from its model list")
         if chosen is None and available and prefs:
             raise ConfigError(
                 f"none of the configured models {prefs} is available with this key "
