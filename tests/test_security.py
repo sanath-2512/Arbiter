@@ -84,6 +84,7 @@ class CredentialIsolationTest(TempDirCase):
         self.assertFalse(self.loot.exists() and SECRET in self.loot.read_text())
         self.assertIsNotNone(result["integrity"]["target_git_control_files_changed"])
 
+    @unittest.skipUnless(os.path.isdir("/proc"), "/proc is unavailable on this platform")
     def test_harness_process_scrubs_its_own_environment(self):
         code = ("from arbiter.credentials import take_credential; import sys, time; "
                 "v = take_credential('AI_API_KEY'); sys.stdout.write(str(len(v)) + '\\n'); sys.stdout.flush(); time.sleep(5)")

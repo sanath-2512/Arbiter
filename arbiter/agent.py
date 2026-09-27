@@ -688,12 +688,18 @@ class Agent:
 
     def _run_tool(self, call: ToolCall) -> ToolResult:
         cmd = (call.arguments or {}).get("command") if call.name == "bash" else None
+        named_eval_paths = self._eval_paths_named(cmd if isinstance(cmd, str) else None)
         repro_keys = {r["check_key"] for r in self.reproductions}
         is_repro = isinstance(cmd, str) and call.parse_error is None and normalize_command(cmd) in repro_keys
         is_check = isinstance(cmd, str) and call.parse_error is None and (is_repro or is_check_command(cmd))
         pre_tree = self._capture_state(f"before check at step {self.budget.steps}") if is_check else None
         self._audit_access(call)
         res = self._refuse_eval_edit(call) or self.tools.execute(call)
+        if named_eval_paths:
+            res.content += ("\n[harness] This command names evaluator-owned test file(s): "
+                            + ", ".join(named_eval_paths[:6])
+                            + ". If it altered them, the harness will put the originals back before judging. "
+                              "Fix source code and run the tests as written.")
         if cmd and self.profile.policy.git_hygiene and self.ws is not None:
             try:
                 fixed = self.ws.repair_target_git(self.target_git_initial, thorough="git" in cmd)
@@ -783,21 +789,38 @@ class Agent:
         text = " ".join(str(v) for v in args.values() if isinstance(v, str))
         if not text:
             return
-        run_dir, scratch = str(self.run_dir.resolve()), str(self.tools.scratch)
+        # macOS exposes the same temporary directory through both /var and /private/var. Keep
+        # both spellings so audit observations do not depend on which one a model uses.
+        run_dirs = {str(self.run_dir), str(self.run_dir.resolve())}
+        scratches = {str(self.tools.scratch), str(self.tools.scratch.resolve())}
+        scratches.update(str(Path(run_dir) / "scratch") for run_dir in run_dirs)
         paths = [text]
         if call.name in ("read_file", "search", "write_file", "edit_file") and isinstance(args.get("path"), str):
             p = Path(args["path"])
             paths.append(str((p if p.is_absolute() else self.tools.repo / p).resolve()))
         for t in paths:
-            if run_dir in t.replace(scratch, ""):
+            without_scratch = t
+            for scratch in scratches:
+                without_scratch = without_scratch.replace(scratch, "")
+            if any(run_dir in without_scratch for run_dir in run_dirs):
                 self.integrity["controller_state_access"].append({"step": self.budget.steps, "tool": call.name,
                                                                   "detail": _short(text, 200)})
                 break
         harness, repo = str(HARNESS_ROOT), str(self.tools.repo)
         # Work repos and run dirs may live inside the harness checkout (eval runs): strip them first.
-        if any(harness in t.replace(repo, "").replace(run_dir, "") for t in paths):
+        if any(harness in t.replace(repo, "") and not any(run_dir in t for run_dir in run_dirs) for t in paths):
             self.integrity["harness_repo_access"].append({"step": self.budget.steps, "tool": call.name,
                                                          "detail": _short(text, 200)})
+
+    def _eval_paths_named(self, command: str | None) -> list[str]:
+        """Evaluator-owned test files named by a shell command.
+
+        Shell commands remain available for running tests. The warning prevents a model from
+        mistaking a changed supplied test for a fix; restoration at submit stays authoritative.
+        """
+        if not command or not self.eval_paths:
+            return []
+        return [path for path in self.eval_paths if path in command]
 
     def _refuse_eval_edit(self, call: ToolCall) -> ToolResult | None:
         """The evaluation's own test files are read-only for the model: the evaluator uses its copy."""

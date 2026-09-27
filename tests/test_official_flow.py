@@ -246,6 +246,11 @@ class OfficialFlowTest(TempDirCase):
         self.assertIn("no task supplied", p.stderr)
 
     def test_interactive_terminal_session(self):
+        # CPython 3.13 warns that forkpty after the fake HTTP server's thread may deadlock on macOS;
+        # it did in the local clean-room run. The interactive path is exercised on Linux and by the
+        # non-PTY official-flow tests here, so do not make `make test` hang on that platform.
+        if sys.platform == "darwin" and sys.version_info >= (3, 13):
+            self.skipTest("forkpty after a thread can deadlock on macOS Python 3.13")
         with FakeGitHub({"acme/calc/issues/7": issue_json()}) as gh:
             pid, fd = pty.fork()
             if pid == 0:
@@ -299,6 +304,8 @@ class OfficialFlowTest(TempDirCase):
         return pid, fd, buf, read_until
 
     def test_interactive_bracketed_paste_and_ctrl_c_at_prompt(self):
+        if sys.platform == "darwin" and sys.version_info >= (3, 13):
+            self.skipTest("forkpty after a thread can deadlock on macOS Python 3.13")
         local = make_repo(self.tmp / "local", CALC)
         with FakeGitHub({}) as gh:
             pid, fd, buf, read_until = self._pty_session(gh, {"REPO": str(local)})

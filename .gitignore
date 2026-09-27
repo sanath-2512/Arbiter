@@ -5,10 +5,11 @@ work/
 __pycache__/
 *.pyc
 .env
+.env.*
+!.env.example
 evals/
 baselines/pi/node_modules/
 workspace/
-.env
 rehearsal/repos/
 rehearsal/envs/
 rehearsal/work/
