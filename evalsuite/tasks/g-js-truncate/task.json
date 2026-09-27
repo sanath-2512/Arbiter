@@ -1,0 +1,26 @@
+{
+ "task_id": "g-js-truncate",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "javascript",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "node --test _judge/judge.test.js"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/truncate.js",
+    "old_str": "  return s.slice(0, max) + '...';\n",
+    "new_str": "  return s.slice(0, Math.max(0, max - 3)) + '...';\n"
+   }
+  ],
+  "test": "node --test"
+ }
+}

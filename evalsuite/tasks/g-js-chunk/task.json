@@ -1,0 +1,26 @@
+{
+ "task_id": "g-js-chunk",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "javascript",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "node --test _judge/judge.test.js"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/chunk.js",
+    "old_str": "  for (let i = 0; i + size <= xs.length; i += size) {\n",
+    "new_str": "  for (let i = 0; i < xs.length; i += size) {\n"
+   }
+  ],
+  "test": "node --test"
+ }
+}

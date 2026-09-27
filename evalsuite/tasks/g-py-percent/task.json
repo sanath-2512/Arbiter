@@ -1,0 +1,26 @@
+{
+ "task_id": "g-py-percent",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "python",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "python3 -m unittest discover -s _judge -t ."
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "fmt/core.py",
+    "old_str": "    return f'{part * 100 // total:.1f}%'\n",
+    "new_str": "    if total == 0:\n        return '0.0%'\n    return f'{part * 100 / total:.1f}%'\n"
+   }
+  ],
+  "test": "python3 -m unittest discover -s tests -t ."
+ }
+}

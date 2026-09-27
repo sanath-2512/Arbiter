@@ -1,0 +1,26 @@
+{
+ "task_id": "g-js-query",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "javascript",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "node --test _judge/judge.test.js"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/query.js",
+    "old_str": "    out[k] = v;\n",
+    "new_str": "    const dec = (s) => decodeURIComponent(s.replace(/\\+/g, ' '));\n    out[dec(k)] = dec(v);\n"
+   }
+  ],
+  "test": "node --test"
+ }
+}

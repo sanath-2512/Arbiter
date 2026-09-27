@@ -1,0 +1,26 @@
+{
+ "task_id": "g-js-get-path",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "javascript",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "node --test _judge/judge.test.js"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/get.js",
+    "old_str": "    cur = cur[key];\n",
+    "new_str": "    if (cur === null || cur === undefined) return dflt;\n    cur = cur[key];\n"
+   }
+  ],
+  "test": "node --test"
+ }
+}

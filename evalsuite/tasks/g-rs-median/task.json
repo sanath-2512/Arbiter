@@ -1,0 +1,26 @@
+{
+ "task_id": "g-rs-median",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "rust",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden/judge.rs": "tests/judge.rs"
+  },
+  "cmd": "cargo test --offline -q --test judge"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/lib.rs",
+    "old_str": "    Some(v[n / 2])\n",
+    "new_str": "    if n % 2 == 0 {\n        Some((v[n / 2 - 1] + v[n / 2]) / 2.0)\n    } else {\n        Some(v[n / 2])\n    }\n"
+   }
+  ],
+  "test": "cargo test --offline"
+ }
+}

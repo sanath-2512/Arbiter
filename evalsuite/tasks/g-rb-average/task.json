@@ -1,0 +1,26 @@
+{
+ "task_id": "g-rb-average",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "ruby",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "ruby -Ilib _judge/judge_test.rb"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "lib/lib.rb",
+    "old_str": "    xs.sum / xs.size\n",
+    "new_str": "    xs.sum.to_f / xs.size\n"
+   }
+  ],
+  "test": "ruby -Ilib test/test_lib.rb"
+ }
+}

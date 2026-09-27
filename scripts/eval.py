@@ -47,7 +47,9 @@ def load_tasks(partition: str | None, names: list[str] | None) -> list[dict[str,
         spec["dir"] = d
         if names and spec["task_id"] not in names:
             continue
-        if partition and partition != "all" and spec["partition"] != partition:
+        if partition == "all-but-final" and spec["partition"] == "final":
+            continue
+        if partition and partition not in ("all", "all-but-final") and spec["partition"] != partition:
             continue
         tasks.append(spec)
     return tasks
@@ -98,7 +100,7 @@ def judge_patch(spec: dict[str, Any], patch: bytes, work: Path) -> dict[str, Any
 def validate_suite(tasks: list[dict[str, Any]], work: Path) -> int:
     bad = 0
     for spec in tasks:
-        tool = {"javascript": "node", "go": "go"}.get(spec["language"])
+        tool = {"javascript": "node", "go": "go", "rust": "cargo", "ruby": "ruby"}.get(spec["language"])
         if tool and shutil.which(tool) is None:
             print(f"SKIP {spec['task_id']}: {tool} not installed")
             continue
@@ -126,18 +128,70 @@ def audit(paths: list[Path]) -> list[str]:
     return sorted(set(hits))
 
 
-def run_ours(spec, repo, profile_path, out_dir, limits) -> dict[str, Any]:
+def scripted_plan(spec: dict[str, Any], repo: Path) -> list[tuple[str, dict[str, Any]]]:
+    """The reference fix replayed as tool calls: read each file, edit it, run the tests. Tasks without
+    recorded edits write the reference files whole."""
+    info = spec.get("scripted") or {}
+    edits = info.get("edits")
+    plan: list[tuple[str, dict[str, Any]]] = []
+    if edits:
+        for path in dict.fromkeys(e["path"] for e in edits):
+            plan.append(("read_file", {"path": path}))
+        plan += [("edit_file", {"path": e["path"], "old_str": e["old_str"], "new_str": e["new_str"]}) for e in edits]
+    else:
+        ref = spec["dir"] / "reference"
+        for f in sorted(p for p in ref.rglob("*") if p.is_file()):
+            rel = f.relative_to(ref).as_posix()
+            if (repo / rel).exists():
+                plan.append(("read_file", {"path": rel}))
+            plan.append(("write_file", {"path": rel, "content": f.read_text()}))
+    plan.append(("bash", {"command": info.get("test") or DEFAULT_TEST.get(spec["language"], "true")}))
+    return plan
+
+
+DEFAULT_TEST = {"python": "python3 -m unittest discover -s tests", "javascript": "node --test",
+                "go": "go test ./...", "rust": "cargo test --offline"}
+
+
+def run_scripted(spec, repo, out_dir, limits, family: str) -> dict[str, Any]:
+    """Offline: the harness, unchanged, behind a DeepSeek-/Qwen-like endpoint whose model replays the
+    reference fix. Measures the harness's own behaviour and overhead (not a model's ability)."""
+    from scripts.provider_emulator import ProviderEmulator  # noqa: PLC0415
+
+    plan = scripted_plan(spec, repo)
+
+    def respond(messages, tools):
+        i = sum(1 for m in messages if m.get("role") == "assistant")
+        if i < len(plan):
+            name, args = plan[i]
+            return {"content": "", "tool_calls": [{"name": name, "arguments": args}]}
+        return {"content": "", "tool_calls": [{"name": "submit", "arguments": {"summary": "fixed; tests pass"}}]}
+
+    prof = out_dir / "profile.toml"
+    prof.parent.mkdir(parents=True, exist_ok=True)
+    prof.write_text('[model]\nprovider = "openai_chat"\nname = "emulated"\nbase_url = "http://127.0.0.1:1/v1"\n')
+    seed = sum(map(ord, spec["task_id"]))
+    with ProviderEmulator(respond, family, seed=seed, scale=1.0) as emu:
+        env = {**os.environ, "AI_API_KEY": "sk-offline-scripted", "AI_BASE_URL": emu.base_url,
+               "no_proxy": "127.0.0.1", "NO_PROXY": "127.0.0.1"}
+        res = run_ours(spec, repo, prof, out_dir, limits, env=env, extra_args=["--no-discover"])
+        res["emulator"] = emu.stats()
+    return res
+
+
+def run_ours(spec, repo, profile_path, out_dir, limits, env=None, extra_args=()) -> dict[str, Any]:
     task = {"task_id": spec["task_id"], "repo_path": str(repo), "issue": (spec["dir"] / "issue.md").read_text(),
             "limits": limits}
     tf = out_dir / "task.json"
     tf.parent.mkdir(parents=True, exist_ok=True)
     tf.write_text(json.dumps(task))
-    cmd = [sys.executable, "-m", "gheerefill", "run", "--task", str(tf), "--out", str(out_dir / "runs")]
+    cmd = [sys.executable, "-m", "gheerefill", "run", "--task", str(tf), "--out", str(out_dir / "runs"), *extra_args]
     if profile_path:
         cmd += ["--profile", str(profile_path)]
     t0 = time.monotonic()
     try:
-        p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=limits["time_limit_s"] + 180)
+        p = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=limits["time_limit_s"] + 180,
+                           env=env)
         (out_dir / "stderr.log").write_text(p.stderr)
         recs = [json.loads(l) for l in p.stdout.splitlines() if l.strip()]
         rec = recs[0] if recs else {"status": "no_output", "exit_code": p.returncode}
@@ -161,6 +215,7 @@ def run_ours(spec, repo, profile_path, out_dir, limits) -> dict[str, Any]:
         "steps": usage.get("steps"), "tool_calls": usage.get("tool_calls"), "timing": rec.get("timing"),
         "wall_s": round(wall, 2), "patch": patch, "trail": trail, "run_dir": str(run_dir) if run_dir else None,
         "error": rec.get("error"), "proof_level": (rec.get("proof") or {}).get("level"),
+        "model_quirks": rec.get("model_quirks"), "prewarm": rec.get("prewarm"),
         "attempts": len((rec.get("proof") or {}).get("attempts") or []),
     }
 
@@ -332,7 +387,8 @@ def summarize(records: list[dict[str, Any]], systems: list[str], out: Path) -> s
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--suite-validate", "--validate-suite", dest="validate", action="store_true")
-    ap.add_argument("--partition", default="dev", choices=["dev", "selection", "final", "all"])
+    ap.add_argument("--partition", default="dev", choices=["dev", "selection", "final", "gauntlet", "all",
+                                                           "all-but-final"])
     ap.add_argument("--tasks", help="comma-separated task ids (default: whole partition)")
     ap.add_argument("--systems", default="ours,mini")
     ap.add_argument("--profile", default=str(ROOT / "profiles" / "default.toml"),
@@ -340,6 +396,8 @@ def main() -> int:
     ap.add_argument("--repeats", type=int, default=1)
     ap.add_argument("--out", default=None)
     ap.add_argument("--final", action="store_true", help="required to run the final (holdout) partition")
+    ap.add_argument("--scripted", choices=["deepseek", "qwen"], default=None,
+                    help="offline: replay each task's reference fix through the harness behind this provider emulator")
     args = ap.parse_args()
     names = args.tasks.split(",") if args.tasks else None
     out = Path(args.out or ROOT / "evals" / time.strftime("%Y%m%dT%H%M%S", time.gmtime())).resolve()
@@ -374,6 +432,8 @@ def main() -> int:
                     res = run_mini(spec, repo, Path(args.profile), d, limits)
                 elif system == "pi":
                     res = run_pi(spec, repo, Path(args.profile), d, limits)
+                elif system.startswith("ours") and args.scripted:
+                    res = run_scripted(spec, repo, d, limits, args.scripted)
                 elif system.startswith("ours"):
                     prof = system.split("@", 1)[1] if "@" in system else args.profile
                     res = run_ours(spec, repo, Path(prof), d, limits)
@@ -393,7 +453,14 @@ def main() -> int:
                     fh.write(json.dumps(rec, default=str) + "\n")
                 print(f"{spec['task_id']:<24} {system:<28} rep={rep} judge={'PASS' if label['judge_pass'] else 'fail'} "
                       f"termination={rec.get('termination')} wall={rec['wall_s']}s", flush=True)
-    print(summarize(records, systems, out))
+    text = summarize(records, systems, out)
+    if args.scripted:
+        text = (f"> Offline scripted replay behind the {args.scripted} emulator: each run's model replays the task's "
+                "reference fix through the unchanged harness (real tools, toolchains, evidence, export, judge). It "
+                "checks the harness end to end and measures its overhead; it says nothing about a model's ability.\n\n"
+                + text)
+        (out / "summary.md").write_text(text)
+    print(text)
     return 0
 
 

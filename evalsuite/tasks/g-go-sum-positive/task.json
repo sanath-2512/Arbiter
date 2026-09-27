@@ -1,0 +1,26 @@
+{
+ "task_id": "g-go-sum-positive",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "go",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden/judge_test.go": "judge_test.go"
+  },
+  "cmd": "go test -count=1 -run Judge ./..."
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "lib.go",
+    "old_str": "\t\ttotal += x\n",
+    "new_str": "\t\tif x > 0 {\n\t\t\ttotal += x\n\t\t}\n"
+   }
+  ],
+  "test": "go test ./..."
+ }
+}

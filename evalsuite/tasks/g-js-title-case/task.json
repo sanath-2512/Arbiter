@@ -1,0 +1,26 @@
+{
+ "task_id": "g-js-title-case",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "javascript",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "node --test _judge/judge.test.js"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/title.js",
+    "old_str": "  return s.split(' ').filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');\n",
+    "new_str": "  return s.split(' ').map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(' ');\n"
+   }
+  ],
+  "test": "node --test"
+ }
+}

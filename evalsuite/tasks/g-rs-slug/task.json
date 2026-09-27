@@ -1,0 +1,26 @@
+{
+ "task_id": "g-rs-slug",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "rust",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden/judge.rs": "tests/judge.rs"
+  },
+  "cmd": "cargo test --offline -q --test judge"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/lib.rs",
+    "old_str": "    s.to_lowercase().replace(' ', \"-\")\n",
+    "new_str": "    let mut out = String::new();\n    for c in s.to_lowercase().chars() {\n        if c.is_ascii_alphanumeric() {\n            out.push(c);\n        } else if !out.is_empty() && !out.ends_with('-') {\n            out.push('-');\n        }\n    }\n    out.trim_end_matches('-').to_string()\n"
+   }
+  ],
+  "test": "cargo test --offline"
+ }
+}

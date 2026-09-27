@@ -1,0 +1,26 @@
+{
+ "task_id": "g-rs-bank",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "rust",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden/judge.rs": "tests/judge.rs"
+  },
+  "cmd": "cargo test --offline -q --test judge"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/lib.rs",
+    "old_str": "        self.balance -= amount;\n",
+    "new_str": "        if amount > self.balance {\n            return Err(Error::InsufficientFunds);\n        }\n        self.balance -= amount;\n"
+   }
+  ],
+  "test": "cargo test --offline"
+ }
+}

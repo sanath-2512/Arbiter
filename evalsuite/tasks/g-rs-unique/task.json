@@ -1,0 +1,26 @@
+{
+ "task_id": "g-rs-unique",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "rust",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden/judge.rs": "tests/judge.rs"
+  },
+  "cmd": "cargo test --offline -q --test judge"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/lib.rs",
+    "old_str": "    let mut v = values.to_vec();\n    v.sort();\n    v.dedup();\n    v\n",
+    "new_str": "    let mut seen = std::collections::HashSet::new();\n    values.iter().copied().filter(|x| seen.insert(*x)).collect()\n"
+   }
+  ],
+  "test": "cargo test --offline"
+ }
+}

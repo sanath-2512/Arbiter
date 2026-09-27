@@ -1,0 +1,26 @@
+{
+ "task_id": "g-js-unique-by",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "javascript",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "node --test _judge/judge.test.js"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/unique.js",
+    "old_str": "  for (const it of items) m.set(it[key], it);\n",
+    "new_str": "  for (const it of items) if (!m.has(it[key])) m.set(it[key], it);\n"
+   }
+  ],
+  "test": "node --test"
+ }
+}

@@ -1,0 +1,26 @@
+{
+ "task_id": "g-rs-version",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "rust",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden/judge.rs": "tests/judge.rs"
+  },
+  "cmd": "cargo test --offline -q --test judge"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/version.rs",
+    "old_str": "    a > b\n",
+    "new_str": "    let parse = |s: &str| s.split('.').map(|p| p.parse::<u64>().unwrap_or(0)).collect::<Vec<_>>();\n    parse(a) > parse(b)\n"
+   }
+  ],
+  "test": "cargo test --offline"
+ }
+}

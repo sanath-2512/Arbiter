@@ -1,0 +1,26 @@
+{
+ "task_id": "g-rs-fields",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "rust",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden/judge.rs": "tests/judge.rs"
+  },
+  "cmd": "cargo test --offline -q --test judge"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/lib.rs",
+    "old_str": "    line.split(',').map(|f| f.to_string()).collect()\n",
+    "new_str": "    line.split(',').map(|f| f.trim().to_string()).collect()\n"
+   }
+  ],
+  "test": "cargo test --offline"
+ }
+}

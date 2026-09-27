@@ -1,0 +1,26 @@
+{
+ "task_id": "g-rs-clamp",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "rust",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden/judge.rs": "tests/judge.rs"
+  },
+  "cmd": "cargo test --offline -q --test judge"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/lib.rs",
+    "old_str": "    } else if v > hi {\n        lo\n",
+    "new_str": "    } else if v > hi {\n        hi\n"
+   }
+  ],
+  "test": "cargo test --offline"
+ }
+}

@@ -1,0 +1,26 @@
+{
+ "task_id": "g-js-retry",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "javascript",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "node --test _judge/judge.test.js"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/retry.js",
+    "old_str": "  for (let i = 1; i < attempts; i++) {\n",
+    "new_str": "  for (let i = 0; i < attempts; i++) {\n"
+   }
+  ],
+  "test": "node --test"
+ }
+}

@@ -1,0 +1,26 @@
+{
+ "task_id": "g-py-safe-int",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "python",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "python3 -m unittest discover -s _judge -t ."
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "conv/core.py",
+    "old_str": "    return int(s)\n",
+    "new_str": "    try:\n        return int(str(s).strip())\n    except ValueError:\n        return default\n"
+   }
+  ],
+  "test": "python3 -m unittest discover -s tests -t ."
+ }
+}

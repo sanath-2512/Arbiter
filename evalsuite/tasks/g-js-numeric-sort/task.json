@@ -1,0 +1,26 @@
+{
+ "task_id": "g-js-numeric-sort",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "javascript",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "node --test _judge/judge.test.js"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/sort.js",
+    "old_str": "  return [...xs].sort();\n",
+    "new_str": "  return [...xs].sort((a, b) => a - b);\n"
+   }
+  ],
+  "test": "node --test"
+ }
+}

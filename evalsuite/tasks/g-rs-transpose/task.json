@@ -1,0 +1,26 @@
+{
+ "task_id": "g-rs-transpose",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "rust",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden/judge.rs": "tests/judge.rs"
+  },
+  "cmd": "cargo test --offline -q --test judge"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/lib.rs",
+    "old_str": "    (0..rows).map(|c| (0..rows).map(|r| m[r][c]).collect()).collect()\n",
+    "new_str": "    let cols = m[0].len();\n    (0..cols).map(|c| (0..rows).map(|r| m[r][c]).collect()).collect()\n"
+   }
+  ],
+  "test": "cargo test --offline"
+ }
+}

@@ -1,0 +1,26 @@
+{
+ "task_id": "g-rs-fizzbuzz",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "rust",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden/judge.rs": "tests/judge.rs"
+  },
+  "cmd": "cargo test --offline -q --test judge"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/lib.rs",
+    "old_str": "    (1..n)\n",
+    "new_str": "    (1..=n)\n"
+   }
+  ],
+  "test": "cargo test --offline"
+ }
+}

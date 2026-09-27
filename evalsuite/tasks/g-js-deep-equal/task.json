@@ -1,0 +1,26 @@
+{
+ "task_id": "g-js-deep-equal",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "javascript",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "node --test _judge/judge.test.js"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/equal.js",
+    "old_str": "  for (const k of Object.keys(a)) {\n",
+    "new_str": "  if (Object.keys(a).length !== Object.keys(b).length) return false;\n  for (const k of Object.keys(a)) {\n"
+   }
+  ],
+  "test": "node --test"
+ }
+}

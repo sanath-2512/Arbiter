@@ -1,0 +1,26 @@
+{
+ "task_id": "g-rb-pluralize",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "ruby",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "ruby -Ilib _judge/judge_test.rb"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "lib/lib.rb",
+    "old_str": "    word + 's'\n",
+    "new_str": "    word.match?(/(s|x|z|ch|sh)\\z/) ? word + 'es' : word + 's'\n"
+   }
+  ],
+  "test": "ruby -Ilib test/test_lib.rb"
+ }
+}

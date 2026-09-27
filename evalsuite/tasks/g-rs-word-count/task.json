@@ -1,0 +1,26 @@
+{
+ "task_id": "g-rs-word-count",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "rust",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden/judge.rs": "tests/judge.rs"
+  },
+  "cmd": "cargo test --offline -q --test judge"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/lib.rs",
+    "old_str": "    if text.is_empty() {\n        return 0;\n    }\n    text.split(' ').count()\n",
+    "new_str": "    text.split_whitespace().count()\n"
+   }
+  ],
+  "test": "cargo test --offline"
+ }
+}

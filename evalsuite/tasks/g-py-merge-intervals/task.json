@@ -1,0 +1,26 @@
+{
+ "task_id": "g-py-merge-intervals",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "python",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "python3 -m unittest discover -s _judge -t ."
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "intervals/core.py",
+    "old_str": "    for s, e in intervals:\n",
+    "new_str": "    for s, e in sorted(intervals):\n"
+   }
+  ],
+  "test": "python3 -m unittest discover -s tests -t ."
+ }
+}

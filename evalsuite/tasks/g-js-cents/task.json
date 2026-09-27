@@ -1,0 +1,26 @@
+{
+ "task_id": "g-js-cents",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "javascript",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "node --test _judge/judge.test.js"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/sum.js",
+    "old_str": "  return prices.reduce((a, b) => a + b, 0);\n",
+    "new_str": "  return Math.round(prices.reduce((a, b) => a + b, 0) * 100) / 100;\n"
+   }
+  ],
+  "test": "node --test"
+ }
+}

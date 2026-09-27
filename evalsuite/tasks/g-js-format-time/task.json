@@ -1,0 +1,26 @@
+{
+ "task_id": "g-js-format-time",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "javascript",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "node --test _judge/judge.test.js"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/time.js",
+    "old_str": "  return `${m}:${s}`;\n",
+    "new_str": "  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;\n"
+   }
+  ],
+  "test": "node --test"
+ }
+}

@@ -1,0 +1,26 @@
+{
+ "task_id": "g-go-max",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "go",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden/judge_test.go": "judge_test.go"
+  },
+  "cmd": "go test -count=1 -run Judge ./..."
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "lib.go",
+    "old_str": "\tm := xs[0]\n",
+    "new_str": "\tif len(xs) == 0 {\n\t\treturn 0, false\n\t}\n\tm := xs[0]\n"
+   }
+  ],
+  "test": "go test ./..."
+ }
+}

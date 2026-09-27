@@ -1,0 +1,26 @@
+{
+ "task_id": "g-rs-leap",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "rust",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden/judge.rs": "tests/judge.rs"
+  },
+  "cmd": "cargo test --offline -q --test judge"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/lib.rs",
+    "old_str": "    year % 4 == 0 && year % 100 != 0\n",
+    "new_str": "    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0\n"
+   }
+  ],
+  "test": "cargo test --offline"
+ }
+}

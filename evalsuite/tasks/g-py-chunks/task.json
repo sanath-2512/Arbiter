@@ -1,0 +1,26 @@
+{
+ "task_id": "g-py-chunks",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "python",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "python3 -m unittest discover -s _judge -t ."
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "util/core.py",
+    "old_str": "    return [xs[i:i + n] for i in range(0, len(xs) - n + 1, n)]\n",
+    "new_str": "    return [xs[i:i + n] for i in range(0, len(xs), n)]\n"
+   }
+  ],
+  "test": "python3 -m unittest discover -s tests -t ."
+ }
+}

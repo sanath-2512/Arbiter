@@ -1,0 +1,26 @@
+{
+ "task_id": "g-go-initials",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "go",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden/judge_test.go": "judge_test.go"
+  },
+  "cmd": "go test -count=1 -run Judge ./..."
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "lib.go",
+    "old_str": "\tfor _, w := range strings.Split(name, \" \") {\n\t\tif w == \"\" {\n\t\t\tb.WriteString(\" \")\n\t\t\tcontinue\n\t\t}\n",
+    "new_str": "\tfor _, w := range strings.Fields(name) {\n"
+   }
+  ],
+  "test": "go test ./..."
+ }
+}

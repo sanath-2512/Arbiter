@@ -12,5 +12,6 @@ Boundary rules:
 - `reference/` is used only by `scripts/eval.py --validate-suite` to check that each judge fails on
   the base repository and passes on a reference solution.
 - Partitions: `dev` (iterate freely), `selection` (compare candidate configurations),
-  `final` (untouched holdout). Every run over `final` is appended to `evalsuite/final_runs.log`,
+  `gauntlet` (40 generated tasks across Rust, JavaScript, Python, Go and Ruby; regenerate with
+  `scripts/make_gauntlet.py`), `final` (untouched holdout). Every run over `final` is appended to `evalsuite/final_runs.log`,
   so repeated inspection is visible.

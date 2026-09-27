@@ -1,0 +1,26 @@
+{
+ "task_id": "g-rs-fahrenheit",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "rust",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden/judge.rs": "tests/judge.rs"
+  },
+  "cmd": "cargo test --offline -q --test judge"
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "src/lib.rs",
+    "old_str": "    (c as i64 * 9 / 5 + 32) as f64\n",
+    "new_str": "    c * 9.0 / 5.0 + 32.0\n"
+   }
+  ],
+  "test": "cargo test --offline"
+ }
+}

@@ -20,7 +20,7 @@ INPUTS := ISSUE ISSUE_URL ISSUE_FILE GITHUB_ISSUE REPO REPO_PATH REPO_URL BASE T
 $(foreach v,$(INPUTS),$(if $(filter undefined,$(origin $v)),,$(eval override $v := $$(value $v))))
 export $(INPUTS)
 
-.PHONY: setup run test clean check-config probe smoke demo chaos baseline-setup eval
+.PHONY: setup run test clean check-config probe smoke demo chaos baseline-setup eval gauntlet gauntlet-offline
 
 setup:                ## verify toolchain, pick a Python >= 3.9, byte-compile the harness (offline)
 	@cd "$(HERE)" && bash scripts/setup.sh
@@ -54,6 +54,13 @@ baseline-setup:       ## dev only: install pinned mini-swe-agent (.venv-baseline
 eval:                 ## dev only, LIVE: paired evaluation SUITE=dir SYSTEMS=ours,mini,pi
 	@cd "$(HERE)" && $(PY) scripts/eval.py $(if $(SUITE),--suite "$$SUITE",) $(if $(SYSTEMS),--systems "$$SYSTEMS",) $(if $(PROFILE),--profile "$$PROFILE",)
 
+gauntlet:             ## LIVE (uses AI_API_KEY): the 46 non-holdout eval tasks (Rust/JS/Python/Go/Ruby), judged by hidden tests
+	@cd "$(HERE)" && $(PY) scripts/eval.py --partition all-but-final --systems ours $(if $(PROFILE),--profile "$$PROFILE",)
+
+gauntlet-offline:     ## offline: the same 46 tasks, reference fixes replayed through the harness behind DeepSeek and Qwen emulators
+	@cd "$(HERE)" && $(PY) scripts/eval.py --partition all-but-final --systems ours --scripted deepseek && \
+		$(PY) scripts/eval.py --partition all-but-final --systems ours --scripted qwen
+
 clean:                ## remove generated state (runs, work copies, cloned issue repositories, caches)
-	cd "$(HERE)" && rm -rf runs work workspace .harness-python .venv-baseline
+	cd "$(HERE)" && rm -rf runs work workspace evals .harness-python .venv-baseline
 	cd "$(HERE)" && find . -name __pycache__ -type d -prune -exec rm -rf {} +

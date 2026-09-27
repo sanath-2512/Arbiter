@@ -1,0 +1,26 @@
+{
+ "task_id": "g-py-flatten",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "python",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden": "_judge"
+  },
+  "cmd": "python3 -m unittest discover -s _judge -t ."
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "lists/core.py",
+    "old_str": "            out.extend(x)\n",
+    "new_str": "            out.extend(flatten(x))\n"
+   }
+  ],
+  "test": "python3 -m unittest discover -s tests -t ."
+ }
+}

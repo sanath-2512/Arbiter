@@ -1,0 +1,26 @@
+{
+ "task_id": "g-go-reverse",
+ "partition": "gauntlet",
+ "kind": "regression",
+ "language": "go",
+ "limits": {
+  "time_limit_s": 900,
+  "max_steps": 40
+ },
+ "judge": {
+  "files": {
+   "hidden/judge_test.go": "judge_test.go"
+  },
+  "cmd": "go test -count=1 -run Judge ./..."
+ },
+ "scripted": {
+  "edits": [
+   {
+    "path": "lib.go",
+    "old_str": "\tb := []byte(s)\n",
+    "new_str": "\tb := []rune(s)\n"
+   }
+  ],
+  "test": "go test ./..."
+ }
+}
