@@ -1353,6 +1353,7 @@ class Agent:
             "submit_summary": self.submit_summary,
             "error": self.error,
             "model_quirks": dict(self.model_quirks),
+            "context": self.ctx.stats() if hasattr(self, "ctx") else None,
             "usage": self.budget.summary(),
             "timing": {
                 "total_s": round(self.budget.elapsed(), 3),
