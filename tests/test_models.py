@@ -188,6 +188,41 @@ class ClientParsingTest(unittest.TestCase):
         _, _, body = ok_openai('["ls"]')
         self.assertIn("JSON object", client.parse_response(json.loads(body)).tool_calls[0].parse_error)
 
+    def test_gemini_thought_signatures_are_sent_back(self):
+        """Gemini's thinking models return a signature with each tool call (OpenAI compatibility:
+        `extra_content`) and reject the next request if it does not come back with the call."""
+        from arbiter.models.openai_chat import accumulate_openai_stream
+        from arbiter.models.quirks import normalize_call
+        sig = {"google": {"thought_signature": "c2lnLUE="}}
+        client = OpenAIChatClient(self.cfg(), "k")
+        turn = client.parse_response({"choices": [{"finish_reason": "tool_calls", "message": {
+            "role": "assistant", "content": None, "tool_calls": [{"id": "c1", "type": "function", "extra_content": sig,
+                                                                  "function": {"name": "bash", "arguments": '{"cmd": "ls"}'}}]}}]})
+        self.assertEqual(turn.tool_calls[0].extra, {"extra_content": sig})
+        # an argument/name repair keeps the signature
+        fixed, _ = normalize_call(turn.tool_calls[0], {TOOL.name: TOOL})
+        self.assertEqual(fixed.extra, {"extra_content": sig})
+        msg = turn.to_message()
+        rendered = client.render_messages(MSGS + [msg, {"role": "tool", "tool_call_id": "c1", "content": "x"}])
+        self.assertEqual(rendered[-2]["tool_calls"][0]["extra_content"], sig)
+        # streamed responses carry it too
+        rebuilt = accumulate_openai_stream([("chunk", {"choices": [{"delta": {"tool_calls": [
+            {"index": 0, "id": "c1", "extra_content": sig, "function": {"name": "bash", "arguments": "{}"}}]}}]}),
+            ("done", None)])
+        self.assertEqual(rebuilt["choices"][0]["message"]["tool_calls"][0]["extra_content"], sig)
+        # a call recorded without one (recovered from text): after the provider asks, the documented
+        # placeholder is sent for it, while calls with a real signature keep theirs
+        bare = {"role": "assistant", "content": None, "tool_calls": [{"id": "c0", "name": "bash", "arguments": "{}"}]}
+        self.assertNotIn("extra_content", client.render_messages([bare])[0]["tool_calls"][0])
+        change = client.adapt(ModelError(ErrorClass.MALFORMED_REQUEST,
+                                         "Function call is missing a thought_signature in functionCall parts.", status=400))
+        self.assertIn("thought signature", change)
+        out = client.render_messages([bare, msg])
+        self.assertEqual(out[0]["tool_calls"][0]["extra_content"]["google"]["thought_signature"],
+                         "skip_thought_signature_validator")
+        self.assertEqual(out[1]["tool_calls"][0]["extra_content"], sig)
+        self.assertIsNone(client.adapt(ModelError(ErrorClass.MALFORMED_REQUEST, "missing a thought_signature", status=400)))
+
     def test_openai_missing_choices_is_bad_response(self):
         with self.assertRaises(ModelError) as cm:
             OpenAIChatClient(self.cfg(), "k").parse_response({"usage": {"prompt_tokens": 1}})

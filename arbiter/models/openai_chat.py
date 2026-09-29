@@ -19,6 +19,11 @@ from arbiter.config import ModelConfig
 from arbiter.models.base import ErrorClass, ModelError, ModelTurn, ToolCall, ToolSpec, Usage, output_token_limit
 from arbiter.models.http import post_json, post_sse
 
+# Per-tool-call fields a provider returns and requires back on later requests (Gemini's OpenAI
+# compatibility puts the thought signature in `extra_content`).
+ECHOED_CALL_FIELDS = ("extra_content",)
+SIGNATURE_STUB = {"extra_content": {"google": {"thought_signature": "skip_thought_signature_validator"}}}
+
 
 def normalize_openai_usage(usage: Any) -> Usage:
     if not isinstance(usage, dict):
@@ -65,6 +70,7 @@ class OpenAIChatClient:
         self.cfg = cfg
         self.model_name = cfg.name
         self._api_key = api_key
+        self._stub_signatures = False  # set once the provider asks for thought signatures
 
     def render_messages(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
@@ -82,7 +88,8 @@ class OpenAIChatClient:
                 d: dict[str, Any] = {"role": "assistant", "content": m.get("content") or (None if calls else "(no reply)")}
                 if calls:
                     d["tool_calls"] = [
-                        {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"] or "{}"}}
+                        {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"] or "{}"},
+                         **(c.get("extra") or (SIGNATURE_STUB if self._stub_signatures else {}))}
                         for c in calls
                     ]
                 reasoning = m.get("reasoning")
@@ -140,7 +147,9 @@ class OpenAIChatClient:
             if not call_id:
                 call_id = f"call_{uuid.uuid4().hex[:12]}"
                 notes.append("provider omitted a tool call id; generated one")
-            calls.append(ToolCall(id=str(call_id), name=name, arguments=args, raw_arguments=raw, parse_error=err))
+            extra = {k: tc[k] for k in ECHOED_CALL_FIELDS if isinstance(tc, dict) and tc.get(k)}
+            calls.append(ToolCall(id=str(call_id), name=name, arguments=args, raw_arguments=raw, parse_error=err,
+                                  extra=extra or None))
         finish = str(choice.get("finish_reason") or "")
         text = _content_text(msg.get("content"))
         reasoning = msg.get("reasoning_content") or msg.get("reasoning") or ""
@@ -190,6 +199,11 @@ class OpenAIChatClient:
             elif self.cfg.reasoning_passback != "none":
                 self.cfg.reasoning_passback = "none"
                 return "provider rejected reasoning_content in messages; no longer sent"
+        if "thought_signature" in msg and not self._stub_signatures:
+            # calls recorded without a signature (recovered from text, or older turns): Gemini's
+            # documented placeholder lets them through; calls that carried one still send their own
+            self._stub_signatures = True
+            return "provider requires a thought signature on every tool call; calls without one now carry its placeholder"
         if re.search(r"only supports? stream|stream mode|non-stream(ing)? calls?|must be set to false for non-stream", msg) \
                 and not self.cfg.stream:
             self.cfg.stream = True
@@ -234,6 +248,9 @@ def accumulate_openai_stream(events) -> dict[str, Any]:
                 slot = calls.setdefault(int(tc.get("index", len(calls))), {"id": None, "name": "", "arguments": ""})
                 if tc.get("id"):
                     slot["id"] = tc["id"]
+                for k in ECHOED_CALL_FIELDS:
+                    if tc.get(k):
+                        slot[k] = tc[k]
                 fn = tc.get("function") or {}
                 if fn.get("name"):
                     slot["name"] += fn["name"]
@@ -246,7 +263,8 @@ def accumulate_openai_stream(events) -> dict[str, Any]:
         message["reasoning_content"] = "".join(reasoning)
     if calls:
         message["tool_calls"] = [
-            {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"]}}
+            {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"]},
+             **{k: c[k] for k in ECHOED_CALL_FIELDS if c.get(k)}}
             for _, c in sorted(calls.items())
         ]
     out: dict[str, Any] = {"choices": [{"message": message, "finish_reason": finish}]}

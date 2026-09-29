@@ -107,6 +107,9 @@ class ToolCall:
     arguments: dict[str, Any] | None
     raw_arguments: str
     parse_error: str | None = None
+    # Provider fields that must be echoed back with the call on later requests (Gemini's
+    # `extra_content` carries a thought signature; its thinking models reject calls without it).
+    extra: dict[str, Any] | None = None
 
 
 @dataclass
@@ -126,7 +129,8 @@ class ModelTurn:
         msg: dict[str, Any] = {
             "role": "assistant",
             "content": self.text,
-            "tool_calls": [{"id": c.id, "name": c.name, "arguments": c.raw_arguments} for c in self.tool_calls],
+            "tool_calls": [{"id": c.id, "name": c.name, "arguments": c.raw_arguments, **({"extra": c.extra} if c.extra else {})}
+                           for c in self.tool_calls],
         }
         if self.reasoning:
             msg["reasoning"] = self.reasoning

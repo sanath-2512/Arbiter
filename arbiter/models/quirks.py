@@ -304,7 +304,8 @@ def normalize_call(call: ToolCall, specs: dict[str, ToolSpec]) -> tuple[ToolCall
     if name == call.name and args is call.arguments and err == call.parse_error:
         return call, notes
     raw = json.dumps(args) if isinstance(args, dict) and args is not call.arguments else call.raw_arguments
-    return ToolCall(id=call.id, name=name, arguments=args, raw_arguments=raw, parse_error=err if args is None else None), notes
+    return ToolCall(id=call.id, name=name, arguments=args, raw_arguments=raw, parse_error=err if args is None else None,
+                    extra=call.extra), notes
 
 
 # ------------------------------------------------------------------ tool calls written as text
