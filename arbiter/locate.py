@@ -315,9 +315,13 @@ def localize(issue: str, repo: Path, files: list[str], *, time_budget_s: float =
                 out["complete"] = False
                 break
             for name, pat in pats:
-                m = pat.search(text)
-                if m:
-                    out["definitions"].append({"name": name, "path": f, "line": text.count("\n", 0, m.start()) + 1})
+                # Repeated method names are common in serializer/mixin hierarchies. Keeping the
+                # first few lets the initial context show the implementation and its overrides,
+                # rather than only the first unrelated definition in the file.
+                for m in list(pat.finditer(text))[:3]:
+                    out["definitions"].append(
+                        {"name": name, "path": f, "line": text.count("\n", 0, m.start()) + 1}
+                    )
         defs = sorted(out["definitions"], key=lambda d: (peripheral(d["path"], linguist), is_test_path(d["path"]),
                                                          idents.index(d["name"]), d["path"]))
         per: dict[str, int] = {}
@@ -385,6 +389,34 @@ def render(loc: dict[str, Any]) -> str:
 PRELOAD_MAX_FILES = 3
 
 
+_BLOCK_START = re.compile(r"^(\s*)(?:async\s+)?(?:def|class|function|func|fn|interface|struct|enum|trait)\b")
+
+
+def _definition_excerpt(path: str, text: str, line: int, budget: int) -> str:
+    """A complete small definition for a large anchored file, if it fits the prompt budget.
+
+    Whole-file preloads are ideal for a tiny module, but silently skipping a large file caused the
+    agent to begin with unrelated configuration text. A complete function body is a better first
+    observation and avoids presenting a misleading partial edit target.
+    """
+    lines = text.splitlines()
+    if not 1 <= line <= len(lines):
+        return ""
+    m = _BLOCK_START.match(lines[line - 1])
+    if not m:
+        return ""
+    indent = len(m.group(1).expandtabs(4))
+    end = len(lines)
+    for i in range(line, len(lines)):
+        nxt = _BLOCK_START.match(lines[i])
+        if nxt and len(nxt.group(1).expandtabs(4)) <= indent:
+            end = i
+            break
+    body = "\n".join(lines[line - 1:end])
+    block = f"{path} — definition at lines {line}-{end}\n{body}"
+    return block if len(block) <= budget else ""
+
+
 def preload(loc: dict[str, Any], repo: Path, budget_chars: int) -> tuple[str, list[str]]:
     """Whole small files the localisation points to, rendered as read_file shows them, so the model
     can edit at once instead of spending a request (and a resend of the context) per file. Only when
@@ -392,31 +424,71 @@ def preload(loc: dict[str, Any], repo: Path, budget_chars: int) -> tuple[str, li
     budget; never a path that leaves the repository."""
     if budget_chars <= 0 or not (loc.get("definitions") or loc.get("files_named")):
         return "", []
-    order = [d["path"] for d in loc.get("definitions") or []] + list(loc.get("files_named") or [])
-    order += [r["path"] for r in loc.get("ranked") or []]
+    # Anchors are evidence that a file is relevant. Do not spend an initial-prompt budget on a
+    # different, merely small ranked file when the anchored implementation is too large to show whole.
+    # The model can read the anchored file in focused ranges; a random setup/config file only distracts it.
+    definitions = list(loc.get("definitions") or [])
+    # Methods give a concise editable body; class-level anchors may span hundreds of lines. Read
+    # the source line to put the methods first while retaining language-neutral fallback behaviour.
+    def definition_order(d: dict) -> tuple[int, str, int]:
+        try:
+            line = (repo / d["path"]).read_text(errors="replace").splitlines()[int(d["line"]) - 1]
+            is_method = bool(re.match(r"^\s*(?:async\s+)?(?:def|function|func|fn)\b", line))
+        except (OSError, IndexError, KeyError, ValueError, TypeError):
+            is_method = False
+        return (0 if is_method else 1, str(d.get("path", "")), int(d.get("line") or 0))
+
+    definitions.sort(key=definition_order)
+    order = [d["path"] for d in definitions] + list(loc.get("files_named") or [])
     for path in list(order):
         order += ((loc.get("related") or {}).get(path) or {}).get("tests") or []
     root = repo.resolve()
     blocks, shown, left = [], [], budget_chars
-    for path in dict.fromkeys(order):
-        if len(shown) >= PRELOAD_MAX_FILES or left < 200:
+    definitions_by_path: dict[str, list[dict]] = {}
+    for d in definitions:
+        definitions_by_path.setdefault(str(d.get("path", "")), []).append(d)
+    seen_definitions: set[tuple[str, int]] = set()
+    full_paths: set[str] = set()
+    for path in order:
+        if (len(set(shown)) >= PRELOAD_MAX_FILES and path not in shown) or left < 200:
             break
+        if path in full_paths:
+            continue
         try:
             f = (repo / path).resolve()
             f.relative_to(root)
-            if not f.is_file() or f.stat().st_size > left:
+            if not f.is_file():
                 continue
             data = f.read_bytes()
         except (OSError, ValueError):
             continue
         if not data.strip() or b"\x00" in data:
             continue
-        rendered, _, last, total = numbered_range(data.decode("utf-8", "replace"), 1, None, 100_000, 10 ** 9)
+        decoded = data.decode("utf-8", "replace")
+        if len(data) > left:
+            excerpt = ""
+            for d in definitions_by_path.get(path, []):
+                key = (path, int(d.get("line") or 0))
+                if key in seen_definitions:
+                    continue
+                excerpt = _definition_excerpt(path, decoded, key[1], left)
+                if excerpt:
+                    seen_definitions.add(key)
+                    break
+            if not excerpt:
+                continue
+            blocks.append(excerpt)
+            if path not in shown:
+                shown.append(path)
+            left -= len(excerpt) + 2
+            continue
+        rendered, _, last, total = numbered_range(decoded, 1, None, 100_000, 10 ** 9)
         block = f"{path} ({total} lines)\n{rendered}"
         if last < total or len(block) > left:
             continue
         blocks.append(block)
         shown.append(path)
+        full_paths.add(path)
         left -= len(block) + 2
     if not blocks:
         return "", []

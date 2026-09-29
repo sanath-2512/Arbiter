@@ -107,6 +107,15 @@ class ToolsTest(TempDirCase):
         r = self.box.execute(call("write_file", path=str(self.tmp / "scratch" / "repro.py"), content="print(1)\n"))
         self.assertEqual(r.status, "ok")  # the scratch directory is writable
 
+    def test_missing_read_names_a_unique_exact_path_without_reading_it(self):
+        (self.repo / "tests").mkdir()
+        actual = self.repo / "tests" / "test_termui.py"
+        actual.write_text("important source\n")
+        r = self.box.execute(call("read_file", path="src/click/tests/test_termui.py"))
+        self.assertEqual(r.status, "error")
+        self.assertIn("Exact repository path: tests/test_termui.py", r.content)
+        self.assertEqual(actual.read_text(), "important source\n")
+
     def test_read_ranges_and_truncation_notice(self):
         (self.repo / "big.py").write_text("".join(f"line {i}\n" for i in range(1, 201)))
         r = self.box.execute(call("read_file", path="big.py"))
@@ -148,6 +157,14 @@ class ToolsTest(TempDirCase):
         self.assertIn("  3002\ttail 1", r2.content)
         full = self.archive.read_text(oid)
         self.assertEqual(full.count("\n"), 6001)
+
+    def test_invalid_read_output_range_names_the_available_lines(self):
+        r = self.box.execute(call("bash", command="printf 'one\\ntwo\\nthree\\n'"))
+        bad = self.box.execute(call("read_output", id=r.meta["output_id"], start_line=20, end_line=3))
+        self.assertEqual(bad.status, "error")
+        self.assertEqual(bad.meta["error"], "invalid_range")
+        self.assertIn("refer to lines in this archived output", bad.content)
+        self.assertIn("1 <= start_line <= end_line <=", bad.content)
 
     def test_timeout_kills_descendants_and_reports_partial_mutation(self):
         pidfile = self.repo / "pid"
@@ -221,6 +238,12 @@ class ToolsTest(TempDirCase):
             self.assertIn("No matches", r.content)
             r = self.box.execute(call("search", pattern="(unclosed"))
             self.assertEqual(r.status, "error", use_rg)
+
+    def test_search_accepts_wide_context_with_bounded_observation(self):
+        (self.repo / "long.py").write_text("".join(f"line {i}\n" for i in range(1, 101)) + "target_fn\n")
+        r = self.box.execute(call("search", pattern="target_fn", path="long.py", context=40))
+        self.assertEqual(r.status, "ok")
+        self.assertIn("target_fn", r.content)
 
 
 class BoundedViewTest(TempDirCase):

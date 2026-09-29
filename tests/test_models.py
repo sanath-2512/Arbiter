@@ -128,6 +128,8 @@ class ClassificationTest(unittest.TestCase):
             (429, '{"error":{"type":"insufficient_quota","message":"You exceeded your current quota"}}', ErrorClass.QUOTA),
             (402, "payment required", ErrorClass.QUOTA),
             (429, '{"error":{"message":"Rate limit reached"}}', ErrorClass.RATE_LIMIT),
+            (402, '{"error":{"message":"This request would exceed available credits given current in-flight '
+                  'requests. Retry after in-flight requests settle."}}', ErrorClass.RATE_LIMIT),
             (400, '{"error":{"message":"This model\'s maximum context length is 8192 tokens"}}', ErrorClass.CONTEXT_OVERFLOW),
             (400, '{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 210000 tokens > 200000 maximum"}}', ErrorClass.CONTEXT_OVERFLOW),
             (400, '{"error":{"message":"Unsupported parameter: \'max_tokens\' is not supported with this model."}}', ErrorClass.UNSUPPORTED),

@@ -35,7 +35,7 @@ finalize_reserve_s = 45
 [tools]
 set = "full"
 bash_timeout_s = 180
-max_observation_chars = 12000
+max_observation_chars = 6000
 read_max_lines = 400
 
 [policy]
@@ -48,6 +48,11 @@ budget_notices = true
 repetition_notice = true
 git_hygiene = true
 max_attempts = 1
+# Keep only the two newest tool observations in every request. Older outputs stay in the run archive.
+# This prevents a few source reads from exhausting constrained Qwen/DeepSeek endpoint input-rate budgets.
+observation_window = 2
+observation_step = 1
+preload_chars = 5000
 
 # ---------------------------------------------------------------------------------------------
 # Credential-format rules for provider = "auto" (first match wins). `models` is an ordered
@@ -71,7 +76,9 @@ stream = true                     # thinking answers take minutes: stream so the
 base_url = "https://openrouter.ai/api/v1"
 models = ["qwen/qwen3.8-max", "deepseek/deepseek-v4-pro", "qwen/qwen3-coder", "deepseek/deepseek-v4.1-flash",
           "qwen/qwen3.7-max", "deepseek/deepseek-chat"]
-max_output_tokens = 32768
+# Coding turns generally emit a short tool call. A bounded reservation keeps low-credit/free keys usable
+# and avoids paying/provider-rejecting a 32k completion allowance before the model has inspected code.
+max_output_tokens = 2048
 
 [[auto]]
 label = "OpenAI"
@@ -122,7 +129,17 @@ label = "Google Gemini (OpenAI-compatible endpoint)"
 match = "prefix:AIza"
 provider = "openai_chat"
 base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
-models = ["gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"]
+models = ["gemini-3.1-pro-preview", "gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"]
+context_window = 1000000
+
+# Google AI Studio now issues Gemini authorization keys with an AQ. prefix. They use
+# the same text-only OpenAI-compatible endpoint as legacy AIza keys.
+[[auto]]
+label = "Google Gemini authorization key (OpenAI-compatible endpoint)"
+match = "prefix:AQ."
+provider = "openai_chat"
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+models = ["gemini-3.1-pro-preview", "gemini-3-pro-preview", "gemini-2.5-pro", "gemini-2.5-flash"]
 context_window = 1000000
 max_output_tokens = 32768           # thinking tokens count against this budget
 
@@ -132,6 +149,9 @@ match = "prefix:gsk_"
 provider = "openai_chat"
 base_url = "https://api.groq.com/openai/v1"
 models = ["qwen/qwen3-32b", "moonshotai/kimi-k2-instruct-0905", "openai/gpt-oss-120b", "llama-3.3-70b-versatile"]
+# Groq's free tier rejects requests that reserve more than its 1k output-tokens/minute allowance.
+# Tool-call turns are deliberately short, so requesting this cap avoids an avoidable first-call failure.
+max_output_tokens = 1000
 
 [[auto]]
 label = "xAI"
@@ -163,3 +183,7 @@ match = "prefix:csk-"
 provider = "openai_chat"
 base_url = "https://api.cerebras.ai/v1"
 models = ["qwen-3-coder-480b", "gpt-oss-120b"]
+# The free tier has a small request context allowance. Reserve a short, sufficient
+# completion for tool turns so the first request remains admissible.
+context_window = 8192
+max_output_tokens = 2048

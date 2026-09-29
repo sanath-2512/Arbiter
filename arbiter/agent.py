@@ -370,6 +370,10 @@ class Agent:
             wrap=self.sandbox.wrap if self.sandbox.active else None,
         )
         self.specs = list(self.tools.specs.values())
+        # `read_output` is useful only after a tool says its visible result was shortened. Offering it
+        # from the first turn made smaller tool-calling models repeatedly retrieve complete source views
+        # from an archive instead of progressing to an edit or a test.
+        self._read_output_available = False
         overview = prompts.repo_overview(self.tools.repo) if self.profile.policy.repo_overview else ""
         self.task_type = tasktype.classify(self.task.issue)
         if self.profile.policy.task_type_hints and tasktype.hint(self.task_type):
@@ -478,6 +482,16 @@ class Agent:
             window_step=self.profile.policy.observation_step,
         )
 
+    def _tool_specs_for_turn(self):
+        """Hide archive retrieval until there is an archive excerpt worth retrieving.
+
+        The archive is an escape hatch for bounded command output, not a source browser. This also
+        shortens the initial native-tool schema on rate-limited endpoints.
+        """
+        if self._read_output_available:
+            return self.specs
+        return [s for s in self.specs if s.name != "read_output"]
+
     def _on_attempt(self, rec: AttemptRecord) -> None:
         self.budget.record_attempt(rec)
         append_jsonl(self.run_dir / "requests.jsonl", self.redactor.obj({**rec.__dict__, "step": self.budget.steps + 1}))
@@ -538,7 +552,7 @@ class Agent:
                 t_call = time.monotonic()
                 try:
                     turn = call_with_retry(
-                        self.client, view, self.specs,
+                        self.client, view, self._tool_specs_for_turn(),
                         max_attempts=self.profile.retry.max_attempts,
                         base_delay_s=self.profile.retry.base_delay_s,
                         max_delay_s=self.profile.retry.max_delay_s,
@@ -723,6 +737,8 @@ class Agent:
         pre_tree = self._capture_state(f"before check at step {self.budget.steps}") if is_check else None
         self._audit_access(call)
         res = self._refuse_eval_edit(call) or self.tools.execute(call)
+        if "read_output(id=" in res.content:
+            self._read_output_available = True
         if named_eval_paths:
             res.content += ("\n[harness] This command names evaluator-owned test file(s): "
                             + ", ".join(named_eval_paths[:6])

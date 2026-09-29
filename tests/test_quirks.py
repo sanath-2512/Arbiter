@@ -80,6 +80,12 @@ class TextToolCallTest(unittest.TestCase):
                                                      SPECS)
         self.assertEqual((names(c3), c3[0].arguments, rest), (["bash"], {"command": "ls"}, "Running:"))
 
+    def test_qwen_coder_ollama_equals_parameters_are_recovered(self):
+        from arbiter.models.textproto import parse_actions
+        calls = parse_actions("<function=bash>\ncommand=echo%20probe-ok\n</command>\n</function>", list(SPECS.values()))
+        self.assertEqual([(c.name, c.arguments, c.parse_error) for c in calls],
+                         [("bash", {"command": "echo probe-ok"}, None)])
+
     def test_only_offered_tools_and_not_prose(self):
         for text in ('<tool_call>{"name": "rm_rf_everything", "arguments": {}}</tool_call>',
                      'Here is the JSON config: {"name": "project", "version": 2}',

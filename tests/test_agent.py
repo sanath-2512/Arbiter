@@ -224,6 +224,23 @@ class AgentTest(TempDirCase):
         notes = [m for m in agent.transcript if m["role"] == "user" and "same command" in m["content"]]
         self.assertEqual(len(notes), 1)
 
+    def test_read_output_is_not_advertised_until_a_tool_shortens_output(self):
+        class RecordingClient(FakeClient):
+            def __init__(self):
+                super().__init__([turn(tc("bash", command="printf '%s\\n' " + "x" * 2000)), turn(SUBMIT), turn(SUBMIT)])
+                self.tool_names = []
+
+            def complete(self, messages, tools, timeout_s, total_s=None):
+                self.tool_names.append([t.name for t in tools])
+                return super().complete(messages, tools, timeout_s=timeout_s, total_s=total_s)
+
+        profile = test_profile()
+        profile.tools.max_observation_chars = 100
+        client = RecordingClient()
+        Agent(Task("t", self.repo, "fix"), profile, client, self.run_dir, log=lambda m: None).run()
+        self.assertNotIn("read_output", client.tool_names[0])
+        self.assertIn("read_output", client.tool_names[1])
+
     def test_oversized_issue_is_bounded_with_full_text_available(self):
         profile = test_profile()
         profile.model.context_window, profile.model.max_output_tokens = 4000, 1000
