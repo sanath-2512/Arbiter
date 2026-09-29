@@ -31,7 +31,11 @@ class FakeOpenAIServer:
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
                 outer.requests.append({"path": self.path, "body": body})
                 names = sorted(t["function"]["name"] for t in body.get("tools", []))
-                turns = outer.script.get(",".join(names)) or outer.script.get("*") or []
+                # the harness offers read_output only once an output has been shortened; the same
+                # script serves both tool sets
+                turns = (outer.script.get(",".join(names))
+                         or outer.script.get(",".join(sorted(set(names) | {"read_output"})))
+                         or outer.script.get("*") or [])
                 idx = sum(1 for m in body.get("messages", []) if m.get("role") == "assistant")
                 if idx >= len(turns):
                     payload, status = {"error": {"message": "fake script exhausted"}}, 400

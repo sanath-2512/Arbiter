@@ -79,7 +79,10 @@ class StreamingEndToEndTest(TempDirCase):
         prof = self.tmp / "stream.toml"
         prof.write_text('name = "stream"\n[model]\nprovider = "openai_chat"\nstream = true\n')
         task = json.dumps({"task_id": "s1", "repo_path": str(repo), "issue": "divide truncates; use true division"})
-        with FakeOpenAIServer(SCRIPT) as srv:
+        # `probe` offers only bash and checks that the model ran exactly the command it asked for
+        script = {**SCRIPT, "bash": [{"content": "", "tool_calls": [{"name": "bash", "arguments": {"command": "echo probe-ok"}}]},
+                                     {"content": "DONE"}]}
+        with FakeOpenAIServer(script) as srv:
             env = {**os.environ, "AI_API_KEY": "sk-fake-000000", "AI_MODEL": "scripted-model", "AI_BASE_URL": srv.base_url,
                    "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
             p = subprocess.run([sys.executable, "-m", "arbiter", "run", "--profile", str(prof), "--out",
