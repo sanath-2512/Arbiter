@@ -20,6 +20,7 @@ import json
 import re
 import uuid
 from typing import Any
+from urllib.parse import unquote
 
 from arbiter.models.base import ModelClient, ModelTurn, ToolCall, ToolSpec
 
@@ -66,6 +67,17 @@ def parse_actions(text: str, tools: list[ToolSpec]) -> list[ToolCall]:
             key, raw = p.group(1), _strip_one_newline(p.group(2))
             if key in args:
                 errors.append(f"parameter {key!r} given twice")
+                continue
+            try:
+                args[key] = _convert(raw, props.get(key, {}))
+            except ValueError as e:
+                errors.append(f"parameter {key!r}: {e}")
+        # Qwen 2.5 Coder on Ollama sometimes serialises a parameter as
+        # ``command=echo%20ok\n</command>`` instead of the advertised
+        # <parameter=command> block. Parse that explicit, paired form only.
+        for p in re.finditer(r"^\s*([A-Za-z0-9_]+)=(.*?)\n</\1>", body, re.M | re.S):
+            key, raw = p.group(1), unquote(p.group(2).strip())
+            if key in args:
                 continue
             try:
                 args[key] = _convert(raw, props.get(key, {}))

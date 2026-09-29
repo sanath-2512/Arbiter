@@ -45,6 +45,25 @@ class LocateTest(TempDirCase):
     def test_preload_needs_an_anchor_and_stays_in_the_repo(self):
         loc = locate.localize("The website is slow on Tuesdays.", self.repo, self.files)
         self.assertEqual(locate.preload(loc, self.repo, 4000), ("", []))
+
+    def test_preload_does_not_substitute_an_unrelated_small_ranked_file(self):
+        """A large anchored source is more useful as a later focused read than unrelated setup text."""
+        (self.repo / "calc" / "ops.py").write_text("def divide(a, b):\n" + "    # detail\n" * 1000)
+        loc = {"definitions": [{"name": "divide", "path": "calc/ops.py", "line": 1}],
+               "files_named": [], "ranked": [{"path": "setup.py", "score": 1.0}]}
+        self.assertEqual(locate.preload(loc, self.repo, 4000), ("", []))
+
+    def test_preload_uses_complete_function_excerpts_from_a_large_anchored_file(self):
+        source = ("def alpha():\n    return 1\n\n" + "# padding\n" * 1000
+                  + "def target(value):\n    return value + 1\n")
+        (self.repo / "calc" / "ops.py").write_text(source)
+        loc = {"definitions": [{"name": "target", "path": "calc/ops.py", "line": 1004}],
+               "files_named": [], "ranked": []}
+        text, shown = locate.preload(loc, self.repo, 4000)
+        self.assertEqual(shown, ["calc/ops.py"])
+        self.assertIn("def target(value):", text)
+        self.assertIn("return value + 1", text)
+        self.assertNotIn("# padding", text)
         outside = self.tmp / "secret.py"
         outside.write_text("def divide():\n    pass\n")
         (self.repo / "calc" / "link.py").symlink_to(outside)

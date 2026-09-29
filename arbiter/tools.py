@@ -94,7 +94,7 @@ def tool_specs(cfg: ToolsConfig) -> list[ToolSpec]:
                 "glob": {"type": "string", "description": "e.g. '*.rs'"},
                 "fixed_strings": {"type": "boolean"},
                 "case_insensitive": {"type": "boolean"},
-                "context": {"type": "integer", "description": "Context lines (0-5)."},
+                "context": {"type": "integer", "description": "Context lines (0-40)."},
             },
             ["pattern"],
         ),
@@ -601,7 +601,22 @@ class ToolBox:
         path = self._resolve(args["path"], write=False)
         shown = self._display(path)
         if not path.exists():
-            return ToolResult(f"Error: {shown} does not exist.", "error", {"error": "not_found"})
+            # Do not silently redirect a read: a guessed path can change an agent's reasoning. A unique
+            # basename match is nevertheless valuable recovery information after a model adds a wrong prefix.
+            requested_name = path.name
+            matches = []
+            if requested_name:
+                try:
+                    matches = sorted(
+                        p.relative_to(self.repo).as_posix() for p in self.repo.rglob(requested_name)
+                        if ".git" not in p.parts
+                    )[:4]
+                except OSError:
+                    pass
+            hint = (f" Exact repository path: {matches[0]}. Retry with that path."
+                    if len(matches) == 1 else
+                    (" Matching paths: " + ", ".join(matches) + ". Retry with one exact path." if matches else ""))
+            return ToolResult(f"Error: {shown} does not exist.{hint}", "error", {"error": "not_found", "matches": matches})
         if path.is_dir():
             entries = sorted(path.iterdir(), key=lambda p: (not p.is_dir(), p.name))
             names = [e.name + ("/" if e.is_dir() else "") for e in entries if e.name != ".git"]
@@ -653,8 +668,8 @@ class ToolBox:
             raise ToolArgumentError("pattern is empty")
         target = self._resolve(args.get("path") or ".", write=False)
         ctx = args.get("context") or 0
-        if not 0 <= ctx <= 5:
-            raise ToolArgumentError("context must be between 0 and 5")
+        if not 0 <= ctx <= 40:
+            raise ToolArgumentError("context must be between 0 and 40")
         rel_target = os.path.relpath(target, self.repo) if str(target).startswith(str(self.repo)) else str(target)
         if self._rg:
             cmd = [self._rg, "--line-number", "--no-heading", "--color=never", "--max-columns=400",
@@ -806,8 +821,16 @@ class ToolBox:
             return ToolResult(f"Error: no archived output with id {oid!r}.", "error", {"error": "not_found"})
         start = args.get("start_line") or 1
         end = args.get("end_line")
-        if start < 1 or (end is not None and end < start):
-            raise ToolArgumentError("need 1 <= start_line <= end_line")
+        if start < 1:
+            raise ToolArgumentError("start_line must be >= 1")
+        if end is not None and end < start:
+            total = text.count("\n") + (0 if text.endswith("\n") or not text else 1)
+            return ToolResult(
+                f"Error: output {oid} has {total} lines. start_line and end_line refer to lines in this archived "
+                f"output, not source-code line numbers. Request 1 <= start_line <= end_line <= {total}.",
+                "error",
+                {"error": "invalid_range", "output_id": None, "source_output": oid, "lines": total},
+            )
         rendered, first, last, total = numbered_range(text, start, end, self.cfg.read_max_lines, self.cfg.max_observation_chars)
         if total == 0:
             return ToolResult(f"Output {oid} is empty.", "ok", {"output_id": None, "source_output": oid})

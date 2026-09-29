@@ -4,3 +4,5 @@ name = "text-protocol"
 [model]
 provider = "openai_chat"
 tool_protocol = "text"
+# Some Ollama Qwen variants only emit their tool markup reliably while streaming.
+stream = true

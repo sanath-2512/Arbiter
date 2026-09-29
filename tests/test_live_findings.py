@@ -90,6 +90,18 @@ class ModelResolutionTest(unittest.TestCase):
         r = resolve(self.profile, "sk-or-v1-" + "a" * 64, lister=lambda c, k: avail)
         self.assertEqual(r.model.name, "qwen/qwen3.8-max-0902")
 
+    def test_gemini_authorization_key_uses_the_gemini_route(self):
+        r = resolve(self.profile, "AQ.test-key", lister=lambda c, k: ["gemini-2.5-flash", "gemini-3.1-pro-preview"])
+        self.assertEqual(r.model.provider, "openai_chat")
+        self.assertEqual(r.model.base_url, "https://generativelanguage.googleapis.com/v1beta/openai")
+        self.assertEqual(r.model.name, "gemini-3.1-pro-preview")
+
+    def test_cerebras_free_tier_has_a_bounded_request_budget(self):
+        r = resolve(self.profile, "csk-" + "x" * 32, lister=lambda c, k: ["gpt-oss-120b"])
+        self.assertEqual(r.model.name, "gpt-oss-120b")
+        self.assertEqual(r.model.context_window, 8192)
+        self.assertEqual(r.model.max_output_tokens, 2048)
+
     def test_retired_preferences_fall_back_to_a_served_coder_model(self):
         # live: NVIDIA NIM no longer serves the profile's preferences; the harness refused to start
         nim = ["01-ai/yi-large", "deepseek-ai/deepseek-coder-6.7b-instruct", "deepseek-ai/deepseek-v4.1-flash",

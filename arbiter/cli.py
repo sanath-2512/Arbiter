@@ -506,7 +506,7 @@ def cmd_check_config(args: argparse.Namespace) -> int:
 
 def cmd_probe(args: argparse.Namespace) -> int:
     """Live endpoint compatibility: auth, response parsing, native tool call, tool-result turn, usage."""
-    from arbiter.models import make_client
+    from arbiter.models import make_client, quirks
     from arbiter.models.base import ModelError, ToolSpec
 
     try:
@@ -524,13 +524,32 @@ def cmd_probe(args: argparse.Namespace) -> int:
     ]
     report: dict[str, Any] = {"resolution": resolution.to_dict(), "stream": profile.model.stream,
                               "tool_protocol": profile.model.tool_protocol, "live": profile.model.provider != "fake"}
+
+    def recover_probe_call(turn):
+        # The agent loop accepts recognised Qwen/DeepSeek calls written in response text when a
+        # provider drops native tool_calls. Probe the endpoint with the same compatibility rule.
+        if not turn.tool_calls and profile.model.tool_protocol == "native":
+            calls, rest, dialect = quirks.recover_text_tool_calls(turn.text, {tool.name: tool})
+            if calls:
+                turn.tool_calls, turn.text = calls, rest
+                return dialect
+        return None
+
+    def probe_call_ok(turn):
+        return (bool(turn.tool_calls) and turn.tool_calls[0].name == "bash"
+                and not turn.tool_calls[0].parse_error
+                and (turn.tool_calls[0].arguments or {}).get("command") == "echo probe-ok")
+
     try:
         t0 = time.monotonic()
         turn = client.complete(msgs, [tool], timeout_s=profile.model.request_timeout_s)
+        recovered = recover_probe_call(turn)
         report["turn1"] = {"latency_s": round(time.monotonic() - t0, 2), "finish_reason": turn.finish_reason,
                            "tool_calls": [(c.name, c.arguments, c.parse_error) for c in turn.tool_calls],
                            "text": turn.text[:300], "usage": turn.usage.to_dict()}
-        report["tool_call_ok"] = bool(turn.tool_calls) and turn.tool_calls[0].name == "bash" and not turn.tool_calls[0].parse_error
+        if recovered:
+            report["turn1"]["tool_call_recovered_as"] = recovered
+        report["tool_call_ok"] = probe_call_ok(turn)
         if report["tool_call_ok"]:
             msgs.append(turn.to_message())
             msgs.append({"role": "tool", "tool_call_id": turn.tool_calls[0].id, "name": "bash", "content": "probe-ok"})
@@ -550,9 +569,12 @@ def cmd_probe(args: argparse.Namespace) -> int:
     try:
         t0 = time.monotonic()
         alt_turn = make_client(alt, env={alt.api_key_env: key}).complete(msgs[:2], [tool], timeout_s=profile.model.request_timeout_s)
+        recovered = recover_probe_call(alt_turn)
         report["alternate_mode"] = {"stream": alt.stream, "latency_s": round(time.monotonic() - t0, 2),
-                                    "tool_call_ok": bool(alt_turn.tool_calls) and alt_turn.tool_calls[0].name == "bash",
+                                    "tool_call_ok": probe_call_ok(alt_turn),
                                     "usage_reported": alt_turn.usage.known}
+        if recovered:
+            report["alternate_mode"]["tool_call_recovered_as"] = recovered
     except ModelError as e:
         report["alternate_mode"] = {"stream": alt.stream, "error": {"class": e.cls.value, "message": e.message[:300]}}
     print(json.dumps(redactor.obj(report), indent=2, default=str))

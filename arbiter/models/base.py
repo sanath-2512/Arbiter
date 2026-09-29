@@ -173,6 +173,7 @@ _RATE_LIMIT_PATTERNS = re.compile(
     r"\b(?:itpm|otpm|tpm|rpm)\b|(?:please )?try again in",
     re.I,
 )
+_TRANSIENT_CREDIT_PATTERNS = re.compile(r"in[- ]flight requests?|retry after in[- ]flight|requests? settle", re.I)
 _RETRY_AFTER_TEXT = re.compile(
     r"(?:retry|try again)\s+(?:after|in)\s*(\d+(?:\.\d+)?)\s*(?:s|sec(?:ond)?s?)?\b",
     re.I,
@@ -253,6 +254,10 @@ def classify_http_error(status: int, body: str, headers: dict[str, str] | None =
         return ModelError(ErrorClass.CONTENT_FILTER, msg, status=status, body=body)
     if status in (401, 403):
         return ModelError(ErrorClass.AUTH, msg, status=status, body=body)
+    # OpenRouter uses 402 both for a genuinely empty balance and for a short-lived reservation while
+    # prior streamed calls settle. Its latter response explicitly asks the caller to retry.
+    if status == 402 and _TRANSIENT_CREDIT_PATTERNS.search(msg):
+        return ModelError(ErrorClass.RATE_LIMIT, msg, status=status, retry_after_s=retry_after, body=body)
     if status == 402:
         return ModelError(ErrorClass.QUOTA, msg, status=status, body=body)
     if status == 429:
